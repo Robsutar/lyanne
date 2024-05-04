@@ -1,0 +1,9 @@
+[package]
+name = "damas-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+damas = { path = "../" }
+lyanne = { path = "../../../", features = [ "client" ] }
+tokio = { version = "1.37.0", features = [ "full" ] }

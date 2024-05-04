@@ -1,0 +1,8 @@
+[package]
+name = "bevy-ping-pong-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy-ping-pong = { path = "../" }
+lyanne = { path = "../../../", features = [ "bevy", "server" ] }

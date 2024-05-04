@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [ 
+    "examples/bevy-ping-pong", 
+    "examples/bevy-ping-pong/client", 
+    "examples/bevy-ping-pong/server",
+    "examples/damas", 
+    "examples/damas/client", 
+    "examples/damas/server",
+]
+
+[package]
+name = "lyanne"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = [ "client", "server" ]
+bevy = []
+client = []
+server = []
+
+[dependencies]
+tokio = { version = "1.37.0", features = [ "full" ] }
+serde = { version = "1.0.200" }
+uuid = { version = "1.8.0", features = [ "v4" ] }

@@ -1,0 +1,9 @@
+[package]
+name = "damas-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+damas = { path = "../" }
+lyanne = { path = "../../../", features = [ "server" ] }
+tokio = { version = "1.37.0", features = [ "full" ] }
