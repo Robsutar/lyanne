@@ -1,4 +1,7 @@
-use lyanne::transport::server::{self, Server, ServerMut};
+use lyanne::{
+    packets::FooPacket,
+    transport::server::{self, Server, ServerMut},
+};
 use std::{io, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time};
 
@@ -35,6 +38,16 @@ async fn main() -> io::Result<()> {
                 println!("waiting interval...");
                 interval.tick().await;
                 let mut server_mut = server_mut.lock().await;
+                println!("sending(storing) some random packets");
+                for (_, connected_client) in server_mut.connected_clients.iter_mut() {
+                    let message = format!("Random str: {:?}", 44);
+                    let packet = FooPacket { message };
+                    connected_client.send(&packet).unwrap();
+
+                    let message = format!("Random str: {:?}", 33232);
+                    let packet = FooPacket { message };
+                    connected_client.send(&packet).unwrap();
+                }
                 server::tick(&server, &mut server_mut)
                     .await
                     .expect("failed to server tick");
