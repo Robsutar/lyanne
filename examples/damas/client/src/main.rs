@@ -5,7 +5,6 @@ use tokio::sync::Mutex;
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let (client, client_mut) = client::connect("127.0.0.1:8080").await?;
-    let client = Arc::new(client);
     let client_mut = Arc::new(Mutex::new(client_mut));
     println!("client connected");
 

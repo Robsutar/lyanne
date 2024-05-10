@@ -1,14 +1,13 @@
 use lyanne::{
     packets::FooPacket,
-    transport::server::{self, Server, ServerMut},
+    transport::server::{self},
 };
 use std::{io, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let (server, server_mut): (Server, ServerMut) = server::bind("127.0.0.1:8080").await?;
-    let server = Arc::new(server);
+    let (server, server_mut) = server::bind("127.0.0.1:8080").await?;
     let server_mut = Arc::new(Mutex::new(server_mut));
     println!("server open");
 

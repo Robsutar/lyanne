@@ -19,8 +19,12 @@ pub async fn connect<A: ToSocketAddrs>(remote_addr: A) -> io::Result<(Client, Cl
     let len = socket.send("Auth me!".as_bytes()).await?;
     println!("{:?} bytes sent (for authentication)", len);
 
-    Ok((
-        Client { socket },
+    let client = Arc::new(Client {
+        socket,
+        packet_registry: PacketRegistry::new(),
+    });
+
+    let client_clone = client.clone();
         ClientMut {
             connected_server: ConnectedServer {
                 last_response: Instant::now(),

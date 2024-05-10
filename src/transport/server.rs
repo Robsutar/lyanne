@@ -22,10 +22,13 @@ pub struct ServerMut {
     event_receiver: EventReceiver,
 }
 
-pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<(Server, ServerMut)> {
+pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<(Arc<Server>, ServerMut)> {
     let socket = Socket::bind(addr).await?;
     Ok((
-        Server { socket },
+        Arc::new(Server {
+            socket,
+            packet_registry: PacketRegistry::new(),
+        }),
         ServerMut {
             connected_clients: HashMap::new(),
             event_receiver: EventReceiver {},
