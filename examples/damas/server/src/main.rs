@@ -2,6 +2,7 @@ use lyanne::{
     packets::FooPacket,
     transport::server::{self, Server, ServerMut},
 };
+use rand::{thread_rng, Rng};
 use std::{io, sync::Arc, time::Duration};
 use tokio::{
     sync::Mutex,
@@ -40,13 +41,12 @@ async fn main() -> io::Result<()> {
                 let mut server_mut = a_server_mut.lock().await;
                 println!("sending(storing) some random packets");
                 for (_, connected_client) in server_mut.connected_clients.iter_mut() {
-                    let message = format!("Random str: {:?}", 44);
-                    let packet = FooPacket { message };
-                    connected_client.send(&packet).unwrap();
-
-                    let message = format!("Random str: {:?}", 33232);
-                    let packet = FooPacket { message };
-                    connected_client.send(&packet).unwrap();
+                    let mut rng = thread_rng();
+                    for _ in 0..rng.gen_range(0..2) {
+                        let message = format!("Random str: {:?}", rng.gen::<i32>());
+                        let packet = FooPacket { message };
+                        connected_client.send(&packet).unwrap();
+                    }
                 }
                 server::tick(&a_server, &mut server_mut)
                     .await

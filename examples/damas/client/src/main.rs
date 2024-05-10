@@ -1,4 +1,5 @@
 use lyanne::{packets::BarPacket, transport::client};
+use rand::{thread_rng, Rng};
 use std::{io, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::timeout};
 
@@ -25,9 +26,12 @@ async fn main() -> io::Result<()> {
                             .expect("failed to read next message");
                         println!();
 
-                        let message = format!("Random str: {:?}", 12);
-                        let packet = BarPacket { message };
-                        client_mut.connected_server.send(&packet).unwrap();
+                        let mut rng = thread_rng();
+                        for _ in 0..rng.gen_range(0..2) {
+                            let message = format!("Random str: {:?}", rng.gen::<i32>());
+                            let packet = BarPacket { message };
+                            client_mut.connected_server.send(&packet).unwrap();
+                        }
                     }
                     Err(_) => {
                         println!("server tick timeout, aborting connection...");
