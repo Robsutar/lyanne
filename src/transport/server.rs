@@ -164,7 +164,9 @@ pub async fn read_next_message(
 ) -> io::Result<()> {
     let (buf, addr) = tuple;
     println!("received {:?} bytes from {:?}", buf.len(), addr);
-    if let Some(connected_client) = server_mut.connected_clients.get_mut(&addr) {
+    if buf.len() == 0 {
+        println!("  client sent a empty buf, ignoring it")
+    } else if let Some(connected_client) = server_mut.connected_clients.get_mut(&addr) {
         println!("  client already authenticated");
         if connected_client.pending_packets_confirmation.is_empty() {
             println!("    client sent a message, but it is not authorized yet");
