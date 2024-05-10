@@ -82,9 +82,14 @@ pub async fn tick(
         &mut connected_server.tick_packet_store,
         Vec::new(),
     ));
+
     let mut buf: Vec<u8> = Vec::with_capacity(1 + &packets.bytes.len());
     buf.push(serialized_cache_index);
     buf.extend(&packets.bytes);
+
+    connected_server.last_response = Instant::now();
+    connected_server.last_sent_packets = (serialized_cache_index, packets);
+
     let s1 = client.clone();
     tokio::task::spawn(async move {
         s1.socket
@@ -122,7 +127,6 @@ pub async fn read_next_message(
         });
     } else {
         println!("server sent a new tick, cache_index: {:?}", cache_index);
-        connected_server.last_response = Instant::now();
 
         tick(
             client,
