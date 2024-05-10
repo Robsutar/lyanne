@@ -121,31 +121,35 @@ pub async fn read_next_message(
     buf: Vec<u8>,
 ) -> io::Result<()> {
     println!("received {:?} bytes from server", buf.len());
-    let connected_server = &mut client_mut.connected_server;
-    let cache_index = u8::from_be_bytes([buf[0]]);
-    if cache_index == connected_server.last_sent_packets.0 {
-        //Server has loosed last sent packet, so, the client will interpret it as a packet loss, and resend the cached value
-        println!("server packet loss, resending last packet...");
-        let buf = connected_server.last_sent_packets.1.bytes.clone();
-        let s1 = client.clone();
-        tokio::task::spawn(async move {
-            s1.socket
-                .send(&buf)
-                .await
-                .expect("failed to send message in async");
-        });
+    if buf.len() == 0 {
+        println!("  server sent a empty buf, ignoring it")
     } else {
-        println!("server sent a new tick, cache_index: {:?}", cache_index);
+        let connected_server = &mut client_mut.connected_server;
+        let cache_index = u8::from_be_bytes([buf[0]]);
+        if cache_index == connected_server.last_sent_packets.0 {
+            //Server has loosed last sent packet, so, the client will interpret it as a packet loss, and resend the cached value
+            println!("server packet loss, resending last packet...");
+            let buf = connected_server.last_sent_packets.1.bytes.clone();
+            let s1 = client.clone();
+            tokio::task::spawn(async move {
+                s1.socket
+                    .send(&buf)
+                    .await
+                    .expect("failed to send message in async");
+            });
+        } else {
+            println!("server sent a new tick, cache_index: {:?}", cache_index);
 
-        tick(
-            client,
-            client_mut,
-            cache_index,
-            SerializedPacketList {
-                bytes: buf[1..].to_vec(),
-            },
-        )
-        .await?;
+            tick(
+                client,
+                client_mut,
+                cache_index,
+                SerializedPacketList {
+                    bytes: buf[1..].to_vec(),
+                },
+            )
+            .await?;
+        }
     }
     Ok(())
 }
