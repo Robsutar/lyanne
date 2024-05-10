@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-syn = "2.0.61"
-quote = "1.0.36"
+syn = "^2.0.0"
+quote = "^1.0.0"
 
 [lib]
 proc-macro = true
