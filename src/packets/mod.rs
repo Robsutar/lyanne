@@ -63,7 +63,6 @@ impl PacketRegistry {
 
             Ok(SerializedPacket {
                 packet_id: packet_id_copy,
-                packet_length,
                 bytes: full_bytes,
             })
         };
@@ -117,9 +116,6 @@ impl PacketRegistry {
 
 pub struct SerializedPacket {
     pub(crate) packet_id: u16,
-    /// OBS: that length is NOT equals than `bytes`, is equals to
-    /// ( `bytes.len()` - byte len of `packet_id` (2) - byte len of `packet_length` (2) )
-    pub(crate) packet_length: u16,
     pub(crate) bytes: Vec<u8>,
 }
 
@@ -142,7 +138,6 @@ impl SerializedPacket {
         } else {
             Ok(SerializedPacket {
                 packet_id,
-                packet_length,
                 bytes: buf[packet_buf_index..4 + packet_buf_index + packet_size].to_vec(),
             })
         }
