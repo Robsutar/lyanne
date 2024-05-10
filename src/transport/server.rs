@@ -67,7 +67,8 @@ pub async fn tick(server: &Arc<Server>, server_mut: &mut ServerMut) -> io::Resul
                 todo!("")
             }
         } else {
-            connected_client.last_serialized_cache_index += 1;
+            connected_client.last_serialized_cache_index =
+                connected_client.last_serialized_cache_index.wrapping_add(1);
             let serialized_cache_index = connected_client.last_serialized_cache_index;
             let packets = SerializedPacketList::create(std::mem::replace(
                 &mut connected_client.tick_packet_store,
