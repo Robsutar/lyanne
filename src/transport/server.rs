@@ -15,6 +15,7 @@ const INTERPRET_AS_PACKET_LOSS: Duration = Duration::from_secs(2);
 
 pub struct Server {
     pub(crate) socket: Socket,
+    pub(crate) packet_registry: PacketRegistry,
 }
 
 pub struct ServerMut {
@@ -41,7 +42,6 @@ pub async fn tick(server: &Arc<Server>, server_mut: &mut ServerMut) -> io::Resul
         "ticking for {:?} clients",
         server_mut.connected_clients.len()
     );
-    let packet_registry = PacketRegistry::new(); //TODO
     let now = Instant::now();
     let mut to_disconnect: Vec<SocketAddr> = Vec::new();
     let mut clients_packets_to_process: HashMap<SocketAddr, Vec<SerializedPacket>> = HashMap::new();
@@ -136,7 +136,8 @@ pub async fn tick(server: &Arc<Server>, server_mut: &mut ServerMut) -> io::Resul
 
     for (addr, packets_to_process) in clients_packets_to_process {
         for serialized_packet in packets_to_process {
-            let (_, deserialize, call) = packet_registry
+            let (_, deserialize, call) = server
+                .packet_registry
                 .packet_map
                 .get(&serialized_packet.packet_id)
                 .unwrap();
@@ -213,6 +214,7 @@ pub async fn read_next_message(
             server_mut.connected_clients.insert(
                 addr,
                 ConnectedClient {
+                    server: server.clone(),
                     last_response: Instant::now(),
                     tick_packet_store: Vec::new(),
                     pending_packets_confirmation: Vec::new(),
@@ -229,6 +231,7 @@ pub async fn read_next_message(
 }
 
 pub struct ConnectedClient {
+    pub(crate) server: Arc<Server>,
     pub(crate) last_response: Instant,
     pub(crate) tick_packet_store: Vec<SerializedPacket>,
     pub(crate) pending_packets_confirmation: Vec<(u8, SerializedPacketList)>,
@@ -238,8 +241,7 @@ pub struct ConnectedClient {
 
 impl ConnectedClient {
     pub fn send<P: Packet>(&mut self, packet: &P) -> io::Result<()> {
-        let packet_registry = PacketRegistry::new(); //TODO
-        let serialized = packet_registry.serialize(packet)?;
+        let serialized = self.server.packet_registry.serialize(packet)?;
         self.send_packet_serialized(serialized);
         Ok(())
     }

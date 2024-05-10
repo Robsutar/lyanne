@@ -6,6 +6,7 @@ use tokio::net::ToSocketAddrs;
 
 pub struct Client {
     pub(crate) socket: Socket,
+    pub(crate) packet_registry: PacketRegistry,
 }
 
 pub struct ClientMut {
@@ -13,7 +14,7 @@ pub struct ClientMut {
     event_receiver: EventReceiver,
 }
 
-pub async fn connect<A: ToSocketAddrs>(remote_addr: A) -> io::Result<(Client, ClientMut)> {
+pub async fn connect<A: ToSocketAddrs>(remote_addr: A) -> io::Result<(Arc<Client>, ClientMut)> {
     let socket = Socket::bind("0.0.0.0:0").await?;
     socket.connect(remote_addr).await?;
     let len = socket.send("Auth me!".as_bytes()).await?;
@@ -25,8 +26,12 @@ pub async fn connect<A: ToSocketAddrs>(remote_addr: A) -> io::Result<(Client, Cl
     });
 
     let client_clone = client.clone();
+
+    Ok((
+        client,
         ClientMut {
             connected_server: ConnectedServer {
+                client: client_clone,
                 last_response: Instant::now(),
                 tick_packet_store: Vec::new(),
                 last_sent_packets: (0, SerializedPacketList { bytes: Vec::new() }),
@@ -43,7 +48,6 @@ pub async fn tick(
     packets: SerializedPacketList,
 ) -> io::Result<()> {
     println!("ticking for connected server");
-    let packet_registry = PacketRegistry::new(); //TODO
     let mut packets_to_process: Vec<SerializedPacket> = Vec::new();
     let connected_server = &mut client_mut.connected_server;
 
@@ -67,7 +71,8 @@ pub async fn tick(
     }
 
     for serialized_packet in packets_to_process {
-        let (_, deserialize, call) = packet_registry
+        let (_, deserialize, call) = client
+            .packet_registry
             .packet_map
             .get(&serialized_packet.packet_id)
             .expect(&format!(
@@ -146,6 +151,7 @@ pub async fn read_next_message(
 }
 
 pub struct ConnectedServer {
+    pub(crate) client: Arc<Client>,
     pub(crate) last_response: Instant,
     pub(crate) tick_packet_store: Vec<SerializedPacket>,
     pub(crate) last_sent_packets: (u8, SerializedPacketList),
@@ -153,8 +159,7 @@ pub struct ConnectedServer {
 
 impl ConnectedServer {
     pub fn send<P: Packet>(&mut self, packet: &P) -> io::Result<()> {
-        let packet_registry = PacketRegistry::new(); //TODO
-        let serialized = packet_registry.serialize(packet)?;
+        let serialized = self.client.packet_registry.serialize(packet)?;
         self.send_packet_serialized(serialized);
         Ok(())
     }

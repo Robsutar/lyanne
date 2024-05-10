@@ -17,10 +17,10 @@ pub struct PacketRegistry {
         u16,
         (
             // Serialize, uses a `Packet`, and serialize it into a SerializedPacket
-            Box<dyn Fn(&dyn Any) -> io::Result<SerializedPacket>>,
+            Box<dyn Fn(&dyn Any) -> io::Result<SerializedPacket> + Send + Sync>,
             // Deserialize, uses a `Vec<u8>`, and deserialize it into a Packet
-            Box<dyn Fn(&[u8]) -> io::Result<Box<dyn Any>>>,
-            Box<dyn Fn(&mut EventReceiver, Box<dyn Any>) -> ()>,
+            Box<dyn Fn(&[u8]) -> io::Result<Box<dyn Any>> + Send + Sync>,
+            Box<dyn Fn(&mut EventReceiver, Box<dyn Any>) -> () + Send + Sync>,
         ),
     >,
     last_id: u16,
@@ -28,16 +28,17 @@ pub struct PacketRegistry {
 
 impl PacketRegistry {
     pub fn new() -> Self {
-        Self {
+        let mut exit = Self {
             packet_type_ids: HashMap::new(),
             packet_map: HashMap::new(),
             last_id: 0,
-        }
-        .add::<FooPacket>()
-        .add::<BarPacket>()
+        };
+        exit.add::<FooPacket>();
+        exit.add::<BarPacket>();
+        exit
     }
 
-    pub fn add<P: Packet>(mut self) -> Self {
+    pub fn add<P: Packet>(&mut self) {
         self.last_id += 1;
         let packet_id = self.last_id;
         let type_id = TypeId::of::<P>();
@@ -84,7 +85,6 @@ impl PacketRegistry {
             packet_id,
             (Box::new(serialize), Box::new(deserialize), Box::new(call)),
         );
-        self
     }
 
     pub fn serialize<P: Packet>(&self, packet: &P) -> io::Result<SerializedPacket> {
