@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [ 
+    "derive",
     "examples/bevy-ping-pong", 
     "examples/bevy-ping-pong/client", 
     "examples/bevy-ping-pong/server",
@@ -21,6 +22,7 @@ client = []
 server = []
 
 [dependencies]
+lyanne-derive = { path = "derive" }
 tokio = { version = "1.37.0", features = [ "full" ] }
 serde = { version = "1.0.200", features = [ "derive" ] }
 bincode = "1.3.3"

@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::transport::EventReceiver;
 
+pub use lyanne_derive::Packet;
+
 pub trait Packet: Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any {}
 
 pub struct PacketRegistry {
@@ -164,24 +166,18 @@ impl SerializedPacketList {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct AuthPacket {
     pub registry_length: u16,
     pub additional_bytes: Vec<u8>,
 }
 
-impl Packet for AuthPacket {}
-
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct FooPacket {
     pub message: String,
 }
 
-impl Packet for FooPacket {}
-
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct BarPacket {
     pub message: String,
 }
-
-impl Packet for BarPacket {}

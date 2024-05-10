@@ -1,0 +1,11 @@
+[package]
+name = "lyanne-derive"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+syn = "2.0.61"
+quote = "1.0.36"
+
+[lib]
+proc-macro = true
