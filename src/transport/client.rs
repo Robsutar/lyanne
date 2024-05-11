@@ -1,6 +1,6 @@
 use crate::packets::{Packet, PacketRegistry, SerializedPacket, SerializedPacketList};
 
-use super::{EventReceiver, Socket};
+use super::Socket;
 use std::{io, sync::Arc, time::Instant};
 use tokio::net::ToSocketAddrs;
 
@@ -11,7 +11,6 @@ pub struct Client {
 
 pub struct ClientMut {
     /*TODO: pub(crate)*/ pub connected_server: ConnectedServer,
-    event_receiver: EventReceiver,
 }
 
 pub async fn connect<A: ToSocketAddrs>(remote_addr: A) -> io::Result<(Arc<Client>, ClientMut)> {
@@ -36,7 +35,6 @@ pub async fn connect<A: ToSocketAddrs>(remote_addr: A) -> io::Result<(Arc<Client
                 tick_packet_store: Vec::new(),
                 last_sent_packets: (0, SerializedPacketList { bytes: Vec::new() }),
             },
-            event_receiver: EventReceiver {},
         },
     ))
 }
@@ -49,7 +47,6 @@ pub async fn tick(
 ) -> io::Result<()> {
     println!("ticking for connected server");
     let mut packets_to_process: Vec<SerializedPacket> = Vec::new();
-    let connected_server = &mut client_mut.connected_server;
 
     let mut packet_buf_index = 0;
     let buf = &packets.bytes;
@@ -71,21 +68,27 @@ pub async fn tick(
     }
 
     for serialized_packet in packets_to_process {
-        let (_, deserialize, call) = client
+        let (_, deserialize) = client
             .packet_registry
-            .packet_map
+            .serde_map
             .get(&serialized_packet.packet_id)
             .expect(&format!(
                 "packet not found: {:?}",
                 serialized_packet.packet_id
             ));
         if let Ok(deserialized) = deserialize(&serialized_packet.bytes[4..]) {
-            call(&mut client_mut.event_receiver, deserialized);
+            let call = client
+                .packet_registry
+                .client_caller_map
+                .get(&serialized_packet.packet_id)
+                .unwrap();
+            call(client_mut, deserialized);
         } else {
             println!("failed to deserialize a packet of server, cancelling all iteration",);
             break;
         }
     }
+    let connected_server = &mut client_mut.connected_server;
 
     let packets = SerializedPacketList::create(std::mem::replace(
         &mut connected_server.tick_packet_store,
@@ -152,6 +155,10 @@ pub async fn read_next_message(
         }
     }
     Ok(())
+}
+
+pub fn call_event<P: Packet>(client_mut: &mut ClientMut, packet: &mut P) {
+    println!("packet event called in client: {:?}", packet);
 }
 
 pub struct ConnectedServer {

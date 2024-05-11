@@ -2,7 +2,7 @@ use tokio::net::ToSocketAddrs;
 
 use crate::packets::{Packet, PacketRegistry, SerializedPacket, SerializedPacketList};
 
-use super::{EventReceiver, Socket};
+use super::Socket;
 use std::{
     collections::HashMap,
     io,
@@ -20,7 +20,6 @@ pub struct Server {
 
 pub struct ServerMut {
     /*TODO: pub(crate)*/ pub connected_clients: HashMap<SocketAddr, ConnectedClient>,
-    event_receiver: EventReceiver,
 }
 
 pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<(Arc<Server>, ServerMut)> {
@@ -32,7 +31,6 @@ pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<(Arc<Server>, ServerM
         }),
         ServerMut {
             connected_clients: HashMap::new(),
-            event_receiver: EventReceiver {},
         },
     ))
 }
@@ -136,13 +134,18 @@ pub async fn tick(server: &Arc<Server>, server_mut: &mut ServerMut) -> io::Resul
 
     for (addr, packets_to_process) in clients_packets_to_process {
         for serialized_packet in packets_to_process {
-            let (_, deserialize, call) = server
+            let (_, deserialize) = server
                 .packet_registry
-                .packet_map
+                .serde_map
                 .get(&serialized_packet.packet_id)
                 .unwrap();
             if let Ok(deserialized) = deserialize(&serialized_packet.bytes[4..]) {
-                call(&mut server_mut.event_receiver, deserialized);
+                let call = server
+                    .packet_registry
+                    .server_caller_map
+                    .get(&serialized_packet.packet_id)
+                    .unwrap();
+                call(server_mut, deserialized);
             } else {
                 println!(
                     "failed to deserialize a packet of {:?}, cancelling all iteration",
@@ -228,6 +231,10 @@ pub async fn read_next_message(
         }
     }
     Ok(())
+}
+
+pub fn call_event<P: Packet>(server_mut: &mut ServerMut, packet: &mut P) {
+    println!("packet event called in server: {:?}", packet);
 }
 
 pub struct ConnectedClient {

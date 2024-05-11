@@ -7,24 +7,33 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::transport::EventReceiver;
-
 pub use lyanne_derive::Packet;
+
+#[cfg(feature = "client")]
+use crate::transport::client;
+
+#[cfg(feature = "server")]
+use crate::transport::server;
 
 pub trait Packet: Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any {}
 
 pub struct PacketRegistry {
     pub(crate) packet_type_ids: HashMap<TypeId, u16>,
-    pub(crate) packet_map: HashMap<
+    pub(crate) serde_map: HashMap<
         u16,
         (
             // Serialize, uses a `Packet`, and serialize it into a SerializedPacket
             Box<dyn Fn(&dyn Any) -> io::Result<SerializedPacket> + Send + Sync>,
             // Deserialize, uses a `Vec<u8>`, and deserialize it into a Packet
             Box<dyn Fn(&[u8]) -> io::Result<Box<dyn Any>> + Send + Sync>,
-            Box<dyn Fn(&mut EventReceiver, Box<dyn Any>) -> () + Send + Sync>,
         ),
     >,
+    #[cfg(feature = "client")]
+    pub(crate) client_caller_map:
+        HashMap<u16, Box<dyn Fn(&mut client::ClientMut, Box<dyn Any>) -> () + Send + Sync>>,
+    #[cfg(feature = "server")]
+    pub(crate) server_caller_map:
+        HashMap<u16, Box<dyn Fn(&mut server::ServerMut, Box<dyn Any>) -> () + Send + Sync>>,
     last_id: u16,
 }
 
@@ -32,8 +41,12 @@ impl PacketRegistry {
     pub fn new() -> Self {
         let mut exit = Self {
             packet_type_ids: HashMap::new(),
-            packet_map: HashMap::new(),
+            serde_map: HashMap::new(),
             last_id: 0,
+            #[cfg(feature = "client")]
+            client_caller_map: HashMap::new(),
+            #[cfg(feature = "server")]
+            server_caller_map: HashMap::new(),
         };
         exit.add::<FooPacket>();
         exit.add::<BarPacket>();
@@ -75,23 +88,37 @@ impl PacketRegistry {
             Ok(Box::new(packet))
         };
 
-        let call = |event_receiver: &mut EventReceiver, mut as_any: Box<dyn Any>| -> () {
-            let packet = as_any.downcast_mut::<P>().unwrap();
-            event_receiver.call_event::<P>(packet);
-        };
-        //TODO: println!("packet registered: {:?}, {:?}", type_id, packet_id);
-
         self.packet_type_ids.insert(type_id, packet_id);
-        self.packet_map.insert(
+        self.serde_map
+            .insert(packet_id, (Box::new(serialize), Box::new(deserialize)));
+
+        #[cfg(feature = "client")]
+        self.client_caller_map.insert(
             packet_id,
-            (Box::new(serialize), Box::new(deserialize), Box::new(call)),
+            Box::new(
+                |client_mut: &mut client::ClientMut, mut as_any: Box<dyn Any>| -> () {
+                    let packet = as_any.downcast_mut::<P>().unwrap();
+                    client::call_event::<P>(client_mut, packet);
+                },
+            ),
+        );
+
+        #[cfg(feature = "server")]
+        self.server_caller_map.insert(
+            packet_id,
+            Box::new(
+                |server_mut: &mut server::ServerMut, mut as_any: Box<dyn Any>| -> () {
+                    let packet = as_any.downcast_mut::<P>().unwrap();
+                    server::call_event::<P>(server_mut, packet);
+                },
+            ),
         );
     }
 
     pub fn serialize<P: Packet>(&self, packet: &P) -> io::Result<SerializedPacket> {
         let packet_id = self.packet_type_ids.get(&TypeId::of::<P>());
         if let Some(packet_id) = packet_id {
-            let (serialize, _, _) = self.packet_map.get(packet_id).unwrap();
+            let (serialize, _) = self.serde_map.get(packet_id).unwrap();
             let serialized = serialize(packet)?;
 
             Ok(serialized)
@@ -104,7 +131,7 @@ impl PacketRegistry {
     }
 
     pub fn deserialize(&self, serialized_packet: &SerializedPacket) -> io::Result<Box<dyn Any>> {
-        if let Some((_, deserialize, _)) = self.packet_map.get(&serialized_packet.packet_id) {
+        if let Some((_, deserialize)) = self.serde_map.get(&serialized_packet.packet_id) {
             let deserialized = deserialize(&serialized_packet.bytes[4..])?;
             Ok(deserialized)
         } else {
