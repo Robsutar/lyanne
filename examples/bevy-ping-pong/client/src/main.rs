@@ -111,9 +111,18 @@ fn read_bind_result(
                             .await
                             {
                                 Ok(buf) => {
+                                    let buf = buf.unwrap();
+                                    {
+                                        let mut rng = thread_rng();
+                                        if rng.gen_bool(0.1) {
+                                            println!("  packets received from server: {:?}, but a packet loss will be simulated", buf.len());
+                                            continue;
+                                        }
+                                    }
+
                                     client::read_next_message(
                                         Arc::clone(&client_read),
-                                        buf.unwrap(),
+                                        buf,
                                     )
                                     .await;
                                     println!();

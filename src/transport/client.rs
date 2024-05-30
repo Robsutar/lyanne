@@ -4,6 +4,7 @@ use crate::packets::{
 use crossbeam_channel as crossbeam;
 
 use super::Socket;
+use rand::{thread_rng, Rng};
 use std::{io, sync::Arc, time::Instant};
 use tokio::{net::ToSocketAddrs, runtime::Runtime};
 
@@ -115,6 +116,7 @@ pub async fn pre_read_next_message(client_read: &Arc<ClientRead>) -> io::Result<
 
 pub async fn read_next_message(client_read: Arc<ClientRead>, buf: Vec<u8>) {
     println!("received {:?} bytes from server", buf.len());
+
     if buf.len() == 0 {
         println!("  server sent a empty buf, ignoring it")
     } else {
