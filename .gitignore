@@ -16,3 +16,6 @@ Cargo.lock
 # IDE settings
 /.idea
 /.vscode
+
+# Ignore rust panics
+rustc-ice*
