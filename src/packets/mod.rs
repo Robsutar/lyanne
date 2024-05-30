@@ -121,25 +121,6 @@ impl PacketRegistry {
             .insert(packet_id, (Box::new(serialize), Box::new(deserialize)));
 
         #[cfg(all(feature = "use_bevy", feature = "client"))]
-        self.bevy_server_caller_map.insert(
-            packet_id,
-            Box::new(
-                |commands: &mut Commands, as_any: Box<PacketToDowncast>| -> () {
-                    let packet = *as_any.downcast::<P>().unwrap();
-                    commands.add(move |world: &mut World| {
-                        world.insert_resource(ServerPacketResource::<P> {
-                            packet: Some(packet),
-                        });
-                        if let Err(e) = P::run_server_schedule(world) {
-                            println!("failed to run server schedule, but that should be ok {}", e);
-                        }
-                        world.remove_resource::<ServerPacketResource<P>>().unwrap();
-                    });
-                },
-            ),
-        );
-
-        #[cfg(all(feature = "use_bevy", feature = "client"))]
         self.bevy_client_caller_map.insert(
             packet_id,
             Box::new(
