@@ -3,19 +3,47 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     io,
+    marker::PhantomData,
+    net::SocketAddr,
 };
 
+#[cfg(feature = "use_bevy")]
+use bevy::ecs::system::Commands;
+#[cfg(feature = "use_bevy")]
+use bevy::ecs::system::Resource;
+#[cfg(feature = "use_bevy")]
+use bevy::ecs::world::World;
+use bevy::log::tracing_subscriber::reload::Error;
 use serde::{Deserialize, Serialize};
 
 pub use lyanne_derive::Packet;
+pub trait Packet:
+    Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any + Send + Sync
+{
+    #[cfg(all(feature = "use_bevy", feature = "client"))]
+    fn run_client_schedule(
+        world: &mut World,
+    ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
 
-#[cfg(feature = "client")]
-use crate::transport::client;
+    #[cfg(all(feature = "use_bevy", feature = "server"))]
+    fn run_server_schedule(
+        world: &mut World,
+    ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
+}
 
-#[cfg(feature = "server")]
-use crate::transport::server;
+pub type PacketToDowncast = dyn Any + Send;
 
-pub trait Packet: Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any {}
+#[cfg(all(feature = "use_bevy", feature = "client"))]
+#[derive(Resource)]
+pub struct ClientPacketResource<P: Packet> {
+    pub packet: Option<P>,
+}
+
+#[cfg(all(feature = "use_bevy", feature = "server"))]
+#[derive(Resource)]
+pub struct ServerPacketResource<P: Packet> {
+    pub packet: Option<P>,
+}
 
 pub struct PacketRegistry {
     pub(crate) packet_type_ids: HashMap<TypeId, u16>,
@@ -23,17 +51,17 @@ pub struct PacketRegistry {
         u16,
         (
             // Serialize, uses a `Packet`, and serialize it into a SerializedPacket
-            Box<dyn Fn(&dyn Any) -> io::Result<SerializedPacket> + Send + Sync>,
+            Box<dyn Fn(&PacketToDowncast) -> io::Result<SerializedPacket> + Send + Sync>,
             // Deserialize, uses a `Vec<u8>`, and deserialize it into a Packet
-            Box<dyn Fn(&[u8]) -> io::Result<Box<dyn Any>> + Send + Sync>,
+            Box<dyn Fn(&[u8]) -> io::Result<Box<PacketToDowncast>> + Send + Sync>,
         ),
     >,
-    #[cfg(feature = "client")]
-    pub(crate) client_caller_map:
-        HashMap<u16, Box<dyn Fn(&mut client::ClientMut, Box<dyn Any>) -> () + Send + Sync>>,
-    #[cfg(feature = "server")]
-    pub(crate) server_caller_map:
-        HashMap<u16, Box<dyn Fn(&mut server::ServerMut, Box<dyn Any>) -> () + Send + Sync>>,
+    #[cfg(all(feature = "use_bevy", feature = "client"))]
+    pub(crate) bevy_client_caller_map:
+        HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
+    #[cfg(all(feature = "use_bevy", feature = "server"))]
+    pub(crate) bevy_server_caller_map:
+        HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
     last_id: u16,
 }
 
@@ -43,10 +71,10 @@ impl PacketRegistry {
             packet_type_ids: HashMap::new(),
             serde_map: HashMap::new(),
             last_id: 0,
-            #[cfg(feature = "client")]
-            client_caller_map: HashMap::new(),
-            #[cfg(feature = "server")]
-            server_caller_map: HashMap::new(),
+            #[cfg(all(feature = "use_bevy", feature = "client"))]
+            bevy_client_caller_map: HashMap::new(),
+            #[cfg(all(feature = "use_bevy", feature = "server"))]
+            bevy_server_caller_map: HashMap::new(),
         };
         exit.add::<FooPacket>();
         exit.add::<BarPacket>();
@@ -60,7 +88,7 @@ impl PacketRegistry {
 
         let packet_id_copy = packet_id;
         let packet_id_bytes = packet_id_copy.to_be_bytes();
-        let serialize = move |packet: &dyn Any| -> io::Result<SerializedPacket> {
+        let serialize = move |packet: &PacketToDowncast| -> io::Result<SerializedPacket> {
             let packet = packet
                 .downcast_ref::<P>()
                 .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "type mismatch"))?;
@@ -82,7 +110,7 @@ impl PacketRegistry {
             })
         };
 
-        let deserialize = |bytes: &[u8]| -> io::Result<Box<dyn Any>> {
+        let deserialize = |bytes: &[u8]| -> io::Result<Box<PacketToDowncast>> {
             let packet: P = bincode::deserialize(&bytes)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             Ok(Box::new(packet))
@@ -92,24 +120,59 @@ impl PacketRegistry {
         self.serde_map
             .insert(packet_id, (Box::new(serialize), Box::new(deserialize)));
 
-        #[cfg(feature = "client")]
-        self.client_caller_map.insert(
+        #[cfg(all(feature = "use_bevy", feature = "client"))]
+        self.bevy_server_caller_map.insert(
             packet_id,
             Box::new(
-                |client_mut: &mut client::ClientMut, mut as_any: Box<dyn Any>| -> () {
-                    let packet = as_any.downcast_mut::<P>().unwrap();
-                    client::call_event::<P>(client_mut, packet);
+                |commands: &mut Commands, as_any: Box<PacketToDowncast>| -> () {
+                    let packet = *as_any.downcast::<P>().unwrap();
+                    commands.add(move |world: &mut World| {
+                        world.insert_resource(ServerPacketResource::<P> {
+                            packet: Some(packet),
+                        });
+                        if let Err(e) = P::run_server_schedule(world) {
+                            println!("failed to run server schedule, but that should be ok {}", e);
+                        }
+                        world.remove_resource::<ServerPacketResource<P>>().unwrap();
+                    });
                 },
             ),
         );
 
-        #[cfg(feature = "server")]
-        self.server_caller_map.insert(
+        #[cfg(all(feature = "use_bevy", feature = "client"))]
+        self.bevy_client_caller_map.insert(
             packet_id,
             Box::new(
-                |server_mut: &mut server::ServerMut, mut as_any: Box<dyn Any>| -> () {
-                    let packet = as_any.downcast_mut::<P>().unwrap();
-                    server::call_event::<P>(server_mut, packet);
+                |commands: &mut Commands, as_any: Box<PacketToDowncast>| -> () {
+                    let packet = *as_any.downcast::<P>().unwrap();
+                    commands.add(move |world: &mut World| {
+                        world.insert_resource(ClientPacketResource::<P> {
+                            packet: Some(packet),
+                        });
+                        if let Err(e) = P::run_client_schedule(world) {
+                            println!("failed to run client schedule, but that should be ok {}", e);
+                        }
+                        world.remove_resource::<ClientPacketResource<P>>().unwrap();
+                    });
+                },
+            ),
+        );
+
+        #[cfg(all(feature = "use_bevy", feature = "server"))]
+        self.bevy_server_caller_map.insert(
+            packet_id,
+            Box::new(
+                |commands: &mut Commands, as_any: Box<PacketToDowncast>| -> () {
+                    let packet = *as_any.downcast::<P>().unwrap();
+                    commands.add(move |world: &mut World| {
+                        world.insert_resource(ServerPacketResource::<P> {
+                            packet: Some(packet),
+                        });
+                        if let Err(e) = P::run_server_schedule(world) {
+                            println!("failed to run server schedule, but that should be ok {}", e);
+                        }
+                        world.remove_resource::<ServerPacketResource<P>>().unwrap();
+                    });
                 },
             ),
         );
@@ -130,7 +193,10 @@ impl PacketRegistry {
         }
     }
 
-    pub fn deserialize(&self, serialized_packet: &SerializedPacket) -> io::Result<Box<dyn Any>> {
+    pub fn deserialize(
+        &self,
+        serialized_packet: &SerializedPacket,
+    ) -> io::Result<Box<PacketToDowncast>> {
         if let Some((_, deserialize)) = self.serde_map.get(&serialized_packet.packet_id) {
             let deserialized = deserialize(&serialized_packet.bytes[4..])?;
             Ok(deserialized)
@@ -140,6 +206,32 @@ impl PacketRegistry {
                 "packet_id not found",
             ))
         }
+    }
+
+    #[cfg(all(feature = "use_bevy", feature = "server"))]
+    pub fn bevy_server_call(
+        &self,
+        commands: &mut Commands,
+        deserialized_packet: DeserializedPacket,
+    ) {
+        let call = self
+            .bevy_server_caller_map
+            .get(&deserialized_packet.packet_id)
+            .unwrap();
+        call(commands, deserialized_packet.packet);
+    }
+
+    #[cfg(all(feature = "use_bevy", feature = "client"))]
+    pub fn bevy_client_call(
+        &self,
+        commands: &mut Commands,
+        deserialized_packet: DeserializedPacket,
+    ) {
+        let call = self
+            .bevy_client_caller_map
+            .get(&deserialized_packet.packet_id)
+            .unwrap();
+        call(commands, deserialized_packet.packet);
     }
 }
 
@@ -190,6 +282,56 @@ impl SerializedPacketList {
         }
 
         SerializedPacketList { bytes }
+    }
+}
+
+pub struct DeserializedPacket {
+    pub(crate) packet_id: u16,
+    pub(crate) packet: Box<PacketToDowncast>,
+}
+
+impl DeserializedPacket {
+    pub fn deserialize(
+        buf: &[u8],
+        packet_registry: &PacketRegistry,
+    ) -> io::Result<Vec<DeserializedPacket>> {
+        let mut packet_buf_index = 0;
+        let mut received_packets = Vec::<DeserializedPacket>::new();
+        loop {
+            if buf.len() == packet_buf_index {
+                break;
+            }
+
+            match SerializedPacket::read_first(buf, packet_buf_index) {
+                Ok(serialized_packet) => {
+                    packet_buf_index += serialized_packet.bytes.len();
+                    if let Some((_, deserialize)) =
+                        packet_registry.serde_map.get(&serialized_packet.packet_id)
+                    {
+                        match deserialize(&serialized_packet.bytes[4..]) {
+                            Ok(deserialized) => {
+                                received_packets.push(DeserializedPacket {
+                                    packet_id: serialized_packet.packet_id,
+                                    packet: deserialized,
+                                });
+                            }
+                            Err(e) => {
+                                return Err(e);
+                            }
+                        }
+                    } else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("packet id not registered: {}", serialized_packet.packet_id),
+                        ));
+                    }
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
+        Ok(received_packets)
     }
 }
 
