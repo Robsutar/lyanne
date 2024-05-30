@@ -5,4 +5,7 @@ edition = "2021"
 
 [dependencies]
 bevy-ping-pong = { path = "../" }
-lyanne = { path = "../../../", features = [ "bevy", "client" ] }
+bevy = "^0.13.0"
+lyanne = { path = "../../../", features = [ "use_bevy", "client" ] }
+tokio = { version = "^1.0.0", features = [ "full" ] }
+rand = "^0.8.0"

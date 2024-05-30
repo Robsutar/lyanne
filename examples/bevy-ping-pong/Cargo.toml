@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-lyanne = { path = "../../", features = [ "bevy" ] }
+bevy = "^0.13.0"
+lyanne = { path = "../../", features = [ "use_bevy" ] }
+tokio = { version = "^1.0.0", features = [ "full" ] }
+rand = "^0.8.0"
