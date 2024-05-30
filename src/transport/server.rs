@@ -6,6 +6,7 @@ use crate::packets::{
 };
 
 use super::Socket;
+use rand::{thread_rng, Rng};
 use std::{
     collections::HashMap,
     io::{self},
@@ -287,6 +288,16 @@ pub fn add_read_handler(
                 .await
                 {
                     Ok(tuple) => {
+                        let tuple = tuple.unwrap();
+                        {
+                            let mut rng = thread_rng();
+                            if rng.gen_bool(0.1) {
+                                println!("  packets received from {:?}: {:?}, but a packet loss will be simulated", 
+                                    tuple.1, tuple.0.len());
+                                continue;
+                            }
+                        }
+
                         if !was_used {
                             was_used = true;
                             let mut surplus_count = read_handler_props.surplus_count.lock().await;
@@ -295,7 +306,7 @@ pub fn add_read_handler(
                         read_next_message(
                             Arc::clone(&server_read),
                             Arc::clone(&server_shared),
-                            tuple.unwrap(),
+                            tuple,
                         )
                         .await;
                         println!();
