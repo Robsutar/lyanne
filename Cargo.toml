@@ -23,4 +23,4 @@ lyanne-derive = { path = "derive" }
 tokio = { version = "^1.0.0", features = [ "full" ] }
 serde = { version = "^1.0.0", features = [ "derive" ] }
 bincode = "^1.0.0"
-uuid = { version = "^1.0.0", features = [ "v4" ] }
+crossbeam-channel = { version = "^0.5" }
