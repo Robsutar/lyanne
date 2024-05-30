@@ -7,5 +7,10 @@ edition = "2021"
 syn = "^2.0.0"
 quote = "^1.0.0"
 
+[features]
+client = []
+server = []
+use_bevy = []
+
 [lib]
 proc-macro = true
