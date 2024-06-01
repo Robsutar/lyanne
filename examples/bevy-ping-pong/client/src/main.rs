@@ -111,7 +111,7 @@ fn read_bind_result(
                             .await
                             {
                                 Ok(buf) => {
-                                    let buf = buf.unwrap();
+                                    let buf: Vec<u8> = buf.unwrap();
                                     if true {
                                         let mut rng = thread_rng();
                                         if rng.gen_bool(0.1) {
