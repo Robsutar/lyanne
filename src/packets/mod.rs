@@ -246,6 +246,7 @@ impl SerializedPacket {
     }
 }
 
+#[derive(Clone)]
 pub struct SerializedPacketList {
     pub(crate) bytes: Vec<u8>,
 }
