@@ -88,18 +88,21 @@ pub fn tick(
         } else {
             let mut client_packets_to_process: Vec<DeserializedPacket> = Vec::new();
 
+            let mut index = 0;
+
             while let Some((serialized_cache_index, packets)) =
-                connected_client.pending_packets_confirmation.get(0)
+                connected_client.pending_packets_confirmation.get(index)
             {
                 if let Some(packets_to_process) = responses.remove(serialized_cache_index) {
                     client_packets_to_process.extend(packets_to_process);
                     let (serialized_cache_index, _) =
-                        connected_client.pending_packets_confirmation.remove(0);
+                        connected_client.pending_packets_confirmation.remove(index);
                     println!(
                         "  client successfully confirmed a pending packet {:?}",
                         serialized_cache_index
                     );
                 } else {
+                    index += 1;
                     println!(
                         "  pending packet confirmation {:?} from client {:?}, resending it",
                         serialized_cache_index, addr
@@ -115,7 +118,6 @@ pub fn tick(
                             .await
                             .expect("failed to send message in async");
                     });
-                    break;
                 }
             }
 
