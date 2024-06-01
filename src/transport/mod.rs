@@ -7,3 +7,5 @@ pub mod client;
 pub mod server;
 
 pub type Socket = UdpSocket;
+
+pub const MAX_PENDING_MESSAGES_STACK: usize = 2;
