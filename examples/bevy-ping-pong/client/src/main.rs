@@ -112,7 +112,7 @@ fn read_bind_result(
                             {
                                 Ok(buf) => {
                                     let buf = buf.unwrap();
-                                    {
+                                    if true {
                                         let mut rng = thread_rng();
                                         if rng.gen_bool(0.1) {
                                             println!("  packets received from server: {:?}, but a packet loss will be simulated", buf.len());
@@ -149,49 +149,41 @@ fn read_bind_result(
 
 fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>, x: Res<X>) {
     for mut client_connected in query.iter_mut() {
-        if let Ok(data_received) = client_connected
-            .client_mut
-            .connected_server
-            .received_packets_receiver
-            .try_recv()
-        {
-            let runtime = Arc::clone(&x.0);
-            let client_read = Arc::clone(&client_connected.client_read);
+        let runtime = Arc::clone(&x.0);
+        let client_read = Arc::clone(&client_connected.client_read);
 
-            if let Ok(mut packets_to_process) = client::tick(
-                Arc::clone(&client_read),
-                &mut client_connected.client_mut,
-                data_received,
-                Arc::clone(&runtime),
-            ) {
-                {
-                    println!("sending(storing) some random packets");
-                    let mut rng = thread_rng();
-                    for _ in 0..rng.gen_range(0..2) {
-                        let message = format!("Random str: {:?}", rng.gen::<i32>());
-                        if rng.gen_bool(0.5) {
-                            let packet = FooPacket { message };
-                            client_connected
-                                .client_mut
-                                .connected_server
-                                .send(&client_read, &packet)
-                                .unwrap();
-                        } else {
-                            let packet = BarPacket { message };
-                            client_connected
-                                .client_mut
-                                .connected_server
-                                .send(&client_read, &packet)
-                                .unwrap();
-                        }
+        if let Ok(mut packets_to_process) = client::tick(
+            Arc::clone(&client_read),
+            &mut client_connected.client_mut,
+            Arc::clone(&runtime),
+        ) {
+            {
+                println!("sending(storing) some random packets");
+                let mut rng = thread_rng();
+                for _ in 0..rng.gen_range(0..2) {
+                    let message = format!("Random str: {:?}", rng.gen::<i32>());
+                    if rng.gen_bool(0.5) {
+                        let packet = FooPacket { message };
+                        client_connected
+                            .client_mut
+                            .connected_server
+                            .send(&client_read, &packet)
+                            .unwrap();
+                    } else {
+                        let packet = BarPacket { message };
+                        client_connected
+                            .client_mut
+                            .connected_server
+                            .send(&client_read, &packet)
+                            .unwrap();
                     }
                 }
-                while packets_to_process.len() > 0 {
-                    let deserialized_packet = packets_to_process.remove(0);
-                    client_read
-                        .packet_registry
-                        .bevy_client_call(&mut commands, deserialized_packet);
-                }
+            }
+            while packets_to_process.len() > 0 {
+                let deserialized_packet = packets_to_process.remove(0);
+                client_read
+                    .packet_registry
+                    .bevy_client_call(&mut commands, deserialized_packet);
             }
         }
     }
