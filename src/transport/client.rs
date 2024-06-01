@@ -114,7 +114,10 @@ pub fn tick(
             {
                 if *stored_cache_index == cache_index {
                     println!("server packet loss, resending packet {:?}...", cache_index);
-                    let buf = packets.bytes.clone();
+
+                    let mut buf: Vec<u8> = Vec::with_capacity(1 + &packets.bytes.len());
+                    buf.push(cache_index);
+                    buf.extend(&packets.bytes);
 
                     let s1 = Arc::clone(&client_read);
                     runtime.spawn(async move {

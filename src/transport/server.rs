@@ -297,7 +297,7 @@ pub fn add_read_handler(
                 {
                     Ok(tuple) => {
                         let tuple = tuple.unwrap();
-                        if false {
+                        if true {
                             let mut rng = thread_rng();
                             if rng.gen_bool(0.1) {
                                 println!("  packets received from {:?}: {:?}, but a packet loss will be simulated", 
