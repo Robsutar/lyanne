@@ -1,8 +1,9 @@
 use crossbeam_channel as crossbeam;
 use tokio::{net::ToSocketAddrs, runtime::Runtime, time::timeout};
 
-use crate::packets::{
-    DeserializedPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
+use crate::{
+    packets::{DeserializedPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList},
+    transport::MAX_PENDING_MESSAGES_STACK,
 };
 
 use super::Socket;
@@ -69,60 +70,43 @@ pub fn tick(
     let mut clients_packets_to_process: HashMap<SocketAddr, Vec<DeserializedPacket>> =
         HashMap::new();
     for (addr, connected_client) in server_mut.connected_clients.iter_mut() {
-        if let Ok((cache_index, packets_to_process)) =
-            connected_client.received_packets_receiver.try_recv()
-        {
-            if connected_client.pending_packets_confirmation.is_empty() {
-                //TODO: that should never happen?
-                println!("    client sent a message, but it is not authorized yet");
+        let mut responses = HashMap::<u8, Vec<DeserializedPacket>>::new();
+        for _ in 0..MAX_PENDING_MESSAGES_STACK {
+            if let Ok((cache_index, packets_to_process)) =
+                connected_client.received_packets_receiver.try_recv()
+            {
+                responses.insert(cache_index, packets_to_process);
             } else {
-                let (serialized_cache_index, _) = connected_client
-                    .pending_packets_confirmation
-                    .get(0)
-                    .unwrap();
-
-                if *serialized_cache_index == cache_index {
-                    connected_client.last_response = Instant::now();
-                    connected_client.pending_packets_confirmation.remove(0);
-
-                    if let Some((serialized_cache_index, packets)) =
-                        connected_client.pending_packets_confirmation.get(0)
-                    {
-                        let mut buf: Vec<u8> = Vec::with_capacity(1 + &packets.bytes.len());
-                        buf.push(*serialized_cache_index);
-                        buf.extend(&packets.bytes);
-                        println!(
-                            "  trying resent packet that the client did not confirmed, size: {:?}",
-                            buf.len()
-                        );
-                        let s1 = Arc::clone(&server_read);
-                        let addr1 = addr.clone();
-                        runtime.spawn(async move {
-                            s1.socket
-                                .send_to(&buf, addr1)
-                                .await
-                                .expect("failed to send message in async");
-                        });
-                    }
-
-                    clients_packets_to_process.insert(addr.clone(), packets_to_process);
-                } else {
-                    println!("    client sent a message, but there is no concurrency");
-                }
+                break;
             }
+        }
+
+        if now - connected_client.last_response >= TIMEOUT {
+            println!("  client timeout: {:?}, disconnecting...", addr);
+            to_disconnect.push(*addr);
+            continue;
         } else {
-            if now - connected_client.last_response >= TIMEOUT {
-                println!("  client timeout: {:?}, disconnecting...", addr);
-                to_disconnect.push(*addr);
-                continue;
-            } else {
-                if let Some((serialized_cache_index, packets)) =
-                    connected_client.pending_packets_confirmation.get(0)
-                {
+            let mut client_packets_to_process: Vec<DeserializedPacket> = Vec::new();
+
+            while let Some((serialized_cache_index, packets)) =
+                connected_client.pending_packets_confirmation.get(0)
+            {
+                if let Some(packets_to_process) = responses.remove(serialized_cache_index) {
+                    client_packets_to_process.extend(packets_to_process);
+                    let (serialized_cache_index, _) =
+                        connected_client.pending_packets_confirmation.remove(0);
+                    println!(
+                        "  client successfully confirmed a pending packet {:?}",
+                        serialized_cache_index
+                    );
+                } else {
+                    println!(
+                        "  pending packet confirmation {:?} from client {:?}, resending it",
+                        serialized_cache_index, addr
+                    );
                     let mut buf: Vec<u8> = Vec::with_capacity(1 + &packets.bytes.len());
                     buf.push(*serialized_cache_index);
                     buf.extend(&packets.bytes);
-                    println!("  client packet loss: {:?}, resending...", addr);
                     let s1 = Arc::clone(&server_read);
                     let addr1 = addr.clone();
                     runtime.spawn(async move {
@@ -131,14 +115,20 @@ pub fn tick(
                             .await
                             .expect("failed to send message in async");
                     });
-                } else {
-                    //TODO: that should never happen?
-                    println!("    client packet loss but... there is no packet to send back");
+                    break;
                 }
             }
-        }
 
-        {
+            clients_packets_to_process.insert(addr.clone(), client_packets_to_process);
+
+            if !responses.is_empty() {
+                println!(
+                    "  client {:?} sent overflow packets, discarding them: {:?}",
+                    addr,
+                    responses.keys()
+                );
+            }
+
             connected_client.last_serialized_cache_index =
                 connected_client.last_serialized_cache_index.wrapping_add(1);
             let cache_index = connected_client.last_serialized_cache_index;
@@ -146,7 +136,15 @@ pub fn tick(
                 &mut connected_client.tick_packet_store,
                 Vec::new(),
             ));
-            if connected_client.pending_packets_confirmation.is_empty() {
+            if now - connected_client.last_response >= TIMEOUT {
+                println!("  client timeout: {:?}, disconnecting...", addr);
+                to_disconnect.push(*addr);
+                continue;
+            } else if connected_client.pending_packets_confirmation.len()
+                < MAX_PENDING_MESSAGES_STACK
+            {
+                connected_client.last_response = Instant::now();
+
                 let mut buf: Vec<u8> = Vec::with_capacity(1 + &packets.bytes.len());
                 buf.push(cache_index);
                 buf.extend(&packets.bytes);
@@ -166,7 +164,15 @@ pub fn tick(
                         .expect("failed to send message in async");
                 });
             } else {
-                println!("  caching a packet, since the client has packets to response");
+                println!(
+                    "  caching a packet, since the client has {:?} packets to response",
+                    connected_client
+                        .pending_packets_confirmation
+                        .iter()
+                        .map(|(a, _)| a.to_string())
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                );
                 connected_client
                     .pending_packets_confirmation
                     .push((cache_index, packets));
@@ -289,7 +295,7 @@ pub fn add_read_handler(
                 {
                     Ok(tuple) => {
                         let tuple = tuple.unwrap();
-                        {
+                        if false {
                             let mut rng = thread_rng();
                             if rng.gen_bool(0.1) {
                                 println!("  packets received from {:?}: {:?}, but a packet loss will be simulated", 

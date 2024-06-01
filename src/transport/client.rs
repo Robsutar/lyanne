@@ -1,11 +1,17 @@
-use crate::packets::{
-    DeserializedPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
+use crate::{
+    packets::{DeserializedPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList},
+    transport::MAX_PENDING_MESSAGES_STACK,
 };
 use crossbeam_channel as crossbeam;
 
 use super::Socket;
 use rand::{thread_rng, Rng};
-use std::{io, sync::Arc, time::Instant};
+use std::{
+    collections::{BTreeMap, HashMap},
+    io,
+    sync::Arc,
+    time::Instant,
+};
 use tokio::{net::ToSocketAddrs, runtime::Runtime};
 
 pub struct ClientRead {
@@ -43,7 +49,10 @@ pub async fn connect<A: ToSocketAddrs>(
             connected_server: ConnectedServerMut {
                 last_response: Instant::now(),
                 tick_packet_store: Vec::new(),
-                last_sent_packets: (0, SerializedPacketList { bytes: Vec::new() }),
+                stored_packets_confirmation: vec![
+                    (0u8, SerializedPacketList { bytes: Vec::new() });
+                    MAX_PENDING_MESSAGES_STACK
+                ],
                 received_packets_receiver,
             },
         },
@@ -53,59 +62,87 @@ pub async fn connect<A: ToSocketAddrs>(
 pub fn tick(
     client_read: Arc<ClientRead>,
     client_mut: &mut ClientMut,
-    data_received: (u8, Vec<DeserializedPacket>),
     runtime: Arc<Runtime>,
 ) -> io::Result<Vec<DeserializedPacket>> {
-    println!("ticking for connected server");
-    let (cache_index, received_packets) = data_received;
-
     let connected_server = &mut client_mut.connected_server;
-    if cache_index == connected_server.last_sent_packets.0 {
-        //Server has loosed last sent packet, so, the client will interpret it as a packet loss, and resend the cached value
-        println!("server packet loss, resending last packet...");
-        let buf = connected_server.last_sent_packets.1.bytes.clone();
+    if let Ok((cache_index, received_packets)) =
+        connected_server.received_packets_receiver.try_recv()
+    {
+        println!("ticking for server");
 
-        let s1 = Arc::clone(&client_read);
-        runtime.spawn(async move {
-            s1.socket
-                .send(&buf)
-                .await
-                .expect("failed to send message in async");
-        });
-
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "server packet loss",
-        ))
-    } else {
-        println!("server sent a new tick, cache_index: {:?}", cache_index);
-
-        let connected_server = &mut client_mut.connected_server;
-
-        let packets = SerializedPacketList::create(std::mem::replace(
-            &mut connected_server.tick_packet_store,
-            Vec::new(),
-        ));
-
-        let mut buf: Vec<u8> = Vec::with_capacity(1 + &packets.bytes.len());
-        buf.push(cache_index);
-        buf.extend(&packets.bytes);
-
-        connected_server.last_response = Instant::now();
-        connected_server.last_sent_packets = (cache_index, packets);
-
+        if cache_index
+            == connected_server
+                .stored_packets_confirmation
+                .last()
+                .unwrap()
+                .0
+                .wrapping_add(1)
         {
-            let s1 = Arc::clone(&client_read);
-            runtime.spawn(async move {
-                s1.socket
-                    .send(&buf)
-                    .await
-                    .expect("failed to send message in async");
-            });
-        }
+            println!("server sent a new tick, cache_index: {:?}", cache_index);
 
-        return Ok(received_packets);
+            let connected_server = &mut client_mut.connected_server;
+
+            let packets = SerializedPacketList::create(std::mem::replace(
+                &mut connected_server.tick_packet_store,
+                Vec::new(),
+            ));
+
+            let mut buf: Vec<u8> = Vec::with_capacity(1 + &packets.bytes.len());
+            buf.push(cache_index);
+            buf.extend(&packets.bytes);
+
+            connected_server.last_response = Instant::now();
+            connected_server.stored_packets_confirmation.remove(0);
+            connected_server
+                .stored_packets_confirmation
+                .push((cache_index, packets));
+
+            {
+                let s1 = Arc::clone(&client_read);
+                runtime.spawn(async move {
+                    s1.socket
+                        .send(&buf)
+                        .await
+                        .expect("failed to send message in async");
+                });
+            }
+
+            return Ok(received_packets);
+        } else {
+            for (stored_cache_index, packets) in
+                connected_server.stored_packets_confirmation.iter().rev()
+            {
+                if *stored_cache_index == cache_index {
+                    println!("server packet loss, resending packet {:?}...", cache_index);
+                    let buf = packets.bytes.clone();
+
+                    let s1 = Arc::clone(&client_read);
+                    runtime.spawn(async move {
+                        s1.socket
+                            .send(&buf)
+                            .await
+                            .expect("failed to send message in async");
+                    });
+
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "server packet loss",
+                    ));
+                }
+            }
+
+            println!("server sent a packet, but the cache_index was not found, ignoring it");
+
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "server invalid packet loss",
+            ));
+        }
     }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "server sent nothing",
+    ))
 }
 
 pub async fn pre_read_next_message(client_read: &Arc<ClientRead>) -> io::Result<Vec<u8>> {
@@ -150,7 +187,8 @@ pub struct ConnectedServerShared {
 pub struct ConnectedServerMut {
     pub(crate) last_response: Instant,
     pub(crate) tick_packet_store: Vec<SerializedPacket>,
-    pub(crate) last_sent_packets: (u8, SerializedPacketList),
+    // size should be equals to MAX_PENDING_MESSAGES_STACK
+    pub(crate) stored_packets_confirmation: Vec<(u8, SerializedPacketList)>,
     pub received_packets_receiver: crossbeam::Receiver<(u8, Vec<DeserializedPacket>)>,
 }
 
