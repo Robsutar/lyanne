@@ -9,6 +9,7 @@
 		{"id":"b051707c7349d3d2","type":"text","text":"orange lines = REPEAT action","x":-920,"y":-627,"width":180,"height":73,"color":"2"},
 		{"id":"fc10e884c304b539","type":"text","text":"green lines = OR action","x":-920,"y":-520,"width":174,"height":73,"color":"4"},
 		{"id":"fda822621f58b83f","type":"text","text":"server tick","x":-205,"y":-590,"width":164,"height":50},
+		{"id":"e2dd84d179886cbf","type":"text","text":"client tick","x":-513,"y":-590,"width":210,"height":50},
 		{"id":"a9eee3bb47976a62","type":"text","text":"packet loss","x":43,"y":-130,"width":156,"height":50},
 		{"id":"ed5a9afc5ee46c72","type":"text","text":"do nothing, the server will attempt resend the packet","x":281,"y":-307,"width":208,"height":97},
 		{"id":"ea5bf416d1c0fc2a","type":"text","text":"client received successfully","x":293,"y":20,"width":181,"height":60},
@@ -22,8 +23,7 @@
 		{"id":"b4cd2afec0869ddf","type":"text","text":"store part in pending_client_confirmation","x":-680,"y":-40,"width":294,"height":65},
 		{"id":"f3eda41d4bfceb91","type":"text","text":"send part to client, all at once","x":-340,"y":-40,"width":217,"height":60},
 		{"id":"bba254b0319aed4d","type":"text","text":"remove part from pending_client_confirmation","x":-525,"y":55,"width":294,"height":60},
-		{"id":"f729bf5477f857e9","type":"text","text":"pending_client_confirmation is empty","x":-680,"y":-507,"width":250,"height":60},
-		{"id":"e2dd84d179886cbf","type":"text","text":"client tick","x":-513,"y":-590,"width":210,"height":50}
+		{"id":"f729bf5477f857e9","type":"text","text":"pending_client_confirmation is empty","x":-628,"y":-440,"width":250,"height":60}
 	],
 	"edges":[
 		{"id":"0770e7dedbc2224f","fromNode":"c76e90cb97cfdd81","fromSide":"bottom","toNode":"eba4d740cd898225","toSide":"top"},
