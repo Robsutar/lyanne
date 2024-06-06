@@ -51,9 +51,8 @@ pub async fn connect<A: ToSocketAddrs>(
                 tick_packet_store: Vec::new(),
                 stored_packets_confirmation: vec![
                     (0u8, SerializedPacketList { bytes: Vec::new() });
-                    MAX_PENDING_MESSAGES_STACK.into()
+                    MAX_PENDING_MESSAGES_STACK
                 ],
-                advanced_tick_stored: Vec::new(),
                 received_packets_receiver,
             },
         },
@@ -66,10 +65,12 @@ pub fn tick(
     runtime: Arc<Runtime>,
 ) -> io::Result<Vec<DeserializedPacket>> {
     let connected_server = &mut client_mut.connected_server;
+    if let Ok((cache_index, received_packets)) =
+        connected_server.received_packets_receiver.try_recv()
+    {
+        println!("ticking for server");
 
-    for index in 0..connected_server.advanced_tick_stored.len() {
-        let (cache_index, _) = connected_server.advanced_tick_stored.get(index).unwrap();
-        if *cache_index
+        if cache_index
             == connected_server
                 .stored_packets_confirmation
                 .last()
@@ -77,9 +78,6 @@ pub fn tick(
                 .0
                 .wrapping_add(1)
         {
-            let (cache_index, received_packets) =
-                connected_server.advanced_tick_stored.remove(index);
-
             println!("server sent a new tick, cache_index: {:?}", cache_index);
 
             let connected_server = &mut client_mut.connected_server;
@@ -110,40 +108,7 @@ pub fn tick(
             }
 
             return Ok(received_packets);
-        }
-    }
-
-    if let Ok((cache_index, received_packets)) =
-        connected_server.received_packets_receiver.try_recv()
-    {
-        for add in 1..MAX_PENDING_MESSAGES_STACK + 1 {
-            if cache_index
-                == connected_server
-                    .stored_packets_confirmation
-                    .last()
-                    .unwrap()
-                    .0
-                    .wrapping_add(add)
-            {
-                println!(
-                    "server sent a tick to store, cache_index: {:?}",
-                    cache_index
-                );
-                while connected_server.advanced_tick_stored.len()
-                    > MAX_PENDING_MESSAGES_STACK.into()
-                {
-                    connected_server.advanced_tick_stored.remove(0);
-                }
-                connected_server
-                    .advanced_tick_stored
-                    .push((cache_index, received_packets));
-
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "server sent a tick to store",
-                ));
-            }
-
+        } else {
             for (stored_cache_index, packets) in
                 connected_server.stored_packets_confirmation.iter().rev()
             {
@@ -167,17 +132,14 @@ pub fn tick(
                         "server packet loss",
                     ));
                 }
-
-                println!(
-                    "server sent a packet: {:?}, but the cache_index was not found, ignoring it",
-                    cache_index
-                );
-
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "server invalid packet loss",
-                ));
             }
+
+            println!("server sent a packet, but the cache_index was not found, ignoring it");
+
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "server invalid packet loss",
+            ));
         }
     }
     Err(io::Error::new(
@@ -230,7 +192,6 @@ pub struct ConnectedServerMut {
     pub(crate) tick_packet_store: Vec<SerializedPacket>,
     // size should be equals to MAX_PENDING_MESSAGES_STACK
     pub(crate) stored_packets_confirmation: Vec<(u8, SerializedPacketList)>,
-    pub(crate) advanced_tick_stored: Vec<(u8, Vec<DeserializedPacket>)>,
     pub received_packets_receiver: crossbeam::Receiver<(u8, Vec<DeserializedPacket>)>,
 }
 

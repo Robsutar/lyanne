@@ -2,6 +2,9 @@ use std::{
     any::{Any, TypeId},
     collections::HashMap,
     fmt::Debug,
+    io,
+    marker::PhantomData,
+    net::SocketAddr,
 };
 
 #[cfg(feature = "use_bevy")]
@@ -10,6 +13,7 @@ use bevy::ecs::system::Commands;
 use bevy::ecs::system::Resource;
 #[cfg(feature = "use_bevy")]
 use bevy::ecs::world::World;
+use bevy::log::tracing_subscriber::reload::Error;
 use serde::{Deserialize, Serialize};
 
 pub use lyanne_derive::Packet;
@@ -27,7 +31,7 @@ pub trait Packet:
     ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
 }
 
-pub type PacketToDowncast = dyn Any + Send + Sync;
+pub type PacketToDowncast = dyn Any + Send;
 
 #[cfg(all(feature = "use_bevy", feature = "client"))]
 #[derive(Resource)]
@@ -42,21 +46,21 @@ pub struct ServerPacketResource<P: Packet> {
 }
 
 pub struct PacketRegistry {
-    packet_type_ids: HashMap<TypeId, u16>,
-    serde_map: HashMap<
+    pub(crate) packet_type_ids: HashMap<TypeId, u16>,
+    pub(crate) serde_map: HashMap<
         u16,
         (
             // Serialize, uses a `Packet`, and serialize it into a SerializedPacket
-            Box<dyn Fn(&PacketToDowncast) -> Result<SerializedPacket, String> + Send + Sync>,
+            Box<dyn Fn(&PacketToDowncast) -> io::Result<SerializedPacket> + Send + Sync>,
             // Deserialize, uses a `Vec<u8>`, and deserialize it into a Packet
-            Box<dyn Fn(&[u8]) -> Result<Box<PacketToDowncast>, String> + Send + Sync>,
+            Box<dyn Fn(&[u8]) -> io::Result<Box<PacketToDowncast>> + Send + Sync>,
         ),
     >,
     #[cfg(all(feature = "use_bevy", feature = "client"))]
-    bevy_client_caller_map:
+    pub(crate) bevy_client_caller_map:
         HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
     #[cfg(all(feature = "use_bevy", feature = "server"))]
-    bevy_server_caller_map:
+    pub(crate) bevy_server_caller_map:
         HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
     last_id: u16,
 }
@@ -84,12 +88,13 @@ impl PacketRegistry {
 
         let packet_id_copy = packet_id;
         let packet_id_bytes = packet_id_copy.to_be_bytes();
-        let serialize = move |packet: &PacketToDowncast| -> Result<SerializedPacket, String> {
+        let serialize = move |packet: &PacketToDowncast| -> io::Result<SerializedPacket> {
             let packet = packet
                 .downcast_ref::<P>()
-                .ok_or_else(|| "type mismatch".to_owned())?;
+                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "type mismatch"))?;
 
-            let bytes = bincode::serialize(packet).map_err(|e| e.to_string())?;
+            let bytes =
+                bincode::serialize(packet).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             let packet_length = bytes.len() as u16;
             let packet_length_bytes = packet_length.to_be_bytes();
@@ -105,8 +110,9 @@ impl PacketRegistry {
             })
         };
 
-        let deserialize = |bytes: &[u8]| -> Result<Box<PacketToDowncast>, String> {
-            let packet: P = bincode::deserialize(&bytes).map_err(|e| e.to_string())?;
+        let deserialize = |bytes: &[u8]| -> io::Result<Box<PacketToDowncast>> {
+            let packet: P = bincode::deserialize(&bytes)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             Ok(Box::new(packet))
         };
 
@@ -144,8 +150,7 @@ impl PacketRegistry {
                             packet: Some(packet),
                         });
                         if let Err(e) = P::run_server_schedule(world) {
-                            // TODO: remove this
-                            println!("Failed to run server schedule, but that should be ok {}", e);
+                            println!("failed to run server schedule, but that should be ok {}", e);
                         }
                         world.remove_resource::<ServerPacketResource<P>>().unwrap();
                     });
@@ -154,7 +159,7 @@ impl PacketRegistry {
         );
     }
 
-    pub fn serialize<P: Packet>(&self, packet: &P) -> Result<SerializedPacket, String> {
+    pub fn serialize<P: Packet>(&self, packet: &P) -> io::Result<SerializedPacket> {
         let packet_id = self.packet_type_ids.get(&TypeId::of::<P>());
         if let Some(packet_id) = packet_id {
             let (serialize, _) = self.serde_map.get(packet_id).unwrap();
@@ -162,19 +167,25 @@ impl PacketRegistry {
 
             Ok(serialized)
         } else {
-            Err("Packet id not found".to_owned())
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "packet id not found",
+            ))
         }
     }
 
     pub fn deserialize(
         &self,
         serialized_packet: &SerializedPacket,
-    ) -> Result<Box<PacketToDowncast>, String> {
+    ) -> io::Result<Box<PacketToDowncast>> {
         if let Some((_, deserialize)) = self.serde_map.get(&serialized_packet.packet_id) {
             let deserialized = deserialize(&serialized_packet.bytes[4..])?;
             Ok(deserialized)
         } else {
-            Err("Packet id not found".to_owned())
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "packet_id not found",
+            ))
         }
     }
 
@@ -211,17 +222,20 @@ pub struct SerializedPacket {
 }
 
 impl SerializedPacket {
-    pub fn read_first(buf: &[u8], packet_buf_index: usize) -> Result<SerializedPacket, String> {
+    pub fn read_first(buf: &[u8], packet_buf_index: usize) -> io::Result<SerializedPacket> {
         let packet_id = u16::from_be_bytes([buf[packet_buf_index], buf[packet_buf_index + 1]]);
         let packet_length: u16 =
             u16::from_be_bytes([buf[packet_buf_index + 2], buf[packet_buf_index + 3]]);
 
         let packet_size: usize = packet_length.into();
         if buf.len() < 4 + packet_buf_index + packet_size {
-            Err(format!(
-                "Buf size ({:}) is not big sufficient, minimal is {:?}",
-                buf.len(),
-                4 + packet_buf_index + packet_size
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "buf len ({:}) is not big sufficient, minimal is {:?}",
+                    buf.len(),
+                    4 + packet_buf_index + packet_size
+                ),
             ))
         } else {
             Ok(SerializedPacket {
@@ -232,16 +246,37 @@ impl SerializedPacket {
     }
 }
 
+#[derive(Clone)]
+pub struct SerializedPacketList {
+    pub(crate) bytes: Vec<u8>,
+}
+
+impl SerializedPacketList {
+    pub fn create(stored: Vec<SerializedPacket>) -> SerializedPacketList {
+        let total_size = stored
+            .iter()
+            .map(|packet| packet.bytes.len())
+            .sum::<usize>();
+        let mut bytes = Vec::with_capacity(total_size);
+
+        for packet in stored {
+            bytes.extend(packet.bytes);
+        }
+
+        SerializedPacketList { bytes }
+    }
+}
+
 pub struct DeserializedPacket {
-    packet_id: u16,
-    packet: Box<PacketToDowncast>,
+    pub(crate) packet_id: u16,
+    pub(crate) packet: Box<PacketToDowncast>,
 }
 
 impl DeserializedPacket {
-    pub fn deserialize_list(
+    pub fn deserialize(
         buf: &[u8],
         packet_registry: &PacketRegistry,
-    ) -> Result<Vec<DeserializedPacket>, String> {
+    ) -> io::Result<Vec<DeserializedPacket>> {
         let mut packet_buf_index = 0;
         let mut received_packets = Vec::<DeserializedPacket>::new();
         loop {
@@ -267,9 +302,9 @@ impl DeserializedPacket {
                             }
                         }
                     } else {
-                        return Err(format!(
-                            "packet id not registered: {}",
-                            serialized_packet.packet_id
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("packet id not registered: {}", serialized_packet.packet_id),
                         ));
                     }
                 }
@@ -280,6 +315,12 @@ impl DeserializedPacket {
         }
         Ok(received_packets)
     }
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct AuthPacket {
+    pub registry_length: u16,
+    pub additional_bytes: Vec<u8>,
 }
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
