@@ -1,4 +1,4 @@
-#[cfg(feature = "use_bevy")]
-pub mod bevy;
+pub mod collections;
+pub mod messages;
 pub mod packets;
 pub mod transport;
