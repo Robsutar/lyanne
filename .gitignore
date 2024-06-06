@@ -19,3 +19,6 @@ Cargo.lock
 
 # Ignore rust panics
 rustc-ice*
+
+# Ignore Obsidian.md files
+.obsidian
