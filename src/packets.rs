@@ -3,8 +3,6 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     io,
-    marker::PhantomData,
-    net::SocketAddr,
 };
 
 #[cfg(feature = "use_bevy")]
@@ -13,7 +11,6 @@ use bevy::ecs::system::Commands;
 use bevy::ecs::system::Resource;
 #[cfg(feature = "use_bevy")]
 use bevy::ecs::world::World;
-use bevy::log::tracing_subscriber::reload::Error;
 use serde::{Deserialize, Serialize};
 
 pub use lyanne_derive::Packet;
@@ -31,7 +28,7 @@ pub trait Packet:
     ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
 }
 
-pub type PacketToDowncast = dyn Any + Send;
+pub type PacketToDowncast = dyn Any + Send + Sync;
 
 #[cfg(all(feature = "use_bevy", feature = "client"))]
 #[derive(Resource)]
@@ -46,8 +43,8 @@ pub struct ServerPacketResource<P: Packet> {
 }
 
 pub struct PacketRegistry {
-    pub(crate) packet_type_ids: HashMap<TypeId, u16>,
-    pub(crate) serde_map: HashMap<
+    packet_type_ids: HashMap<TypeId, u16>,
+    serde_map: HashMap<
         u16,
         (
             // Serialize, uses a `Packet`, and serialize it into a SerializedPacket
@@ -57,10 +54,10 @@ pub struct PacketRegistry {
         ),
     >,
     #[cfg(all(feature = "use_bevy", feature = "client"))]
-    pub(crate) bevy_client_caller_map:
+    bevy_client_caller_map:
         HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
     #[cfg(all(feature = "use_bevy", feature = "server"))]
-    pub(crate) bevy_server_caller_map:
+    bevy_server_caller_map:
         HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
     last_id: u16,
 }
@@ -76,6 +73,10 @@ impl PacketRegistry {
             #[cfg(all(feature = "use_bevy", feature = "server"))]
             bevy_server_caller_map: HashMap::new(),
         };
+        exit.add::<ConfirmAuthenticationPacket>();
+        exit.add::<ClientTickCalledPacket>();
+        exit.add::<ServerTickCalledPacket>();
+        //TODO: remove these two
         exit.add::<FooPacket>();
         exit.add::<BarPacket>();
         exit
@@ -89,12 +90,12 @@ impl PacketRegistry {
         let packet_id_copy = packet_id;
         let packet_id_bytes = packet_id_copy.to_be_bytes();
         let serialize = move |packet: &PacketToDowncast| -> io::Result<SerializedPacket> {
-            let packet = packet
-                .downcast_ref::<P>()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "type mismatch"))?;
+            let packet = packet.downcast_ref::<P>().ok_or_else(|| {
+                return io::Error::new(io::ErrorKind::InvalidData, "Type mismatch");
+            })?;
 
-            let bytes =
-                bincode::serialize(packet).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            let bytes = bincode::serialize(packet)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
             let packet_length = bytes.len() as u16;
             let packet_length_bytes = packet_length.to_be_bytes();
@@ -112,7 +113,7 @@ impl PacketRegistry {
 
         let deserialize = |bytes: &[u8]| -> io::Result<Box<PacketToDowncast>> {
             let packet: P = bincode::deserialize(&bytes)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
             Ok(Box::new(packet))
         };
 
@@ -150,7 +151,8 @@ impl PacketRegistry {
                             packet: Some(packet),
                         });
                         if let Err(e) = P::run_server_schedule(world) {
-                            println!("failed to run server schedule, but that should be ok {}", e);
+                            // TODO: remove this
+                            println!("Failed to run server schedule, but that should be ok {}", e);
                         }
                         world.remove_resource::<ServerPacketResource<P>>().unwrap();
                     });
@@ -167,10 +169,10 @@ impl PacketRegistry {
 
             Ok(serialized)
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "packet id not found",
-            ))
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Packet id not found".to_owned(),
+            ));
         }
     }
 
@@ -182,10 +184,10 @@ impl PacketRegistry {
             let deserialized = deserialize(&serialized_packet.bytes[4..])?;
             Ok(deserialized)
         } else {
-            Err(io::Error::new(
+            return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "packet_id not found",
-            ))
+                "Packet id not found",
+            ));
         }
     }
 
@@ -222,6 +224,13 @@ pub struct SerializedPacket {
 }
 
 impl SerializedPacket {
+    pub fn clone(&self) -> Self {
+        Self {
+            packet_id: self.packet_id,
+            bytes: self.bytes.clone(),
+        }
+    }
+
     pub fn read_first(buf: &[u8], packet_buf_index: usize) -> io::Result<SerializedPacket> {
         let packet_id = u16::from_be_bytes([buf[packet_buf_index], buf[packet_buf_index + 1]]);
         let packet_length: u16 =
@@ -229,51 +238,31 @@ impl SerializedPacket {
 
         let packet_size: usize = packet_length.into();
         if buf.len() < 4 + packet_buf_index + packet_size {
-            Err(io::Error::new(
+            return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
-                    "buf len ({:}) is not big sufficient, minimal is {:?}",
+                    "Buf size ({:}) is not big sufficient, minimal is {:?}",
                     buf.len(),
                     4 + packet_buf_index + packet_size
                 ),
-            ))
+            ));
         } else {
-            Ok(SerializedPacket {
+            return Ok(SerializedPacket {
                 packet_id,
                 bytes: buf[packet_buf_index..4 + packet_buf_index + packet_size].to_vec(),
-            })
+            });
         }
     }
 }
 
-#[derive(Clone)]
-pub struct SerializedPacketList {
-    pub(crate) bytes: Vec<u8>,
-}
-
-impl SerializedPacketList {
-    pub fn create(stored: Vec<SerializedPacket>) -> SerializedPacketList {
-        let total_size = stored
-            .iter()
-            .map(|packet| packet.bytes.len())
-            .sum::<usize>();
-        let mut bytes = Vec::with_capacity(total_size);
-
-        for packet in stored {
-            bytes.extend(packet.bytes);
-        }
-
-        SerializedPacketList { bytes }
-    }
-}
-
+#[derive(Debug)]
 pub struct DeserializedPacket {
-    pub(crate) packet_id: u16,
-    pub(crate) packet: Box<PacketToDowncast>,
+    packet_id: u16,
+    packet: Box<PacketToDowncast>,
 }
 
 impl DeserializedPacket {
-    pub fn deserialize(
+    pub fn deserialize_list(
         buf: &[u8],
         packet_registry: &PacketRegistry,
     ) -> io::Result<Vec<DeserializedPacket>> {
@@ -298,18 +287,18 @@ impl DeserializedPacket {
                                 });
                             }
                             Err(e) => {
-                                return Err(e);
+                                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
                             }
                         }
                     } else {
                         return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
+                            io::ErrorKind::InvalidData,
                             format!("packet id not registered: {}", serialized_packet.packet_id),
                         ));
                     }
                 }
                 Err(e) => {
-                    return Err(e);
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, e));
                 }
             }
         }
@@ -317,11 +306,33 @@ impl DeserializedPacket {
     }
 }
 
-#[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct AuthPacket {
-    pub registry_length: u16,
-    pub additional_bytes: Vec<u8>,
+pub struct SerializedPacketList {
+    pub(crate) bytes: Vec<u8>,
 }
+
+impl SerializedPacketList {
+    pub fn create(stored: Vec<SerializedPacket>) -> SerializedPacketList {
+        let total_size = stored
+            .iter()
+            .map(|packet| packet.bytes.len())
+            .sum::<usize>();
+        let mut bytes = Vec::with_capacity(total_size);
+
+        for packet in stored {
+            bytes.extend(packet.bytes);
+        }
+
+        SerializedPacketList { bytes }
+    }
+}
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct ConfirmAuthenticationPacket;
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct ClientTickCalledPacket;
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct ServerTickCalledPacket;
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct FooPacket {
