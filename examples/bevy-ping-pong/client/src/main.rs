@@ -8,26 +8,24 @@ use bevy::{
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
 use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
-use lyanne::transport::client::ClientRead;
+use lyanne::transport::client::{ClientAsync, ClientRead, ClientTickResult, ConnectResult};
+use lyanne::transport::MessagingProperties;
 use lyanne::{
-    packets::{BarPacket, FooPacket, FooPacketClientSchedule, Packet, PacketRegistry},
+    packets::{BarPacket, FooPacket, FooPacketClientSchedule, PacketRegistry},
     transport::client::{self, ClientMut},
 };
 use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;
-use tokio::time::timeout;
-
-#[derive(Resource)]
-struct X(Arc<Runtime>);
 
 #[derive(Component)]
 struct ClientConnecting {
-    task: Task<Result<(Arc<ClientRead>, ClientMut), io::Error>>,
+    task: Task<Result<ConnectResult, io::Error>>,
 }
 
 #[derive(Component)]
 struct ClientConnected {
     client_read: Arc<ClientRead>,
+    client_async: Arc<RwLock<ClientAsync>>,
     client_mut: ClientMut,
 }
 
@@ -39,9 +37,6 @@ fn main() {
         .add_plugins(FrameCountPlugin::default())
         .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::from_millis(3)))
         .add_plugins(LogPlugin::default())
-        .insert_resource(X(Arc::new(
-            Runtime::new().expect("Failed to create Tokio runtime"),
-        )))
         .add_systems(Startup, init)
         .add_systems(Update, read_bind_result)
         .add_systems(Update, client_tick)
@@ -51,20 +46,34 @@ fn main() {
         .run();
 }
 
-fn init(mut commands: Commands, x: Res<X>) {
-    let packet_registry = Arc::new(PacketRegistry::new());
-
+fn init(mut commands: Commands) {
     let task_pool = AsyncComputeTaskPool::get();
+    let runtime = Arc::new(Runtime::new().expect("Failed to create Tokio runtime"));
 
-    let runtime = Arc::clone(&x.0);
+    let remote_addr = "127.0.0.1:8822".parse().unwrap();
+    let packet_registry = Arc::new(PacketRegistry::new());
+    let messaging_properties = Arc::new(MessagingProperties::default());
+
+    let authentication_packets = vec![packet_registry
+        .serialize(&FooPacket {
+            message: "Auth me!!!".to_string(),
+        })
+        .unwrap()];
 
     let task = task_pool.spawn(async move {
-        runtime
-                .spawn(async move {
-                    client::connect("127.0.0.1:8822", Arc::clone(&packet_registry)).await
-                })
+        Arc::clone(&runtime)
+            .spawn(async move {
+                client::connect(
+                    remote_addr,
+                    packet_registry,
+                    messaging_properties,
+                    runtime,
+                    authentication_packets,
+                )
                 .await
-                .unwrap()
+            })
+            .await
+            .unwrap()
     });
 
     commands.spawn(ClientConnecting { task });
@@ -72,71 +81,32 @@ fn init(mut commands: Commands, x: Res<X>) {
 
 fn foo_read(mut packet: ResMut<ClientPacketResource<FooPacket>>) {
     let packet = packet.packet.take();
-    println!("xaxa! {:?}", packet);
+    //println!("xaxa! {:?}", packet);
 }
 
 fn bar_read(mut packet: ResMut<ClientPacketResource<BarPacket>>) {
     let packet = packet.packet.take();
-    println!("pepe! {:?}", packet);
+    //println!("pepe! {:?}", packet);
 }
 
 fn bar_second_read(mut packet: ResMut<ClientPacketResource<BarPacket>>) {
     let packet = packet.packet.take();
-    println!("pepe TWO! {:?}", packet);
+    //println!("pepe TWO! {:?}", packet);
 }
 
-fn read_bind_result(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut ClientConnecting)>,
-    x: Res<X>,
-) {
-    let runtime = Arc::clone(&x.0);
+fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut ClientConnecting)>) {
     for (entity, mut client_connecting) in query.iter_mut() {
-        if let Some(bind) = future::block_on(future::poll_once(&mut client_connecting.task)) {
+        if let Some(connect) = future::block_on(future::poll_once(&mut client_connecting.task)) {
             commands.entity(entity).despawn();
 
-            match bind {
-                Ok((client_read, client_mut)) => {
+            match connect {
+                Ok(connect_result) => {
                     info!("Client connected");
 
-                    let a_client_read = Arc::clone(&client_read);
-
-                    runtime.spawn(async move {
-                        let client_read = a_client_read;
-                        loop {
-                            match timeout(
-                                Duration::from_secs(10),
-                                client::pre_read_next_message(&client_read),
-                            )
-                            .await
-                            {
-                                Ok(buf) => {
-                                    let buf: Vec<u8> = buf.unwrap();
-                                    if true {
-                                        let mut rng = thread_rng();
-                                        if rng.gen_bool(0.1) {
-                                            println!("  packets received from server: {:?}, but a packet loss will be simulated", buf.len());
-                                            continue;
-                                        }
-                                    }
-
-                                    client::read_next_message(
-                                        Arc::clone(&client_read),
-                                        buf,
-                                    )
-                                    .await;
-                                    println!();
-                                }
-                                Err(_) => {
-                                    break;
-                                }
-                            }
-                        }
-                    });
-
                     commands.spawn(ClientConnected {
-                        client_read,
-                        client_mut,
+                        client_read: connect_result.client_read,
+                        client_async: connect_result.client_async,
+                        client_mut: connect_result.client_mut,
                     });
                 }
                 Err(err) => {
@@ -147,43 +117,50 @@ fn read_bind_result(
     }
 }
 
-fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>, x: Res<X>) {
+fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
     for mut client_connected in query.iter_mut() {
-        let runtime = Arc::clone(&x.0);
         let client_read = Arc::clone(&client_connected.client_read);
-
-        if let Ok(mut packets_to_process) = client::tick(
-            Arc::clone(&client_read),
-            &mut client_connected.client_mut,
-            Arc::clone(&runtime),
-        ) {
-            {
-                println!("sending(storing) some random packets");
-                let mut rng = thread_rng();
-                for _ in 0..rng.gen_range(0..2) {
-                    let message = format!("Random str: {:?}", rng.gen::<i32>());
-                    if rng.gen_bool(0.5) {
-                        let packet = FooPacket { message };
-                        client_connected
-                            .client_mut
-                            .connected_server
-                            .send(&client_read, &packet)
-                            .unwrap();
-                    } else {
-                        let packet = BarPacket { message };
-                        client_connected
-                            .client_mut
-                            .connected_server
-                            .send(&client_read, &packet)
-                            .unwrap();
+        if let Ok(client_async_write) = Arc::clone(&client_connected.client_async).try_write() {
+            let tick = client::tick(
+                Arc::clone(&client_connected.client_read),
+                Arc::clone(&client_connected.client_async),
+                client_async_write,
+                &mut client_connected.client_mut,
+            );
+            if let ClientTickResult::ReceivedMessage(message) = tick {
+                {
+                    let mut rng = thread_rng();
+                    for _ in 0..rng.gen_range(0..2) {
+                        let message = format!("Random str: {:?}", rng.gen::<i32>());
+                        if rng.gen_bool(0.5) {
+                            let packet = FooPacket { message };
+                            client_connected
+                                .client_mut
+                                .connected_server
+                                .send(&client_read, &packet)
+                                .unwrap();
+                        } else {
+                            let packet = BarPacket { message };
+                            client_connected
+                                .client_mut
+                                .connected_server
+                                .send(&client_read, &packet)
+                                .unwrap();
+                        }
                     }
                 }
+                for deserialized_packet in message.packets {
+                    client_connected
+                        .client_read
+                        .packet_registry
+                        .bevy_client_call(&mut commands, deserialized_packet);
+                }
             }
-            while packets_to_process.len() > 0 {
-                let deserialized_packet = packets_to_process.remove(0);
-                client_read
-                    .packet_registry
-                    .bevy_client_call(&mut commands, deserialized_packet);
+        } else if false {
+            panic!("could not take client async write instantly");
+        } else {
+            if true {
+                println!("  [LOCKED_ASYNC] ***** could not take client async write instantly, trying in next tick");
             }
         }
     }
