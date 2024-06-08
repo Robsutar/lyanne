@@ -381,7 +381,7 @@ pub async fn read_next_bytes(
     }
 
     //TODO: remove this
-    if true {
+    if false {
         use rand::Rng;
         let mut rng = rand::thread_rng();
 
