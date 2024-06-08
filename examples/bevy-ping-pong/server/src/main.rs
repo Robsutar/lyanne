@@ -128,12 +128,12 @@ fn server_tick(mut commands: Commands, mut query: Query<&mut ServerConnected>, t
                 let server_read = Arc::clone(&server_connected.server_read);
                 let server_async = Arc::clone(&server_connected.server_async);
 
-                {
+                if true {
                     for (_, connected_client) in
                         server_connected.server_mut.connected_clients.iter_mut()
                     {
                         let mut rng = thread_rng();
-                        for _ in 0..rng.gen_range(0..2) {
+                        for _ in 0..rng.gen_range(40..51) {
                             let message = format!("Random str: {:?}", rng.gen::<i32>());
                             if rng.gen_bool(0.5) {
                                 let packet = FooPacket { message };
