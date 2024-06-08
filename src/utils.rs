@@ -115,7 +115,7 @@ pub fn remove_with_rotation<T>(tree: &mut BTreeMap<u16, T>, index: u8) -> Option
     if let Some((last, _)) = tree.last_key_value() {
         let large_index = index as u16;
         if *last >= 256
-            && *tree.first_key_value().unwrap().0 - large_index
+            && tree.first_key_value().unwrap().0.wrapping_sub(large_index)
                 > ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16
         {
             return tree.remove(&(large_index.wrapping_add(256)));
