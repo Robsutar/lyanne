@@ -131,7 +131,7 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                 ClientTickResult::ReceivedMessage(message) => {
                     if true {
                         let mut rng = thread_rng();
-                        for _ in 0..rng.gen_range(40..51) {
+                        for _ in 0..rng.gen_range(70..71) {
                             let message = format!("Random str: {:?}", rng.gen::<i32>());
                             if rng.gen_bool(0.5) {
                                 let packet = FooPacket { message };
@@ -161,7 +161,7 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                     panic!("client disconnected: {:?}", reason)
                 }
                 result => {
-                    println!("{:?}", result);
+                    print!("{:?}", result);
                 }
             }
         } else if false {

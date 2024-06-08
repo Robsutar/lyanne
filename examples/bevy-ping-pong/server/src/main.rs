@@ -133,7 +133,7 @@ fn server_tick(mut commands: Commands, mut query: Query<&mut ServerConnected>, t
                         server_connected.server_mut.connected_clients.iter_mut()
                     {
                         let mut rng = thread_rng();
-                        for _ in 0..rng.gen_range(40..51) {
+                        for _ in 0..rng.gen_range(70..71) {
                             let message = format!("Random str: {:?}", rng.gen::<i32>());
                             if rng.gen_bool(0.5) {
                                 let packet = FooPacket { message };
