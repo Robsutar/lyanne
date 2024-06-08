@@ -132,7 +132,8 @@ impl PacketRegistry {
                             packet: Some(packet),
                         });
                         if let Err(e) = P::run_client_schedule(world) {
-                            println!("failed to run client schedule, but that should be ok {}", e);
+                            // TODO: remove this
+                            //println!("failed to run client schedule, but that should be ok {}", e);
                         }
                         world.remove_resource::<ClientPacketResource<P>>().unwrap();
                     });
@@ -152,7 +153,7 @@ impl PacketRegistry {
                         });
                         if let Err(e) = P::run_server_schedule(world) {
                             // TODO: remove this
-                            println!("Failed to run server schedule, but that should be ok {}", e);
+                            //println!("Failed to run server schedule, but that should be ok {}", e);
                         }
                         world.remove_resource::<ServerPacketResource<P>>().unwrap();
                     });
