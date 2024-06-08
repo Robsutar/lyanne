@@ -67,7 +67,7 @@ impl ReadServerBytesResult {
 
 #[derive(Debug, Clone, Copy)]
 pub enum DisconnectReason {
-    Timeout,
+    PendingMessageTimeout,
     MessageReceiveTimeout,
 }
 

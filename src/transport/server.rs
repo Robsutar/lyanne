@@ -95,6 +95,11 @@ impl Default for ReadHandlerProperties {
         }
     }
 }
+#[derive(Debug, Clone, Copy)]
+pub enum ClientDisconnectReason {
+    PendingMessageTimeout,
+    MessageReceiveTimeout,
+}
 
 /// Result when calling [`bind()`]
 pub struct BindResult {
