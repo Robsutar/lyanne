@@ -418,6 +418,15 @@ pub async fn read_next_bytes(
                         );
                         return ReadServerBytesResult::ValidMessagePartConfirm;
                     } else {
+                        println!(
+                            "{}",
+                            format!(
+                                "[MESSAGE_PART_CONFIRM] already removed {:?}, possible keys: {:?}",
+                                bytes[1],
+                                server_async.pending_server_confirmation.keys()
+                            )
+                            .red()
+                        );
                         return ReadServerBytesResult::AlreadyAssignedMessagePartConfirm;
                     }
                 } else {
@@ -571,8 +580,8 @@ fn send_packets_to_server_future(
                         Arc::clone(&client_read.runtime).spawn(async move {
                             let _ = client_read.socket.send(&bytes).await;
                             println!("{}",format!(
-                                "[ASYNC] [send_packets_to_client_future] message part id sent: {:?} ",
-                                TODO_REMOVE_THIS
+                                "[ASYNC] [send_packets_to_client_future] message part id sent: {:?}, large id: {:?}",
+                                TODO_REMOVE_THIS, large_id
                             ).purple());
                         });
 
