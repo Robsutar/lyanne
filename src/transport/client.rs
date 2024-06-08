@@ -573,6 +573,17 @@ fn send_packets_to_server_future(
                         message_parts[message_parts.len() - 1].id().wrapping_add(1);
 
                     let mut large_id = message_parts[0].id() as MessagePartLargeId;
+                    println!(
+                        "{}",
+                        format!(
+                            "[ASYNC] [send_packets_to_server_future] start sending parts: `{:?}",
+                            message_parts
+                                .iter()
+                                .map(|part| part.id().to_string())
+                                .collect::<Vec<String>>()
+                        )
+                        .on_magenta()
+                    );
                     for part in message_parts {
                         let client_read = Arc::clone(&client_read);
                         let bytes = part.clone_bytes_with_channel();
@@ -580,7 +591,7 @@ fn send_packets_to_server_future(
                         Arc::clone(&client_read.runtime).spawn(async move {
                             let _ = client_read.socket.send(&bytes).await;
                             println!("{}",format!(
-                                "[ASYNC] [send_packets_to_client_future] message part id sent: {:?}, large id: {:?}",
+                                "[ASYNC] [send_packets_to_server_future] message part id sent: {:?}, large id: {:?}",
                                 TODO_REMOVE_THIS, large_id
                             ).purple());
                         });

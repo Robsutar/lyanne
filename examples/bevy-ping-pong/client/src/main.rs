@@ -129,37 +129,39 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
             );
             match tick {
                 ClientTickResult::ReceivedMessage(message) => {
-                if true {
-                    let mut rng = thread_rng();
-                    for _ in 0..rng.gen_range(40..51) {
-                        let message = format!("Random str: {:?}", rng.gen::<i32>());
-                        if rng.gen_bool(0.5) {
-                            let packet = FooPacket { message };
-                            client_connected
-                                .client_mut
-                                .connected_server
-                                .send(&client_read, &packet)
-                                .unwrap();
-                        } else {
-                            let packet = BarPacket { message };
-                            client_connected
-                                .client_mut
-                                .connected_server
-                                .send(&client_read, &packet)
-                                .unwrap();
+                    if true {
+                        let mut rng = thread_rng();
+                        for _ in 0..rng.gen_range(40..51) {
+                            let message = format!("Random str: {:?}", rng.gen::<i32>());
+                            if rng.gen_bool(0.5) {
+                                let packet = FooPacket { message };
+                                client_connected
+                                    .client_mut
+                                    .connected_server
+                                    .send(&client_read, &packet)
+                                    .unwrap();
+                            } else {
+                                let packet = BarPacket { message };
+                                client_connected
+                                    .client_mut
+                                    .connected_server
+                                    .send(&client_read, &packet)
+                                    .unwrap();
+                            }
                         }
                     }
-                }
-                for deserialized_packet in message.packets {
-                    client_connected
-                        .client_read
-                        .packet_registry
-                        .bevy_client_call(&mut commands, deserialized_packet);
+                    for deserialized_packet in message.packets {
+                        client_connected
+                            .client_read
+                            .packet_registry
+                            .bevy_client_call(&mut commands, deserialized_packet);
                     }
                 }
                 ClientTickResult::Disconnect(reason) => {
                     panic!("client disconnected: {:?}", reason)
                 }
+                result => {
+                    println!("{:?}", result);
                 }
             }
         } else if false {
