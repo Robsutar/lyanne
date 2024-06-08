@@ -31,8 +31,11 @@ use super::{MessageChannel, MessagingProperties};
 #[derive(Debug)]
 pub enum ReadClientBytesResult {
     AuthenticationRequest,
+    CompletedMessagePartSend,
     ValidMessagePartSend,
+    AlreadyAssignedMessagePartSend,
     ValidMessagePartConfirm,
+    AlreadyAssignedMessagePartConfirm,
     PacketLossSimulation,
     OverflowAuthenticationRequest,
     InvalidAuthenticationRequest(io::Error),
@@ -53,8 +56,11 @@ impl ReadClientBytesResult {
     pub fn is_valid(&self) -> bool {
         match self {
             ReadClientBytesResult::AuthenticationRequest => true,
+            ReadClientBytesResult::CompletedMessagePartSend => true,
             ReadClientBytesResult::ValidMessagePartSend => true,
+            ReadClientBytesResult::AlreadyAssignedMessagePartSend => true,
             ReadClientBytesResult::ValidMessagePartConfirm => true,
+            ReadClientBytesResult::AlreadyAssignedMessagePartConfirm => true,
             ReadClientBytesResult::PacketLossSimulation => true,
             ReadClientBytesResult::OverflowAuthenticationRequest => false,
             ReadClientBytesResult::InvalidAuthenticationRequest(_) => false,
@@ -396,6 +402,7 @@ pub async fn read_next_bytes(
     server_async: &Arc<RwLock<ServerAsync>>,
     tuple: (SocketAddr, Vec<u8>),
 ) -> ReadClientBytesResult {
+    println!("{} {:?}", "bytes: ".red(), tuple.1.len());
     let (addr, bytes) = tuple;
     if bytes.len() < 2 {
         return ReadClientBytesResult::InsufficientBytesLen;
@@ -433,8 +440,10 @@ pub async fn read_next_bytes(
                                     )
                                     .green()
                                 );
+                                return ReadClientBytesResult::ValidMessagePartConfirm;
+                            } else {
+                                return ReadClientBytesResult::AlreadyAssignedMessagePartConfirm;
                             }
-                            return ReadClientBytesResult::ValidMessagePartConfirm;
                         } else {
                             return ReadClientBytesResult::ClientAsyncWriteNotFound;
                         }
@@ -483,12 +492,11 @@ pub async fn read_next_bytes(
 
                                     client_async.incoming_messages.insert(large_index, part);
                                     log.push_str(&format!(
-                                        "\n    {} {:?}, {} {:?}",
-                                        "large_index:".purple(),
+                                        "\n     large_index: {:?}, actual incoming_messages size: {:?}, keys: {:?}",
                                         large_index,
-                                        "actual incoming_messages size:".purple(),
-                                        client_async.incoming_messages.len()
-                                    ));
+                                        client_async.incoming_messages.len(),
+                                        client_async.incoming_messages.keys(),
+                                    ).purple());
                                     if let Ok(check) = DeserializedMessageCheck::new(
                                         &client_async.incoming_messages,
                                     ) {
@@ -526,10 +534,18 @@ pub async fn read_next_bytes(
                                                 ));
                                             }
                                             client_async.received_message = Some(message);
+
+                                            log.push_str(&format!("\n{}", "AND DONE".purple()));
+                                            println!("{}", log.bright_blue());
+                                            return ReadClientBytesResult::CompletedMessagePartSend;
                                         } else {
                                             println!("{}", log.bright_blue());
                                             return ReadClientBytesResult::InvalidDeserializedMessage;
                                         }
+                                    } else {
+                                        log.push_str(&format!("\n{}", "AND DONE".purple()));
+                                        println!("{}", log.bright_blue());
+                                        return ReadClientBytesResult::ValidMessagePartSend;
                                     }
                                 } else {
                                     log.push_str(&format!(
@@ -544,10 +560,11 @@ pub async fn read_next_bytes(
                                 println!("{}", log.bright_blue());
                                 return ReadClientBytesResult::ServerAsyncPoisoned;
                             }
+                        } else {
+                            log.push_str(&format!("\n{}", "AND DONE".purple()));
+                            println!("{}", log.bright_blue());
+                            return ReadClientBytesResult::AlreadyAssignedMessagePartSend;
                         }
-                        log.push_str(&format!("\n{}", "AND DONE".purple()));
-                        println!("{}", log.bright_blue());
-                        return ReadClientBytesResult::ValidMessagePartSend;
                     } else {
                         return ReadClientBytesResult::InvalidMessagePart;
                     }
@@ -644,8 +661,8 @@ fn send_packets_to_client_future(
                                 Arc::clone(&server_read.runtime).spawn(async move {
                                     let _ = server_read.socket.send_to(&bytes, addr).await;
                                     println!("{}",format!(
-                                        "[ASYNC] [send_packets_to_client_future] message part id sent: {:?} ",
-                                        TODO_REMOVE_THIS
+                                        "[ASYNC] [send_packets_to_client_future] message part id sent: {:?}, bytes size {:?} ",
+                                        TODO_REMOVE_THIS,bytes.len()
                                     ).purple());
                                 });
 
