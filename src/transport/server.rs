@@ -95,6 +95,8 @@ impl Default for ReadHandlerProperties {
         }
     }
 }
+
+/// Possible reasons to be disconnected from some client
 #[derive(Debug, Clone, Copy)]
 pub enum ClientDisconnectReason {
     PendingMessageTimeout,
@@ -158,7 +160,7 @@ impl ServerMut {
 
 /// Mutable and shared between threads properties of the connected client
 ///
-/// Intended to use used inside [`ServerAsync`]
+/// Intended to be used inside [`ServerAsync`]
 pub struct ConnectedClientAsync {
     next_message_to_receive_start_id: MessagePartId,
     next_message_to_send_start_id: MessagePartId,

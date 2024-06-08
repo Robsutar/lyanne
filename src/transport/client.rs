@@ -65,6 +65,7 @@ impl ReadServerBytesResult {
     }
 }
 
+/// Possible reasons to be disconnected from the server
 #[derive(Debug, Clone, Copy)]
 pub enum DisconnectReason {
     PendingMessageTimeout,
@@ -90,7 +91,7 @@ pub enum ClientTickResult {
 
 /// Read-only properties of the client
 ///
-/// Intended to use used with [`Arc`]
+/// Intended to be used with [`Arc`]
 pub struct ClientRead {
     pub remote_addr: SocketAddr,
     pub socket: UdpSocket,
@@ -101,7 +102,7 @@ pub struct ClientRead {
 
 /// Read-only properties of the client, but mutable at [`tick()`]
 ///
-/// Intended to use used with [`RwLock`]
+/// Intended to be used with [`RwLock`]
 pub struct ClientAsync {
     pub connected_server: ConnectedServerAsync,
     pub disconnected: Option<DisconnectReason>,
@@ -117,7 +118,7 @@ pub struct ClientMut {
 
 /// Mutable and shared between threads properties of the connected server
 ///
-/// Intended to use used inside [`ClientAsync`]
+/// Intended to be used inside [`ClientAsync`]
 pub struct ConnectedServerAsync {
     next_message_to_receive_start_id: MessagePartId,
     next_message_to_send_start_id: MessagePartId,
@@ -144,7 +145,7 @@ impl ConnectedServerMut {
     }
 }
 
-/// Bind a [`UdpSocket´], to create a new Server instance
+/// Connect to a server via a [`UdpSocket`], creating a new Client instance
 pub async fn connect(
     remote_addr: SocketAddr,
     packet_registry: Arc<PacketRegistry>,
@@ -277,16 +278,15 @@ pub async fn connect(
     }
 }
 
-/// Server main tick
+/// Client main tick
 /// - Handles packet loss
 /// - Handles timeout
-/// - Send [`packets_to_send`] to the clients
-/// - Authenticate the clients [`marked_to_set_authenticated`] and
-/// remove authentication of the clients [`marked_to_unset_authenticated`]
+/// - Sends [`packets_to_send`] to the server
+/// - Handles messages received from the server
 ///
 /// # Returns
-/// - Received messages sent by the clients
-/// - Received messages sent by clients authentication requests
+/// - Received messages from the server
+/// - Handles disconnection due to timeout or other reasons
 ///
 pub fn tick(
     client_read: Arc<ClientRead>,
@@ -337,7 +337,7 @@ pub fn tick(
         let mut packet_loss_count: MessagePartLargeId = 0;
         for (_, (ref mut instant, part)) in server_async.pending_server_confirmation.iter_mut() {
             if now - *instant >= client_read.messaging_properties.timeout_interpretation {
-                let reason = DisconnectReason::Timeout;
+                let reason = DisconnectReason::PendingMessageTimeout;
                 client_async_write.disconnected = Some(reason);
                 return ClientTickResult::Disconnect(reason);
             }
@@ -372,13 +372,13 @@ pub async fn pre_read_next_bytes(client_read: &Arc<ClientRead>) -> io::Result<Ve
     Ok(buf[..len].to_vec())
 }
 
-/// Uses bytes read by [`pre_read_next_bytes()`] and process them
+/// Uses bytes read by [`pre_read_next_bytes()`] and processes them
 ///
 /// # Returns
 ///
-/// The result of the process of those bytes, if the return is invalid
-/// (check it with[`ReadServerBytesResult::is_valid()`]), a ignore or
-/// disconnection of that client is recommended
+/// The result of processing those bytes. If the result is invalid
+/// (check it with[`ReadServerBytesResult::is_valid()`]), ignoring or
+/// disconnecting from the server is recommended.
 pub async fn read_next_bytes(
     client_read: &Arc<ClientRead>,
     client_async: &Arc<RwLock<ClientAsync>>,
