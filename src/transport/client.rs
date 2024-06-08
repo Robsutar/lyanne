@@ -406,10 +406,10 @@ pub async fn read_next_bytes(
                 drop(client_async_read);
                 if let Ok(mut client_async_write) = client_async.write() {
                     let server_async = &mut client_async_write.connected_server;
-
-                    let REMOVE_VAR = server_async
-                        .pending_server_confirmation
-                        .remove(&(bytes[1] as MessagePartLargeId));
+                    let REMOVE_VAR = utils::remove_with_rotation(
+                        &mut server_async.pending_server_confirmation,
+                        bytes[1],
+                    );
                     if let Some(_) = REMOVE_VAR {
                         println!(
                             "{}",
@@ -451,8 +451,7 @@ pub async fn read_next_bytes(
                                 if part.id() >= next_message_to_receive_start_id {
                                     part.id() as MessagePartLargeId
                                 } else {
-                                    part.id() as MessagePartLargeId
-                                        + next_message_to_receive_start_id as MessagePartLargeId
+                                    part.id() as MessagePartLargeId + 256
                                 }
                             };
 
