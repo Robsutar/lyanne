@@ -37,6 +37,7 @@ pub enum ReadClientBytesResult {
     ValidMessagePartConfirm,
     AlreadyAssignedMessagePartConfirm,
     PacketLossSimulation,
+    ClosedMessageChannel,
     OverflowAuthenticationRequest,
     InvalidAuthenticationRequest(io::Error),
     InvalidChannelEntry,
@@ -62,6 +63,7 @@ impl ReadClientBytesResult {
             ReadClientBytesResult::ValidMessagePartConfirm => true,
             ReadClientBytesResult::AlreadyAssignedMessagePartConfirm => true,
             ReadClientBytesResult::PacketLossSimulation => true,
+            ReadClientBytesResult::ClosedMessageChannel => true,
             ReadClientBytesResult::OverflowAuthenticationRequest => false,
             ReadClientBytesResult::InvalidAuthenticationRequest(_) => false,
             ReadClientBytesResult::InvalidChannelEntry => false,
@@ -452,6 +454,9 @@ pub async fn read_next_bytes(
                     }
                 }
                 MessageChannel::MESSAGE_PART_SEND => {
+                    if let Some(_) = client_async.received_message {
+                        return ReadClientBytesResult::ClosedMessageChannel;
+                    }
                     if let Ok(part) = MessagePart::deserialize(bytes[1..].to_vec()) {
                         let next_message_to_receive_start_id =
                             client_async.next_message_to_receive_start_id;

@@ -33,6 +33,7 @@ pub enum ReadServerBytesResult {
     ValidMessagePartConfirm,
     AlreadyAssignedMessagePartConfirm,
     PacketLossSimulation,
+    ClosedMessageChannel,
     InvalidChannelEntry,
     InsufficientBytesLen,
     InvalidMessagePart,
@@ -54,6 +55,7 @@ impl ReadServerBytesResult {
             ReadServerBytesResult::ValidMessagePartConfirm => true,
             ReadServerBytesResult::AlreadyAssignedMessagePartConfirm => true,
             ReadServerBytesResult::PacketLossSimulation => true,
+            ReadServerBytesResult::ClosedMessageChannel => true,
             ReadServerBytesResult::InvalidChannelEntry => false,
             ReadServerBytesResult::InsufficientBytesLen => false,
             ReadServerBytesResult::InvalidMessagePart => false,
@@ -423,8 +425,11 @@ pub async fn read_next_bytes(
                 }
             }
             MessageChannel::MESSAGE_PART_SEND => {
+                let server_async = &client_async_read.connected_server;
+                if let Some(_) = server_async.received_message {
+                    return ReadServerBytesResult::ClosedMessageChannel;
+                }
                 if let Ok(part) = MessagePart::deserialize(bytes[1..].to_vec()) {
-                    let server_async = &client_async_read.connected_server;
                     let next_message_to_receive_start_id =
                         server_async.next_message_to_receive_start_id;
                     let mut log = String::new();
