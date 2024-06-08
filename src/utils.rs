@@ -1,7 +1,8 @@
-use std::{cmp::Ordering, io};
+use std::{cmp::Ordering, collections::BTreeMap, io};
 
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE: usize = (std::mem::size_of::<u8>() * 255) / 2;
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U8: u8 = ORDERED_ROTATABLE_U8_VEC_MAX_SIZE as u8;
+pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16: u16 = ORDERED_ROTATABLE_U8_VEC_MAX_SIZE as u16;
 
 /// A trait that requires implementing a method to return a `u8` index.
 /// This is used by `OrderedRotatableU8Vec` to get the `u8` value for sorting purposes.
@@ -110,10 +111,28 @@ pub fn compare_with_rotation(a: u8, b: u8) -> Ordering {
     }
 }
 
+pub fn remove_with_rotation<T>(tree: &mut BTreeMap<u16, T>, index: u8) -> Option<T> {
+    if let Some((last, _)) = tree.last_key_value() {
+        let large_index = index as u16;
+        if *last >= 256
+            && *tree.first_key_value().unwrap().0 - large_index
+                > ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16
+        {
+            return tree.remove(&(large_index.wrapping_add(256)));
+        } else {
+            return tree.remove(&large_index);
+        }
+    } else {
+        return None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::seq::SliceRandom;
     use rand::{thread_rng, Rng};
+
+    use crate::messages::{MessagePartId, MessagePartLargeId};
 
     use super::*;
 
@@ -128,7 +147,55 @@ mod tests {
     }
 
     #[test]
+    fn rotation_check() {
+        let large: MessagePartLargeId = 255;
+        let next: MessagePartId = ((large + 1) % 256) as MessagePartId;
+        assert_eq!(0, next);
+    }
+
+    #[test]
+    fn remove_with_rotation_check() {
+        let initial_indexes: Vec<u8> = vec![0, 45, 99, 122, 126, 127, 144, 200, 240, 254, 255];
+
+        for initial_index in initial_indexes {
+            let mut tree: BTreeMap<u16, usize> = BTreeMap::new();
+
+            {
+                let mut index = initial_index as u16;
+                for epoch in 0..ORDERED_ROTATABLE_U8_VEC_MAX_SIZE + 1 {
+                    tree.insert(index, epoch);
+                    index += 1;
+                }
+            }
+
+            assert_eq!(
+                remove_with_rotation(&mut tree, initial_index.wrapping_sub(1)),
+                None
+            );
+            assert_eq!(
+                remove_with_rotation(
+                    &mut tree,
+                    initial_index
+                        .wrapping_add(ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U8)
+                        .wrapping_add(1)
+                ),
+                None
+            );
+
+            {
+                let mut index = initial_index as u8;
+                for epoch in 0..ORDERED_ROTATABLE_U8_VEC_MAX_SIZE + 1 {
+                    assert_eq!(remove_with_rotation(&mut tree, index), Some(epoch));
+                    index = index.wrapping_add(1);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn manual_compare() {
+        assert_eq!(compare_with_rotation(255, 1), Ordering::Less);
+        assert_eq!(compare_with_rotation(1, 255), Ordering::Greater);
         assert_eq!(compare_with_rotation(250, 1), Ordering::Less);
         assert_eq!(compare_with_rotation(1, 250), Ordering::Greater);
         assert_eq!(compare_with_rotation(232, 250), Ordering::Less);
