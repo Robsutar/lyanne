@@ -68,7 +68,7 @@ impl ReadServerBytesResult {
 /// Possible reasons to be disconnected from the server
 #[derive(Debug, Clone, Copy)]
 pub enum DisconnectReason {
-    PendingMessageTimeout,
+    PendingMessageConfirmationTimeout,
     MessageReceiveTimeout,
 }
 
@@ -337,7 +337,7 @@ pub fn tick(
         let mut packet_loss_count: MessagePartLargeId = 0;
         for (_, (ref mut instant, part)) in server_async.pending_server_confirmation.iter_mut() {
             if now - *instant >= client_read.messaging_properties.timeout_interpretation {
-                let reason = DisconnectReason::PendingMessageTimeout;
+                let reason = DisconnectReason::PendingMessageConfirmationTimeout;
                 client_async_write.disconnected = Some(reason);
                 return ClientTickResult::Disconnect(reason);
             }

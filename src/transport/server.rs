@@ -10,7 +10,6 @@ use std::{
 
 use colored::*;
 
-use rand::{thread_rng, Rng};
 use tokio::{net::UdpSocket, runtime::Runtime, time::timeout};
 
 use crate::{
@@ -99,8 +98,9 @@ impl Default for ReadHandlerProperties {
 /// Possible reasons to be disconnected from some client
 #[derive(Debug, Clone, Copy)]
 pub enum ClientDisconnectReason {
-    PendingMessageTimeout,
+    PendingMessageConfirmationTimeout,
     MessageReceiveTimeout,
+    ManualDisconnect,
 }
 
 /// Result when calling [`bind()`]
@@ -114,6 +114,7 @@ pub struct BindResult {
 pub struct ServerTickResult {
     pub received_messages: Vec<(SocketAddr, DeserializedMessage)>,
     pub clients_to_auth: HashMap<SocketAddr, DeserializedMessage>,
+    pub clients_disconnected: HashMap<SocketAddr, ClientDisconnectReason>,
 }
 
 /// Read-only properties of the server
@@ -141,20 +142,21 @@ pub struct ServerAsync {
 pub struct ServerMut {
     pub connected_clients: HashMap<SocketAddr, ConnectedClientMut>,
     marked_to_set_authenticated: HashSet<SocketAddr>,
-    marked_to_unset_authenticated: HashSet<SocketAddr>,
+    marked_to_unset_authenticated: HashMap<SocketAddr, ClientDisconnectReason>,
 }
 
 impl ServerMut {
     /// Mark a client to be authenticated in the next tick
-    pub fn set_authenticated(&mut self, addr: SocketAddr) -> bool {
+    pub fn set_authenticated(&mut self, addr: SocketAddr) {
         self.marked_to_unset_authenticated.remove(&addr);
-        self.marked_to_set_authenticated.insert(addr)
+        self.marked_to_set_authenticated.insert(addr);
     }
 
     /// Mark a client to be removed from authenticated clients in the next tick
-    pub fn unset_authenticated(&mut self, addr: SocketAddr) -> bool {
+    pub fn unset_authenticated(&mut self, addr: SocketAddr) {
         self.marked_to_set_authenticated.remove(&addr);
-        self.marked_to_unset_authenticated.insert(addr)
+        self.marked_to_unset_authenticated
+            .insert(addr, ClientDisconnectReason::ManualDisconnect);
     }
 }
 
@@ -212,7 +214,7 @@ pub async fn bind(
     let server_mut = ServerMut {
         connected_clients: HashMap::new(),
         marked_to_set_authenticated: HashSet::new(),
-        marked_to_unset_authenticated: HashSet::new(),
+        marked_to_unset_authenticated: HashMap::new(),
     };
 
     for _ in 0..server_read.read_handler_properties.surplus_target_size {
@@ -236,6 +238,7 @@ pub async fn bind(
 /// # Returns
 /// - Received messages sent by the clients
 /// - Received messages sent by clients authentication requests
+/// - Clients disconnected
 ///
 pub fn tick(
     server_read: Arc<ServerRead>,
@@ -247,9 +250,9 @@ pub fn tick(
     let mut received_messages: Vec<(SocketAddr, DeserializedMessage)> = Vec::new();
     let clients_to_connect =
         std::mem::replace(&mut server_mut.marked_to_set_authenticated, HashSet::new());
-    let mut clients_to_disconnect = std::mem::replace(
+    let mut clients_to_disconnect: HashMap<SocketAddr, ClientDisconnectReason> = std::mem::replace(
         &mut server_mut.marked_to_unset_authenticated,
-        HashSet::new(),
+        HashMap::new(),
     );
     let mut pending_packets_to_send: Vec<(SocketAddr, Vec<SerializedPacket>)> = Vec::new();
 
@@ -262,7 +265,8 @@ pub fn tick(
         if now - client_mut.last_received_message
             >= server_read.messaging_properties.timeout_interpretation
         {
-            clients_to_disconnect.insert(addr.clone());
+            clients_to_disconnect
+                .insert(addr.clone(), ClientDisconnectReason::MessageReceiveTimeout);
             break;
         }
 
@@ -285,7 +289,10 @@ pub fn tick(
             for (_, (ref mut instant, part)) in client_async.pending_client_confirmation.iter_mut()
             {
                 if now - *instant >= server_read.messaging_properties.timeout_interpretation {
-                    clients_to_disconnect.insert(addr.clone());
+                    clients_to_disconnect.insert(
+                        addr.clone(),
+                        ClientDisconnectReason::PendingMessageConfirmationTimeout,
+                    );
                     break;
                 }
                 if now - *instant >= server_read.messaging_properties.packet_loss_interpretation {
@@ -348,11 +355,15 @@ pub fn tick(
         }
     }
 
-    for addr in clients_to_disconnect {
-        log.push_str(&format!("trying disconnect {:?}", addr));
+    let mut clients_disconnected: HashMap<SocketAddr, ClientDisconnectReason> = HashMap::new();
+
+    for (addr, reason) in clients_to_disconnect {
+        log.push_str(&format!("trying disconnect {:?} for {:?}", addr, reason));
+        //TODO: that should never be false, that is here just for manual kick reasons
         if let Some(_) = server_mut.connected_clients.remove(&addr) {
             log.push_str(&format!("  done disconnect"));
             server_async_write.connected_clients.remove(&addr).unwrap();
+            clients_disconnected.insert(addr, reason);
         }
     }
 
@@ -387,6 +398,7 @@ pub fn tick(
     ServerTickResult {
         received_messages,
         clients_to_auth,
+        clients_disconnected,
     }
 }
 
