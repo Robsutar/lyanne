@@ -27,8 +27,11 @@ use super::{MessageChannel, MessagingProperties};
 /// Possible results when receiving bytes by client
 #[derive(Debug, Clone, Copy)]
 pub enum ReadServerBytesResult {
+    CompletedMessagePartSend,
     ValidMessagePartSend,
+    AlreadyAssignedMessagePartSend,
     ValidMessagePartConfirm,
+    AlreadyAssignedMessagePartConfirm,
     PacketLossSimulation,
     InvalidChannelEntry,
     InsufficientBytesLen,
@@ -45,8 +48,11 @@ impl ReadServerBytesResult {
     /// that the client sent an invalid data, and should be ignored/disconnected
     pub fn is_valid(&self) -> bool {
         match self {
+            ReadServerBytesResult::CompletedMessagePartSend => true,
             ReadServerBytesResult::ValidMessagePartSend => true,
+            ReadServerBytesResult::AlreadyAssignedMessagePartSend => true,
             ReadServerBytesResult::ValidMessagePartConfirm => true,
+            ReadServerBytesResult::AlreadyAssignedMessagePartConfirm => true,
             ReadServerBytesResult::PacketLossSimulation => true,
             ReadServerBytesResult::InvalidChannelEntry => false,
             ReadServerBytesResult::InsufficientBytesLen => false,
@@ -376,6 +382,7 @@ pub async fn read_next_bytes(
     client_async: &Arc<RwLock<ClientAsync>>,
     bytes: Vec<u8>,
 ) -> ReadServerBytesResult {
+    println!("{} {:?}", "bytes: ".red(), bytes.len());
     if bytes.len() < 2 {
         return ReadServerBytesResult::InsufficientBytesLen;
     }
@@ -407,8 +414,10 @@ pub async fn read_next_bytes(
                             format!("[MESSAGE_PART_CONFIRM] successfully removed {:?}", bytes[1])
                                 .green()
                         );
+                        return ReadServerBytesResult::ValidMessagePartConfirm;
+                    } else {
+                        return ReadServerBytesResult::AlreadyAssignedMessagePartConfirm;
                     }
-                    return ReadServerBytesResult::ValidMessagePartConfirm;
                 } else {
                     return ReadServerBytesResult::ClientAsyncPoisoned;
                 }
@@ -444,9 +453,10 @@ pub async fn read_next_bytes(
 
                             server_async.incoming_messages.insert(large_index, part);
                             log.push_str(&format!(
-                                "\n     large_index: {:?}, actual incoming_messages size: {:?}",
+                                "\n     large_index: {:?}, actual incoming_messages size: {:?}, keys: {:?}",
                                 large_index,
-                                server_async.incoming_messages.len()
+                                server_async.incoming_messages.len(),
+                                server_async.incoming_messages.keys()
                             ));
                             if let Ok(check) =
                                 DeserializedMessageCheck::new(&server_async.incoming_messages)
@@ -481,6 +491,10 @@ pub async fn read_next_bytes(
                                         ));
                                     }
                                     server_async.received_message = Some(message);
+
+                                    log.push_str(&format!("\n             AND DONE "));
+                                    println!("{}", log.purple());
+                                    return ReadServerBytesResult::CompletedMessagePartSend;
                                 } else {
                                     log.push_str(&format!(
                                         "\n           AND ERROR InvalidDeserializedMessage",
@@ -488,17 +502,21 @@ pub async fn read_next_bytes(
                                     println!("{}", log.purple());
                                     return ReadServerBytesResult::InvalidDeserializedMessage;
                                 }
+                            } else {
+                                log.push_str(&format!("\n             AND DONE "));
+                                println!("{}", log.purple());
+                                return ReadServerBytesResult::ValidMessagePartSend;
                             }
                         } else {
                             log.push_str(&format!("       AND ERROR ClientAsyncPoisoned",));
                             println!("{}", log.purple());
                             return ReadServerBytesResult::ClientAsyncPoisoned;
                         }
+                    } else {
+                        log.push_str(&format!("\n             AND DONE "));
+                        println!("{}", log.purple());
+                        return ReadServerBytesResult::AlreadyAssignedMessagePartSend;
                     }
-
-                    log.push_str(&format!("\n             AND DONE "));
-                    println!("{}", log.purple());
-                    return ReadServerBytesResult::ValidMessagePartSend;
                 } else {
                     return ReadServerBytesResult::InvalidMessagePart;
                 }
