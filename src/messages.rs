@@ -192,7 +192,7 @@ impl DeserializedMessageCheck {
                     }
                 }
 
-                let diff = first.id().wrapping_add(tree.len() as u8) - 1;
+                let diff = first.id().wrapping_add(tree.len() as u8).wrapping_sub(1);
 
                 if diff != last.id() {
                     return Err(io::Error::new(
