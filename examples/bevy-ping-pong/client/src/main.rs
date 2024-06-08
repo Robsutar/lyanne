@@ -127,7 +127,8 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                 client_async_write,
                 &mut client_connected.client_mut,
             );
-            if let ClientTickResult::ReceivedMessage(message) = tick {
+            match tick {
+                ClientTickResult::ReceivedMessage(message) => {
                 if true {
                     let mut rng = thread_rng();
                     for _ in 0..rng.gen_range(40..51) {
@@ -154,6 +155,11 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                         .client_read
                         .packet_registry
                         .bevy_client_call(&mut commands, deserialized_packet);
+                    }
+                }
+                ClientTickResult::Disconnect(reason) => {
+                    panic!("client disconnected: {:?}", reason)
+                }
                 }
             }
         } else if false {
