@@ -8,11 +8,11 @@ use bevy::{
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
 use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
-use lyanne::transport::client::{ClientAsync, ClientRead, ClientTickResult, ConnectResult};
+use lyanne::transport::client::{Client, ClientTickResult, ConnectResult};
 use lyanne::transport::MessagingProperties;
 use lyanne::{
     packets::{BarPacket, FooPacket, FooPacketClientSchedule, PacketRegistry},
-    transport::client::{self, ClientMut},
+    transport::client::{self},
 };
 use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;
@@ -24,9 +24,7 @@ struct ClientConnecting {
 
 #[derive(Component)]
 struct ClientConnected {
-    client_read: Arc<ClientRead>,
-    client_async: Arc<RwLock<ClientAsync>>,
-    client_mut: ClientMut,
+    client: Arc<Client>,
 }
 
 fn main() {
@@ -104,9 +102,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
                     info!("Client connected");
 
                     commands.spawn(ClientConnected {
-                        client_read: connect_result.client_read,
-                        client_async: connect_result.client_async,
-                        client_mut: connect_result.client_mut,
+                        client: connect_result.client,
                     });
                 }
                 Err(err) => {
@@ -118,58 +114,43 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
 }
 
 fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
-    for mut client_connected in query.iter_mut() {
-        let client_read = Arc::clone(&client_connected.client_read);
-        if let Ok(client_async_write) = Arc::clone(&client_connected.client_async).try_write() {
-            let tick = client::tick(
-                Arc::clone(&client_connected.client_read),
-                Arc::clone(&client_connected.client_async),
-                client_async_write,
-                &mut client_connected.client_mut,
-            );
-            match tick {
-                ClientTickResult::ReceivedMessage(message) => {
-                    if true {
-                        let mut rng = thread_rng();
-                        for _ in 0..rng.gen_range(70..71) {
-                            let message = format!("Random str: {:?}", rng.gen::<i32>());
-                            if rng.gen_bool(0.5) {
-                                let packet = FooPacket { message };
-                                client_connected
-                                    .client_mut
-                                    .connected_server
-                                    .send(&client_read, &packet)
-                                    .unwrap();
-                            } else {
-                                let packet = BarPacket { message };
-                                client_connected
-                                    .client_mut
-                                    .connected_server
-                                    .send(&client_read, &packet)
-                                    .unwrap();
-                            }
+    for client_connected in query.iter_mut() {
+        let client = Arc::clone(&client_connected.client);
+        let tick = client::tick(Arc::clone(&client_connected.client));
+        match tick {
+            ClientTickResult::ReceivedMessage(message) => {
+                if true {
+                    let mut rng = thread_rng();
+                    for _ in 0..rng.gen_range(70..71) {
+                        let message = format!("Random str: {:?}", rng.gen::<i32>());
+                        if rng.gen_bool(0.5) {
+                            let packet = FooPacket { message };
+                            client_connected
+                                .client
+                                .connected_server
+                                .send(&client, &packet)
+                                .unwrap();
+                        } else {
+                            let packet = BarPacket { message };
+                            client_connected
+                                .client
+                                .connected_server
+                                .send(&client, &packet)
+                                .unwrap();
                         }
                     }
-                    for deserialized_packet in message.packets {
-                        client_connected
-                            .client_read
-                            .packet_registry
-                            .bevy_client_call(&mut commands, deserialized_packet);
-                    }
                 }
-                ClientTickResult::Disconnect(reason) => {
-                    panic!("client disconnected: {:?}", reason)
-                }
-                result => {
-                    print!("{:?}", result);
+                for deserialized_packet in message.packets {
+                    client_connected
+                        .client
+                        .packet_registry
+                        .bevy_client_call(&mut commands, deserialized_packet);
                 }
             }
-        } else if false {
-            panic!("could not take client async write instantly");
-        } else {
-            if true {
-                println!("  [LOCKED_ASYNC] ***** could not take client async write instantly, trying in next tick");
+            ClientTickResult::Disconnect(reason) => {
+                panic!("client disconnected: {:?}", reason)
             }
+            _ => (),
         }
     }
 }
