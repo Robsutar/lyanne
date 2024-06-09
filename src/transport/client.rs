@@ -74,9 +74,7 @@ pub enum DisconnectReason {
 
 /// Result when calling [`connect()`]
 pub struct ConnectResult {
-    pub client_read: Arc<ClientRead>,
-    pub client_async: Arc<RwLock<ClientAsync>>,
-    pub client_mut: ClientMut,
+    pub client: Arc<Client>,
     pub message: DeserializedMessage,
 }
 
@@ -89,59 +87,54 @@ pub enum ClientTickResult {
     Disconnect(DisconnectReason),
 }
 
-/// Read-only properties of the client
+/// Properties of the client
 ///
 /// Intended to be used with [`Arc`]
-pub struct ClientRead {
+pub struct Client {
+    // Read
     pub remote_addr: SocketAddr,
     pub socket: UdpSocket,
     pub runtime: Arc<Runtime>,
     pub packet_registry: Arc<PacketRegistry>,
     pub messaging_properties: Arc<MessagingProperties>,
+
+    // Write
+    pub connected_server: ConnectedServer,
+    pub disconnected: Arc<RwLock<Option<DisconnectReason>>>,
 }
 
-/// Read-only properties of the client, but mutable at [`tick()`]
+/// Messaging fields of [`ConnectedServer`]
 ///
-/// Intended to be used with [`RwLock`]
-pub struct ClientAsync {
-    pub connected_server: ConnectedServerAsync,
-    pub disconnected: Option<DisconnectReason>,
-}
-
-/// Mutable properties of the client
-///
-/// Not intended to be shared between threads
-pub struct ClientMut {
-    pub connected_server: ConnectedServerMut,
+/// Intended to be used with [`Arc`] and [`RwLock`]
+pub struct ConnectedServerMessaging {
+    next_message_to_receive_start_id: MessagePartId,
+    next_message_to_send_start_id: MessagePartId,
+    pending_server_confirmation: BTreeMap<MessagePartLargeId, (Instant, MessagePart)>,
+    incoming_messages: BTreeMap<MessagePartLargeId, MessagePart>,
+    received_message: Option<DeserializedMessage>,
     last_received_message: Instant,
 }
 
 /// Mutable and shared between threads properties of the connected server
 ///
 /// Intended to be used inside [`ClientAsync`]
-pub struct ConnectedServerAsync {
-    next_message_to_receive_start_id: MessagePartId,
-    next_message_to_send_start_id: MessagePartId,
-    pending_server_confirmation: BTreeMap<MessagePartLargeId, (Instant, MessagePart)>,
-    incoming_messages: BTreeMap<MessagePartLargeId, MessagePart>,
-    received_message: Option<DeserializedMessage>,
+pub struct ConnectedServer {
+    messaging: Arc<RwLock<ConnectedServerMessaging>>,
+    packets_to_send_sender: crossbeam_channel::Sender<Option<SerializedPacket>>,
+    message_parts_to_confirm_sender: crossbeam_channel::Sender<MessagePartId>,
+    packet_loss_resending_sender: crossbeam_channel::Sender<MessagePartLargeId>,
 }
 
-/// Mutable properties of the connected server
-///
-/// Intended to be used inside [`ClientMut`]
-pub struct ConnectedServerMut {
-    packets_to_send: Vec<SerializedPacket>,
-}
-
-impl ConnectedServerMut {
-    pub fn send<P: Packet>(&mut self, client_read: &ClientRead, packet: &P) -> io::Result<()> {
-        let serialized = client_read.packet_registry.serialize(packet)?;
+impl ConnectedServer {
+    pub fn send<P: Packet>(&self, client: &Client, packet: &P) -> io::Result<()> {
+        let serialized = client.packet_registry.serialize(packet)?;
         self.send_packet_serialized(serialized);
         Ok(())
     }
-    pub fn send_packet_serialized(&mut self, serialized_packet: SerializedPacket) {
-        self.packets_to_send.push(serialized_packet);
+    pub fn send_packet_serialized(&self, serialized_packet: SerializedPacket) {
+        self.packets_to_send_sender
+            .send(Some(serialized_packet))
+            .unwrap();
     }
 }
 
@@ -156,42 +149,44 @@ pub async fn connect(
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(remote_addr).await?;
 
-    let client_read = Arc::new(ClientRead {
+    let (packets_to_send_sender, packets_to_send_receiver) = crossbeam_channel::unbounded();
+    let (message_parts_to_confirm_sender, message_parts_to_confirm_receiver) =
+        crossbeam_channel::unbounded();
+    let (packet_loss_resending_sender, packet_loss_resending_receiver) =
+        crossbeam_channel::unbounded();
+
+    let initial_next_message_part_id = messaging_properties.initial_next_message_part_id;
+
+    let client = Arc::new(Client {
         remote_addr,
         socket,
         runtime,
         packet_registry,
         messaging_properties,
+        connected_server: ConnectedServer {
+            messaging: Arc::new(RwLock::new(ConnectedServerMessaging {
+                next_message_to_receive_start_id: initial_next_message_part_id,
+                next_message_to_send_start_id: initial_next_message_part_id,
+                pending_server_confirmation: BTreeMap::new(),
+                incoming_messages: BTreeMap::new(),
+                received_message: None,
+                last_received_message: Instant::now(),
+            })),
+            packets_to_send_sender,
+            message_parts_to_confirm_sender,
+            packet_loss_resending_sender,
+        },
+        disconnected: Arc::new(RwLock::new(None)),
     });
-    let client_async = Arc::new(RwLock::new(ClientAsync {
-        connected_server: ConnectedServerAsync {
-            next_message_to_receive_start_id: client_read
-                .messaging_properties
-                .initial_next_message_part_id,
-            next_message_to_send_start_id: client_read
-                .messaging_properties
-                .initial_next_message_part_id,
-            pending_server_confirmation: BTreeMap::new(),
-            incoming_messages: BTreeMap::new(),
-            received_message: None,
-        },
-        disconnected: None,
-    }));
-    let mut client_mut = ClientMut {
-        connected_server: ConnectedServerMut {
-            packets_to_send: Vec::new(),
-        },
-        last_received_message: Instant::now(),
-    };
+
+    //TODO: todo!("add packets_to_send_sender and packet_loss_resending_sender threads0");
 
     {
         let bytes = SerializedPacketList::create(authentication_packets).bytes;
         let parts = MessagePart::create_list(
             bytes,
-            &client_read.messaging_properties,
-            client_read
-                .messaging_properties
-                .initial_next_message_part_id,
+            &client.messaging_properties,
+            client.messaging_properties.initial_next_message_part_id,
         )?;
 
         if parts.len() != 1 {
@@ -204,15 +199,14 @@ pub async fn connect(
             ));
         }
 
-        client_read
+        client
             .socket
             .send(&parts[0].clone_bytes_with_channel())
             .await?;
         println!("[CONNECTING] message part id sent: {:?} ", parts[0].id());
     }
 
-    let read_handler =
-        read_handler_schedule(Arc::clone(&client_read), Arc::clone(&client_async)).await;
+    let read_handler = read_handler_schedule(Arc::clone(&client)).await;
 
     if let Err(err) = read_handler {
         return Err(io::Error::new(
@@ -220,31 +214,22 @@ pub async fn connect(
             format!("Error reading first confirmation message: {:?}", err),
         ));
     }
-    let tick = tick(
-        Arc::clone(&client_read),
-        Arc::clone(&client_async),
-        Arc::clone(&client_async).write().unwrap(),
-        &mut client_mut,
-    );
+    let tick = tick(Arc::clone(&client));
     match tick {
         ClientTickResult::ReceivedMessage(message) => {
-            let read_handler_client_read = Arc::clone(&client_read);
-            let read_handler_client_async = Arc::clone(&client_async);
-            Arc::clone(&client_read.runtime).spawn(async move {
-                let client_read = read_handler_client_read;
-                let client_async = read_handler_client_async;
+            let read_handler_client = Arc::clone(&client);
+            Arc::clone(&client.runtime).spawn(async move {
+                let client = read_handler_client;
                 loop {
-                    if let Ok(client_async_read) = client_async.read() {
-                        if let Some(_) = client_async_read.disconnected {
+                    if let Ok(reason) = client.disconnected.read() {
+                        if reason.is_some() {
                             break;
                         }
                     } else {
                         break;
                     }
 
-                    let read_handler =
-                        read_handler_schedule(Arc::clone(&client_read), Arc::clone(&client_async))
-                            .await;
+                    let read_handler = read_handler_schedule(Arc::clone(&client)).await;
 
                     if let Err(_) = read_handler {
                         break;
@@ -256,12 +241,24 @@ pub async fn connect(
                 }
             });
 
-            return Ok(ConnectResult {
-                client_read,
-                client_async,
-                client_mut,
-                message,
-            });
+            create_server_packet_confirmation_thread(
+                Arc::clone(&client),
+                message_parts_to_confirm_receiver,
+            );
+
+            create_server_packet_sending_thread(
+                Arc::clone(&client),
+                packets_to_send_receiver,
+                Arc::clone(&client.connected_server.messaging),
+            );
+
+            create_server_packet_loss_resending_thread(
+                Arc::clone(&client),
+                packet_loss_resending_receiver,
+                Arc::clone(&client.connected_server.messaging),
+            );
+
+            return Ok(ConnectResult { client, message });
         }
         ClientTickResult::PacketLossHandling(_) | ClientTickResult::PendingMessage => {
             return Err(io::Error::new(
@@ -288,46 +285,36 @@ pub async fn connect(
 /// - Received messages from the server
 /// - Handles disconnection due to timeout or other reasons
 ///
-pub fn tick(
-    client_read: Arc<ClientRead>,
-    client_async: Arc<RwLock<ClientAsync>>,
-    mut client_async_write: RwLockWriteGuard<ClientAsync>,
-    client_mut: &mut ClientMut,
-) -> ClientTickResult {
-    if let Some(reason) = client_async_write.disconnected {
+pub fn tick(client: Arc<Client>) -> ClientTickResult {
+    if let Some(reason) = *client.disconnected.read().unwrap() {
         return ClientTickResult::Disconnect(reason);
     }
 
     let now = Instant::now();
 
-    if now - client_mut.last_received_message
-        >= client_read.messaging_properties.timeout_interpretation
-    {
+    let server = &client.connected_server;
+    //TODO: unstead write() use try_write
+    let mut messaging = server.messaging.write().unwrap();
+
+    if now - messaging.last_received_message >= client.messaging_properties.timeout_interpretation {
         let reason = DisconnectReason::MessageReceiveTimeout;
-        client_async_write.disconnected = Some(reason);
+        let mut disconnected = client.disconnected.write().unwrap();
+        *disconnected = Some(reason);
         return ClientTickResult::Disconnect(reason);
     }
 
-    let tick_packet_serialized = client_read
-        .packet_registry
-        .serialize(&ClientTickCalledPacket)
-        .unwrap();
+    if messaging.pending_server_confirmation.is_empty() {
+        if let Some(message) = messaging.received_message.take() {
+            messaging.last_received_message = now;
 
-    let server_async = &mut client_async_write.connected_server;
-    let server_mut = &mut client_mut.connected_server;
+            server.send_packet_serialized(
+                client
+                    .packet_registry
+                    .serialize(&ClientTickCalledPacket)
+                    .unwrap(),
+            );
 
-    if server_async.pending_server_confirmation.is_empty() {
-        if let Some(message) = server_async.received_message.take() {
-            client_mut.last_received_message = now;
-
-            server_mut.send_packet_serialized(SerializedPacket::clone(&tick_packet_serialized));
-            let packets_to_send = std::mem::replace(&mut server_mut.packets_to_send, Vec::new());
-
-            Arc::clone(&client_read.runtime).spawn(send_packets_to_server_future(
-                Arc::clone(&client_read),
-                Arc::clone(&client_async),
-                packets_to_send,
-            ));
+            server.packets_to_send_sender.send(None).unwrap();
 
             return ClientTickResult::ReceivedMessage(message);
         } else {
@@ -335,20 +322,21 @@ pub fn tick(
         }
     } else {
         let mut packet_loss_count: MessagePartLargeId = 0;
-        for (_, (ref mut instant, part)) in server_async.pending_server_confirmation.iter_mut() {
-            if now - *instant >= client_read.messaging_properties.timeout_interpretation {
+        for (_, (ref mut instant, part)) in messaging.pending_server_confirmation.iter_mut() {
+            if now - *instant >= client.messaging_properties.timeout_interpretation {
                 let reason = DisconnectReason::PendingMessageConfirmationTimeout;
-                client_async_write.disconnected = Some(reason);
+                let mut disconnected = client.disconnected.write().unwrap();
+                *disconnected = Some(reason);
                 return ClientTickResult::Disconnect(reason);
             }
-            if now - *instant >= client_read.messaging_properties.packet_loss_interpretation {
+            if now - *instant >= client.messaging_properties.packet_loss_interpretation {
                 *instant = now;
                 packet_loss_count += 1;
-                let client_read = Arc::clone(&client_read);
+                let client = Arc::clone(&client);
                 let bytes = part.clone_bytes_with_channel();
                 let TODO_REMOVE_THIS = part.id();
-                Arc::clone(&client_read.runtime).spawn(async move {
-                    let _ = client_read.socket.send(&bytes).await;
+                Arc::clone(&client.runtime).spawn(async move {
+                    let _ = client.socket.send(&bytes).await;
                     println!(
                         "{}",
                         format!(
@@ -366,9 +354,9 @@ pub fn tick(
 }
 
 /// Read bytes for some client, just using a reference of ClientRead
-pub async fn pre_read_next_bytes(client_read: &Arc<ClientRead>) -> io::Result<Vec<u8>> {
+pub async fn pre_read_next_bytes(client: &Arc<Client>) -> io::Result<Vec<u8>> {
     let mut buf = [0u8; 1024];
-    let len = client_read.socket.recv(&mut buf).await?;
+    let len = client.socket.recv(&mut buf).await?;
     Ok(buf[..len].to_vec())
 }
 
@@ -379,11 +367,7 @@ pub async fn pre_read_next_bytes(client_read: &Arc<ClientRead>) -> io::Result<Ve
 /// The result of processing those bytes. If the result is invalid
 /// (check it with[`ReadServerBytesResult::is_valid()`]), ignoring or
 /// disconnecting from the server is recommended.
-pub async fn read_next_bytes(
-    client_read: &Arc<ClientRead>,
-    client_async: &Arc<RwLock<ClientAsync>>,
-    bytes: Vec<u8>,
-) -> ReadServerBytesResult {
+pub async fn read_next_bytes(client: &Arc<Client>, bytes: Vec<u8>) -> ReadServerBytesResult {
     println!("{} {:?}", "bytes: ".red(), bytes.len());
     if bytes.len() < 2 {
         return ReadServerBytesResult::InsufficientBytesLen;
@@ -400,47 +384,41 @@ pub async fn read_next_bytes(
         }
     }
 
-    if let Ok(client_async_read) = client_async.read() {
+    if let Ok(mut messaging_write) = client.connected_server.messaging.write() {
         match bytes[0] {
             MessageChannel::MESSAGE_PART_CONFIRM => {
-                drop(client_async_read);
-                if let Ok(mut client_async_write) = client_async.write() {
-                    let server_async = &mut client_async_write.connected_server;
-                    let REMOVE_VAR = utils::remove_with_rotation(
-                        &mut server_async.pending_server_confirmation,
-                        bytes[1],
+                let REMOVE_VAR = utils::remove_with_rotation(
+                    &mut messaging_write.pending_server_confirmation,
+                    bytes[1],
+                );
+                if let Some(_) = REMOVE_VAR {
+                    println!(
+                        "{}",
+                        format!("[MESSAGE_PART_CONFIRM] successfully removed {:?}", bytes[1])
+                            .green()
                     );
-                    if let Some(_) = REMOVE_VAR {
-                        println!(
-                            "{}",
-                            format!("[MESSAGE_PART_CONFIRM] successfully removed {:?}", bytes[1])
-                                .green()
-                        );
-                        return ReadServerBytesResult::ValidMessagePartConfirm;
-                    } else {
-                        println!(
-                            "{}",
-                            format!(
-                                "[MESSAGE_PART_CONFIRM] already removed {:?}, possible keys: {:?}",
-                                bytes[1],
-                                server_async.pending_server_confirmation.keys()
-                            )
-                            .red()
-                        );
-                        return ReadServerBytesResult::AlreadyAssignedMessagePartConfirm;
-                    }
+                    return ReadServerBytesResult::ValidMessagePartConfirm;
                 } else {
-                    return ReadServerBytesResult::ClientAsyncPoisoned;
+                    println!(
+                        "{}",
+                        format!(
+                            "[MESSAGE_PART_CONFIRM] already removed {:?}, possible keys: {:?}",
+                            bytes[1],
+                            messaging_write.pending_server_confirmation.keys()
+                        )
+                        .red()
+                    );
+                    return ReadServerBytesResult::AlreadyAssignedMessagePartConfirm;
                 }
             }
             MessageChannel::MESSAGE_PART_SEND => {
-                let server_async = &client_async_read.connected_server;
-                if let Some(_) = server_async.received_message {
+                let server = &client.connected_server;
+                if let Some(_) = messaging_write.received_message {
                     return ReadServerBytesResult::ClosedMessageChannel;
                 }
                 if let Ok(part) = MessagePart::deserialize(bytes[1..].to_vec()) {
                     let next_message_to_receive_start_id =
-                        server_async.next_message_to_receive_start_id;
+                        messaging_write.next_message_to_receive_start_id;
                     let mut log = String::new();
 
                     log.push_str(&format!(
@@ -449,81 +427,73 @@ pub async fn read_next_bytes(
                         next_message_to_receive_start_id
                     ));
                     log.push_str(&format!("\n   sending confirmation"));
-                    send_message_part_confirmation(Arc::clone(&client_read), part.id());
+                    server.message_parts_to_confirm_sender.send(part.id());
                     if Ordering::Less
                         != utils::compare_with_rotation(part.id(), next_message_to_receive_start_id)
                     {
-                        drop(client_async_read);
-                        if let Ok(mut client_async_write) = client_async.write() {
-                            let server_async = &mut client_async_write.connected_server;
-                            let large_index: MessagePartLargeId = {
-                                if part.id() >= next_message_to_receive_start_id {
-                                    part.id() as MessagePartLargeId
-                                } else {
-                                    part.id() as MessagePartLargeId + 256
-                                }
-                            };
+                        let large_index: MessagePartLargeId = {
+                            if part.id() >= next_message_to_receive_start_id {
+                                part.id() as MessagePartLargeId
+                            } else {
+                                part.id() as MessagePartLargeId + 256
+                            }
+                        };
 
-                            server_async.incoming_messages.insert(large_index, part);
-                            log.push_str(&format!(
-                                "\n     large_index: {:?}, actual incoming_messages size: {:?}, keys: {:?}",
-                                large_index,
-                                server_async.incoming_messages.len(),
-                                server_async.incoming_messages.keys()
-                            ));
-                            if let Ok(check) =
-                                DeserializedMessageCheck::new(&server_async.incoming_messages)
-                            {
-                                log.push_str(&format!("\n       ok check",));
-                                let incoming_messages = std::mem::replace(
-                                    &mut server_async.incoming_messages,
-                                    BTreeMap::new(),
-                                );
-                                let new_next_message_to_receive_start_id =
-                                    ((incoming_messages.last_key_value().unwrap().0 + 1) % 256)
-                                        as MessagePartId;
-                                log.push_str(&format!(
-                                    "\n       new_next_message_to_receive_start_id: IN {:?}",
-                                    new_next_message_to_receive_start_id
+                        messaging_write.incoming_messages.insert(large_index, part);
+                        log.push_str(&format!(
+                                    "\n     large_index: {:?}, actual incoming_messages size: {:?}, keys: {:?}",
+                                    large_index,
+                                    messaging_write.incoming_messages.len(),
+                                    messaging_write.incoming_messages.keys()
                                 ));
-                                if let Ok(message) = DeserializedMessage::deserialize(
-                                    &client_read.packet_registry,
-                                    check,
-                                    incoming_messages,
-                                ) {
-                                    log.push_str(&format!("\n         deserializing"));
-                                    server_async.next_message_to_receive_start_id =
-                                        new_next_message_to_receive_start_id;
+                        if let Ok(check) =
+                            DeserializedMessageCheck::new(&messaging_write.incoming_messages)
+                        {
+                            log.push_str(&format!("\n       ok check",));
+                            let incoming_messages = std::mem::replace(
+                                &mut messaging_write.incoming_messages,
+                                BTreeMap::new(),
+                            );
+                            let new_next_message_to_receive_start_id =
+                                ((incoming_messages.last_key_value().unwrap().0 + 1) % 256)
+                                    as MessagePartId;
+                            log.push_str(&format!(
+                                "\n       new_next_message_to_receive_start_id: IN {:?}",
+                                new_next_message_to_receive_start_id
+                            ));
+                            if let Ok(message) = DeserializedMessage::deserialize(
+                                &client.packet_registry,
+                                check,
+                                incoming_messages,
+                            ) {
+                                log.push_str(&format!("\n         deserializing"));
+                                messaging_write.next_message_to_receive_start_id =
+                                    new_next_message_to_receive_start_id;
 
-                                    if let Some(_) = server_async.received_message {
-                                        log.push_str(&format!("\n IF NONE, SOMETHING IS WRONG!"))
-                                    } else {
-                                        log.push_str(&format!(
-                                            "\n           AND RECEIVED: {:?}",
-                                            message.packets.len()
-                                        ));
-                                    }
-                                    server_async.received_message = Some(message);
-
-                                    log.push_str(&format!("\n             AND DONE "));
-                                    println!("{}", log.purple());
-                                    return ReadServerBytesResult::CompletedMessagePartSend;
+                                if let Some(_) = messaging_write.received_message {
+                                    log.push_str(&format!("\n IF NONE, SOMETHING IS WRONG!"))
                                 } else {
                                     log.push_str(&format!(
-                                        "\n           AND ERROR InvalidDeserializedMessage",
+                                        "\n           AND RECEIVED: {:?}",
+                                        message.packets.len()
                                     ));
-                                    println!("{}", log.purple());
-                                    return ReadServerBytesResult::InvalidDeserializedMessage;
                                 }
-                            } else {
+                                messaging_write.received_message = Some(message);
+
                                 log.push_str(&format!("\n             AND DONE "));
                                 println!("{}", log.purple());
-                                return ReadServerBytesResult::ValidMessagePartSend;
+                                return ReadServerBytesResult::CompletedMessagePartSend;
+                            } else {
+                                log.push_str(&format!(
+                                    "\n           AND ERROR InvalidDeserializedMessage",
+                                ));
+                                println!("{}", log.purple());
+                                return ReadServerBytesResult::InvalidDeserializedMessage;
                             }
                         } else {
-                            log.push_str(&format!("       AND ERROR ClientAsyncPoisoned",));
+                            log.push_str(&format!("\n             AND DONE "));
                             println!("{}", log.purple());
-                            return ReadServerBytesResult::ClientAsyncPoisoned;
+                            return ReadServerBytesResult::ValidMessagePartSend;
                         }
                     } else {
                         log.push_str(&format!("\n             AND DONE "));
@@ -543,33 +513,43 @@ pub async fn read_next_bytes(
     }
 }
 
-fn send_message_part_confirmation(server_read: Arc<ClientRead>, id: u8) {
-    Arc::clone(&server_read.runtime).spawn(async move {
-        let _ = server_read
-            .socket
-            .send(&vec![MessageChannel::MESSAGE_PART_CONFIRM, id])
-            .await;
+fn create_server_packet_confirmation_thread(
+    client: Arc<Client>,
+    message_parts_to_confirm_receiver: crossbeam_channel::Receiver<MessagePartId>,
+) {
+    Arc::clone(&client.runtime).spawn(async move {
+        while let Ok(id) = message_parts_to_confirm_receiver.recv() {
+            let _ = client
+                .socket
+                .send(&vec![MessageChannel::MESSAGE_PART_CONFIRM, id])
+                .await;
+        }
     });
 }
 
-fn send_packets_to_server_future(
-    client_read: Arc<ClientRead>,
-    client_async: Arc<RwLock<ClientAsync>>,
-    packets_to_send: Vec<SerializedPacket>,
-) -> impl Future<Output = ()> {
-    async move {
-        if let Ok(client_async_read) = client_async.read() {
-            let server_async = &client_async_read.connected_server;
-            let bytes = SerializedPacketList::create(packets_to_send).bytes;
-            if let Ok(message_parts) = MessagePart::create_list(
-                bytes,
-                &client_read.messaging_properties,
-                server_async.next_message_to_send_start_id,
-            ) {
-                drop(client_async_read);
-                if let Ok(mut client_async_write) = client_async.write() {
-                    let server_async = &mut client_async_write.connected_server;
-                    server_async.next_message_to_send_start_id =
+fn create_server_packet_sending_thread(
+    client: Arc<Client>,
+    packets_to_send_receiver: crossbeam_channel::Receiver<Option<SerializedPacket>>,
+    messaging: Arc<RwLock<ConnectedServerMessaging>>,
+) {
+    Arc::clone(&client.runtime).spawn(async move {
+        let mut packets_to_send: Vec<SerializedPacket> = Vec::new();
+        let mut next_message_to_send_start_id =
+            client.messaging_properties.initial_next_message_part_id;
+        while let Ok(serialized_packet) = packets_to_send_receiver.recv() {
+            if let Some(serialized_packet) = serialized_packet {
+                packets_to_send.push(serialized_packet);
+            } else {
+                let packets_to_send =
+                    std::mem::replace(&mut packets_to_send, Vec::new());
+
+                let bytes = SerializedPacketList::create(packets_to_send).bytes;
+                if let Ok(message_parts) = MessagePart::create_list(
+                    bytes,
+                    &client.messaging_properties,
+                    next_message_to_send_start_id,
+                ) {
+                    next_message_to_send_start_id =
                         message_parts[message_parts.len() - 1].id().wrapping_add(1);
 
                     let mut large_id = message_parts[0].id() as MessagePartLargeId;
@@ -585,42 +565,71 @@ fn send_packets_to_server_future(
                         .on_magenta()
                     );
                     for part in message_parts {
-                        let client_read = Arc::clone(&client_read);
                         let bytes = part.clone_bytes_with_channel();
                         let TODO_REMOVE_THIS = part.id();
-                        Arc::clone(&client_read.runtime).spawn(async move {
-                            let _ = client_read.socket.send(&bytes).await;
-                            println!("{}",format!(
-                                "[ASYNC] [send_packets_to_server_future] message part id sent: {:?}, large id: {:?}",
-                                TODO_REMOVE_THIS, large_id
-                            ).purple());
-                        });
 
-                        server_async
-                            .pending_server_confirmation
-                            .insert(large_id, (Instant::now(), part));
+                        {
+                            if let Ok(mut messaging_write) = messaging.write() {
+                                messaging_write.pending_server_confirmation.insert(large_id, (Instant::now(), part));
+                            }else {
+                                break;
+                            }
+                        }
+
+                        let _ = client.socket.send(&bytes).await;
+                        println!("{}",format!(
+                            "[ASYNC] [send_packets_to_client_future] message part id sent: {:?}, large id: {:?}, bytes size {:?} ",
+                            TODO_REMOVE_THIS,large_id,bytes.len()
+                        ).purple());
+
                         large_id += 1;
                     }
                 }
             }
         }
-    }
+    });
 }
 
-async fn read_handler_schedule(
-    client_read: Arc<ClientRead>,
-    client_async: Arc<RwLock<ClientAsync>>,
-) -> io::Result<ReadServerBytesResult> {
+fn create_server_packet_loss_resending_thread(
+    client: Arc<Client>,
+    packet_loss_resending_receiver: crossbeam_channel::Receiver<MessagePartLargeId>,
+    messaging: Arc<RwLock<ConnectedServerMessaging>>,
+) {
+    Arc::clone(&client.runtime).spawn(async move {
+        while let Ok(large_id) = packet_loss_resending_receiver.recv() {
+            let mut bytes: Option<Vec<u8>> = None;
+            if let Ok(messaging) = messaging.read() {
+                if let Some((_, part)) = messaging.pending_server_confirmation.get(&large_id) {
+                    bytes = Some(part.clone_bytes_with_channel());
+                }
+            }
+
+            if let Some(bytes) = bytes {
+                let _ = client.socket.send(&bytes).await;
+                println!(
+                    "{}",
+                    format!(
+                        "[ASYNC] [PACKET LOSS] message part len sent: {:?} ",
+                        bytes.len()
+                    )
+                    .purple()
+                );
+            }
+        }
+    });
+}
+
+async fn read_handler_schedule(client: Arc<Client>) -> io::Result<ReadServerBytesResult> {
     match timeout(
-        client_read.messaging_properties.timeout_interpretation,
-        pre_read_next_bytes(&client_read),
+        client.messaging_properties.timeout_interpretation,
+        pre_read_next_bytes(&client),
     )
     .await
     {
         Ok(bytes) => {
             let bytes: Vec<u8> = bytes?;
 
-            return Ok(read_next_bytes(&client_read, &client_async, bytes).await);
+            return Ok(read_next_bytes(&client, bytes).await);
         }
         Err(e) => {
             return Err(io::Error::new(
