@@ -108,7 +108,6 @@ pub struct Client {
 /// Intended to be used with [`Arc`] and [`RwLock`]
 pub struct ConnectedServerMessaging {
     next_message_to_receive_start_id: MessagePartId,
-    next_message_to_send_start_id: MessagePartId,
     pending_server_confirmation: BTreeMap<MessagePartLargeId, (Instant, MessagePart)>,
     incoming_messages: BTreeMap<MessagePartLargeId, MessagePart>,
     received_message: Option<DeserializedMessage>,
@@ -166,7 +165,6 @@ pub async fn connect(
         connected_server: ConnectedServer {
             messaging: Arc::new(RwLock::new(ConnectedServerMessaging {
                 next_message_to_receive_start_id: initial_next_message_part_id,
-                next_message_to_send_start_id: initial_next_message_part_id,
                 pending_server_confirmation: BTreeMap::new(),
                 incoming_messages: BTreeMap::new(),
                 received_message: None,
@@ -178,8 +176,6 @@ pub async fn connect(
         },
         disconnected: Arc::new(RwLock::new(None)),
     });
-
-    //TODO: todo!("add packets_to_send_sender and packet_loss_resending_sender threads0");
 
     {
         let bytes = SerializedPacketList::create(authentication_packets).bytes;
@@ -322,7 +318,7 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
         }
     } else {
         let mut packet_loss_count: MessagePartLargeId = 0;
-        for (_, (ref mut instant, part)) in messaging.pending_server_confirmation.iter_mut() {
+        for (large_id, (ref mut instant, _)) in messaging.pending_server_confirmation.iter_mut() {
             if now - *instant >= client.messaging_properties.timeout_interpretation {
                 let reason = DisconnectReason::PendingMessageConfirmationTimeout;
                 let mut disconnected = client.disconnected.write().unwrap();
