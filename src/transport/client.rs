@@ -1,10 +1,9 @@
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
-    future::Future,
     io,
     net::SocketAddr,
-    sync::{Arc, RwLock, RwLockWriteGuard},
+    sync::{Arc, RwLock},
     time::Instant,
 };
 
