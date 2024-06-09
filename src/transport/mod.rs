@@ -30,4 +30,5 @@ pub struct MessageChannel;
 impl MessageChannel {
     pub const MESSAGE_PART_CONFIRM: MessageChannelType = 0;
     pub const MESSAGE_PART_SEND: MessageChannelType = 1;
+    pub const AUTHENTICATION: MessageChannelType = 2;
 }
