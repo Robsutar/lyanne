@@ -331,22 +331,8 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
             }
             if now - *instant >= client.messaging_properties.packet_loss_interpretation {
                 *instant = now;
+                let _ = server.packet_loss_resending_sender.send(*large_id);
                 packet_loss_count += 1;
-                let client = Arc::clone(&client);
-                let bytes = part.clone_bytes_with_channel();
-                let TODO_REMOVE_THIS = part.id();
-                Arc::clone(&client.runtime).spawn(async move {
-                    let _ = client.socket.send(&bytes).await;
-                    println!(
-                        "{}",
-                        format!(
-                            "[ASYNC] [PACKET LOSS] message part id sent: {:?} ",
-                            TODO_REMOVE_THIS
-                        )
-                        .bold()
-                        .on_blue()
-                    );
-                });
             }
         }
         return ClientTickResult::PacketLossHandling(packet_loss_count);
@@ -427,7 +413,7 @@ pub async fn read_next_bytes(client: &Arc<Client>, bytes: Vec<u8>) -> ReadServer
                         next_message_to_receive_start_id
                     ));
                     log.push_str(&format!("\n   sending confirmation"));
-                    server.message_parts_to_confirm_sender.send(part.id());
+                    let _ = server.message_parts_to_confirm_sender.send(part.id());
                     if Ordering::Less
                         != utils::compare_with_rotation(part.id(), next_message_to_receive_start_id)
                     {

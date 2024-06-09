@@ -301,7 +301,7 @@ pub fn tick(server: Arc<Server>) -> ServerTickResult {
                     }
                     if now - *instant >= server.messaging_properties.packet_loss_interpretation {
                         *instant = now;
-                        client.packet_loss_resending_sender.send(*large_id);
+                        let _ = client.packet_loss_resending_sender.send(*large_id);
                     }
                 }
             }
@@ -488,7 +488,7 @@ pub async fn read_next_bytes(
                             next_message_to_receive_start_id
                         ));
                         log.push_str(&format!("\n  {}", "sending confirmation".purple()));
-                        client.message_parts_to_confirm_sender.send(part.id());
+                        let _ = client.message_parts_to_confirm_sender.send(part.id());
                         if Ordering::Less
                             != utils::compare_with_rotation(
                                 part.id(),
