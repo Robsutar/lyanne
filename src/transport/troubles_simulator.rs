@@ -83,7 +83,6 @@ impl NetTroublesSimulatorProperties {
             let start = range.start;
             let end = range.end;
             let random_percent = rng.gen_range(start..end);
-            println!("random_percent: {}", random_percent);
             rng.gen_bool(random_percent)
         } else {
             false
