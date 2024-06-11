@@ -9,6 +9,7 @@ use bevy::{
 };
 use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
 use lyanne::transport::client::{Client, ClientTickResult, ConnectResult};
+use lyanne::transport::troubles_simulator::NetTroublesSimulatorProperties;
 use lyanne::transport::MessagingProperties;
 use lyanne::{
     packets::{BarPacket, FooPacket, FooPacketClientSchedule, PacketRegistry},
@@ -51,6 +52,7 @@ fn init(mut commands: Commands) {
     let remote_addr = "127.0.0.1:8822".parse().unwrap();
     let packet_registry = Arc::new(PacketRegistry::new());
     let messaging_properties = Arc::new(MessagingProperties::default());
+    let net_troubles_simulator = Some(Arc::new(NetTroublesSimulatorProperties::bad_condition()));
 
     let authentication_packets = vec![packet_registry
         .serialize(&FooPacket {
@@ -65,6 +67,7 @@ fn init(mut commands: Commands) {
                     remote_addr,
                     packet_registry,
                     messaging_properties,
+                    net_troubles_simulator,
                     runtime,
                     authentication_packets,
                 )

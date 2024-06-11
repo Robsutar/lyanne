@@ -10,6 +10,7 @@ use bevy::{
 };
 use lyanne::packets::{BarPacketServerSchedule, ServerPacketResource};
 use lyanne::transport::server::{BindResult, ReadHandlerProperties};
+use lyanne::transport::troubles_simulator::NetTroublesSimulatorProperties;
 use lyanne::transport::MessagingProperties;
 use lyanne::{
     packets::{BarPacket, FooPacket, FooPacketServerSchedule, PacketRegistry},
@@ -55,6 +56,7 @@ fn init(mut commands: Commands) {
     let packet_registry = Arc::new(PacketRegistry::new());
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
+    let net_troubles_simulator = Some(Arc::new(NetTroublesSimulatorProperties::bad_condition()));
 
     let task = task_pool.spawn(async move {
         Arc::clone(&runtime)
@@ -64,6 +66,7 @@ fn init(mut commands: Commands) {
                     packet_registry,
                     messaging_properties,
                     read_handler_properties,
+                    net_troubles_simulator,
                     runtime,
                 )
                 .await
@@ -101,7 +104,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
 
                     commands.spawn(ServerConnected {
                         server: bind_result.server,
-                        tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
+                        tick_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
                     });
                 }
                 Err(err) => {
