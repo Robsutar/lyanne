@@ -7,7 +7,11 @@ use std::{
     time::Instant,
 };
 
-use tokio::{net::UdpSocket, runtime::Runtime, time::timeout};
+use tokio::{
+    net::UdpSocket,
+    runtime::Runtime,
+    time::{sleep, timeout},
+};
 
 use crate::{
     messages::{
@@ -19,9 +23,13 @@ use crate::{
     },
     utils,
 };
+
 use colored::*;
 
 use super::{MessageChannel, MessagingProperties};
+
+#[cfg(feature = "troubles_simulator")]
+use super::troubles_simulator::NetTroublesSimulatorProperties;
 
 /// Possible results when receiving bytes by client
 #[derive(Debug, Clone, Copy)]
@@ -31,6 +39,7 @@ pub enum ReadServerBytesResult {
     AlreadyAssignedMessagePartSend,
     ValidMessagePartConfirm,
     AlreadyAssignedMessagePartConfirm,
+    #[cfg(feature = "troubles_simulator")]
     PacketLossSimulation,
     ClosedMessageChannel,
     InvalidChannelEntry,
@@ -53,6 +62,7 @@ impl ReadServerBytesResult {
             ReadServerBytesResult::AlreadyAssignedMessagePartSend => true,
             ReadServerBytesResult::ValidMessagePartConfirm => true,
             ReadServerBytesResult::AlreadyAssignedMessagePartConfirm => true,
+            #[cfg(feature = "troubles_simulator")]
             ReadServerBytesResult::PacketLossSimulation => true,
             ReadServerBytesResult::ClosedMessageChannel => true,
             ReadServerBytesResult::InvalidChannelEntry => false,
@@ -96,6 +106,8 @@ pub struct Client {
     pub runtime: Arc<Runtime>,
     pub packet_registry: Arc<PacketRegistry>,
     pub messaging_properties: Arc<MessagingProperties>,
+    #[cfg(feature = "troubles_simulator")]
+    pub net_troubles_simulator: Option<Arc<NetTroublesSimulatorProperties>>,
 
     // Write
     pub connected_server: ConnectedServer,
@@ -141,6 +153,9 @@ pub async fn connect(
     remote_addr: SocketAddr,
     packet_registry: Arc<PacketRegistry>,
     messaging_properties: Arc<MessagingProperties>,
+    #[cfg(feature = "troubles_simulator")] net_troubles_simulator: Option<
+        Arc<NetTroublesSimulatorProperties>,
+    >,
     runtime: Arc<Runtime>,
     authentication_packets: Vec<SerializedPacket>,
 ) -> io::Result<ConnectResult> {
@@ -161,6 +176,9 @@ pub async fn connect(
         runtime,
         packet_registry,
         messaging_properties,
+        #[cfg(feature = "troubles_simulator")]
+        net_troubles_simulator,
+
         connected_server: ConnectedServer {
             messaging: Arc::new(RwLock::new(ConnectedServerMessaging {
                 next_message_to_receive_start_id: initial_next_message_part_id,
@@ -354,14 +372,14 @@ pub async fn read_next_bytes(client: &Arc<Client>, bytes: Vec<u8>) -> ReadServer
         return ReadServerBytesResult::InsufficientBytesLen;
     }
 
-    //TODO: remove this
-    if true {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-
-        if rng.gen_bool(0.1) {
+    #[cfg(feature = "troubles_simulator")]
+    if let Some(net_troubles_simulator) = &client.net_troubles_simulator {
+        if net_troubles_simulator.ranged_packet_loss() {
             println!("{}", "packet loss simulation!!!".red());
             return ReadServerBytesResult::PacketLossSimulation;
+        } else if let Some(delay) = net_troubles_simulator.ranged_ping_delay() {
+            println!("{}", format!("delay of {:?} simulation!!!", delay).red());
+            sleep(delay).await;
         }
     }
 

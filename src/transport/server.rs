@@ -10,7 +10,11 @@ use std::{
 use colored::*;
 
 use dashmap::DashMap;
-use tokio::{net::UdpSocket, runtime::Runtime, time::timeout};
+use tokio::{
+    net::UdpSocket,
+    runtime::Runtime,
+    time::{sleep, timeout},
+};
 
 use crate::{
     messages::{
@@ -26,6 +30,9 @@ use crate::{
 
 use super::{MessageChannel, MessagingProperties};
 
+#[cfg(feature = "troubles_simulator")]
+use super::troubles_simulator::NetTroublesSimulatorProperties;
+
 /// Possible results when receiving bytes by clients
 #[derive(Debug)]
 pub enum ReadClientBytesResult {
@@ -35,6 +42,7 @@ pub enum ReadClientBytesResult {
     AlreadyAssignedMessagePartSend,
     ValidMessagePartConfirm,
     AlreadyAssignedMessagePartConfirm,
+    #[cfg(feature = "troubles_simulator")]
     PacketLossSimulation,
     ClosedMessageChannel,
     OverflowAuthenticationRequest,
@@ -60,6 +68,7 @@ impl ReadClientBytesResult {
             ReadClientBytesResult::AlreadyAssignedMessagePartSend => true,
             ReadClientBytesResult::ValidMessagePartConfirm => true,
             ReadClientBytesResult::AlreadyAssignedMessagePartConfirm => true,
+            #[cfg(feature = "troubles_simulator")]
             ReadClientBytesResult::PacketLossSimulation => true,
             ReadClientBytesResult::ClosedMessageChannel => true,
             ReadClientBytesResult::OverflowAuthenticationRequest => false,
@@ -124,6 +133,8 @@ pub struct Server {
     pub packet_registry: Arc<PacketRegistry>,
     pub messaging_properties: Arc<MessagingProperties>,
     pub read_handler_properties: Arc<ReadHandlerProperties>,
+    #[cfg(feature = "troubles_simulator")]
+    pub net_troubles_simulator: Option<Arc<NetTroublesSimulatorProperties>>,
 
     // Write
     pub connected_clients: DashMap<SocketAddr, ConnectedClient>,
@@ -194,6 +205,9 @@ pub async fn bind(
     packet_registry: Arc<PacketRegistry>,
     messaging_properties: Arc<MessagingProperties>,
     read_handler_properties: Arc<ReadHandlerProperties>,
+    #[cfg(feature = "troubles_simulator")] net_troubles_simulator: Option<
+        Arc<NetTroublesSimulatorProperties>,
+    >,
     runtime: Arc<Runtime>,
 ) -> io::Result<BindResult> {
     let socket = UdpSocket::bind(addr).await?;
@@ -206,6 +220,8 @@ pub async fn bind(
         packet_registry,
         messaging_properties,
         read_handler_properties,
+        #[cfg(feature = "troubles_simulator")]
+        net_troubles_simulator,
 
         connected_clients: DashMap::new(),
         clients_to_try_auth: DashMap::new(),
@@ -433,14 +449,14 @@ pub async fn read_next_bytes(
         return ReadClientBytesResult::InsufficientBytesLen;
     }
 
-    // TODO: remove this
-    if true {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-
-        if rng.gen_bool(0.1) {
+    #[cfg(feature = "troubles_simulator")]
+    if let Some(net_troubles_simulator) = &server.net_troubles_simulator {
+        if net_troubles_simulator.ranged_packet_loss() {
             println!("{}", "packet loss simulation!!!".red());
             return ReadClientBytesResult::PacketLossSimulation;
+        } else if let Some(delay) = net_troubles_simulator.ranged_ping_delay() {
+            println!("{}", format!("delay of {:?} simulation!!!", delay).red());
+            sleep(delay).await;
         }
     }
 

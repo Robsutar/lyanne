@@ -13,8 +13,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = [ "use_bevy", "client", "server" ]
+default = [ "use_bevy", "troubles_simulator", "client", "server" ]
 use_bevy = [ "bevy", "lyanne-derive/use_bevy" ]
+troubles_simulator = [ ]
 client = [ "lyanne-derive/client" ]
 server = [ "lyanne-derive/server" ]
 
