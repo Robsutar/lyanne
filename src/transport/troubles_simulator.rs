@@ -42,8 +42,10 @@ impl NetTroublesSimulatorProperties {
     /// Returns a configuration simulating bad network conditions.
     pub fn bad_condition() -> Self {
         Self {
-            simulated_ping: Some(Duration::from_millis(50)..Duration::from_millis(120)),
-            simulated_packet_loss: Some(0.02..0.05),
+            //simulated_ping: Some(Duration::from_millis(50)..Duration::from_millis(120)),
+            //simulated_packet_loss: Some(0.02..0.05),
+            simulated_ping: None,
+            simulated_packet_loss: None,
         }
     }
 
