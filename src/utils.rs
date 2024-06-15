@@ -1,10 +1,70 @@
-use std::{cmp::Ordering, collections::BTreeMap, io};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, VecDeque},
+    io,
+    time::Duration,
+};
 
 use crate::messages::MessagePartLargeId;
 
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE: usize = (std::mem::size_of::<u8>() * 255) / 2;
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U8: u8 = ORDERED_ROTATABLE_U8_VEC_MAX_SIZE as u8;
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16: u16 = ORDERED_ROTATABLE_U8_VEC_MAX_SIZE as u16;
+
+/// A struct to monitor and calculate the average duration of a fixed-size buffer of recent durations.
+pub struct DurationMonitor {
+    stored: VecDeque<Duration>,
+    total: Duration,
+    average_duration: Duration,
+}
+
+impl DurationMonitor {
+    /// Initializes the DurationMonitor with a fixed-size buffer filled with the given initial duration.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The initial duration to fill the buffer with.
+    /// * `size` - The size of the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the size exceeds the maximum allowable size (`u32::MAX`).
+    pub fn filled_with(duration: Duration, size: usize) -> Self {
+        if size > u32::MAX as usize {
+            panic!("size exceeded the maximum DurationMonitor size");
+        } else {
+            let mut stored = VecDeque::new();
+            stored.resize(size, duration);
+            Self {
+                stored,
+                total: duration * size as u32,
+                average_duration: duration,
+            }
+        }
+    }
+
+    /// Adds a new duration to the buffer, updates the total and the average duration.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The new duration to add to the buffer.
+    pub fn push(&mut self, duration: Duration) {
+        let removed = self.stored.pop_front().unwrap();
+        self.total -= removed;
+        self.stored.push_back(duration);
+        self.total += duration;
+        self.average_duration = self.total / self.stored.len() as u32;
+    }
+
+    /// Returns the current average duration of the buffer.
+    ///
+    /// # Returns
+    ///
+    /// * `Duration` - The average duration of the durations in the buffer.
+    pub fn average_duration(&self) -> Duration {
+        self.average_duration
+    }
+}
 
 /// A trait that requires implementing a method to return a `u8` index.
 /// This is used by `OrderedRotatableU8Vec` to get the `u8` value for sorting purposes.
@@ -121,7 +181,7 @@ pub fn remove_with_rotation<T>(tree: &mut BTreeMap<u16, T>, index: u8) -> Option
                 return tree.remove(&large_index);
             } else {
                 return tree.remove(&(large_index.wrapping_add(256)));
-            } 
+            }
         } else {
             return tree.remove(&large_index);
         }
@@ -147,6 +207,24 @@ mod tests {
         fn index(&self) -> u8 {
             self.index
         }
+    }
+
+    #[test]
+    fn test_push_replaces_oldest_duration() {
+        let initial_duration = Duration::from_secs(1);
+        let mut monitor = DurationMonitor::filled_with(initial_duration, 3);
+
+        monitor.push(Duration::from_secs(2));
+        assert_eq!(
+            monitor.average_duration(),
+            Duration::from_millis(1000) + Duration::from_millis(1000) / 3
+        ); // (1 + 1 + 2) / 3 ~= 1333,333 ms
+
+        monitor.push(Duration::from_secs(3));
+        assert_eq!(monitor.average_duration(), Duration::from_millis(2000)); // (1 + 2 + 3) / 3 = 2000 ms
+
+        monitor.push(Duration::from_secs(4));
+        assert_eq!(monitor.average_duration(), Duration::from_millis(3000)); // (2 + 3 + 4) / 3 = 3000 ms
     }
 
     #[test]
