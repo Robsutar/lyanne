@@ -104,7 +104,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
 
                     commands.spawn(ServerConnected {
                         server: bind_result.server,
-                        tick_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
+                        tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
                     });
                 }
                 Err(err) => {
