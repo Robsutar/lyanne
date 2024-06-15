@@ -1,5 +1,7 @@
 use std::{cmp::Ordering, collections::BTreeMap, io};
 
+use crate::messages::MessagePartLargeId;
+
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE: usize = (std::mem::size_of::<u8>() * 255) / 2;
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U8: u8 = ORDERED_ROTATABLE_U8_VEC_MAX_SIZE as u8;
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16: u16 = ORDERED_ROTATABLE_U8_VEC_MAX_SIZE as u16;
@@ -112,13 +114,14 @@ pub fn compare_with_rotation(a: u8, b: u8) -> Ordering {
 }
 
 pub fn remove_with_rotation<T>(tree: &mut BTreeMap<u16, T>, index: u8) -> Option<T> {
-    if let Some((last, _)) = tree.last_key_value() {
-        let large_index = index as u16;
-        if *last >= 256
-            && tree.first_key_value().unwrap().0.wrapping_sub(large_index)
-                > ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16
-        {
-            return tree.remove(&(large_index.wrapping_add(256)));
+    if let Some((first, _)) = tree.first_key_value() {
+        let large_index = index as MessagePartLargeId;
+        if index <= ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U8 {
+            if *first <= ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16 {
+                return tree.remove(&large_index);
+            } else {
+                return tree.remove(&(large_index.wrapping_add(256)));
+            } 
         } else {
             return tree.remove(&large_index);
         }
@@ -155,14 +158,15 @@ mod tests {
 
     #[test]
     fn remove_with_rotation_check() {
-        let initial_indexes: Vec<u8> = vec![0, 45, 99, 122, 126, 127, 144, 200, 240, 254, 255];
+        let initial_indexes: Vec<u8> = vec![0, 45, 99, 122, 126, 127, 144, 200, 240, 250, 254, 255];
+        let epochs = 11;
 
         for initial_index in initial_indexes {
             let mut tree: BTreeMap<u16, usize> = BTreeMap::new();
 
             {
                 let mut index = initial_index as u16;
-                for epoch in 0..ORDERED_ROTATABLE_U8_VEC_MAX_SIZE + 1 {
+                for epoch in 0..epochs + 1 {
                     tree.insert(index, epoch);
                     index += 1;
                 }
@@ -184,7 +188,7 @@ mod tests {
 
             {
                 let mut index = initial_index as u8;
-                for epoch in 0..ORDERED_ROTATABLE_U8_VEC_MAX_SIZE + 1 {
+                for epoch in 0..epochs + 1 {
                     assert_eq!(remove_with_rotation(&mut tree, index), Some(epoch));
                     index = index.wrapping_add(1);
                 }
