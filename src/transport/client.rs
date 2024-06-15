@@ -178,6 +178,7 @@ pub async fn connect(
         crossbeam_channel::unbounded();
 
     let initial_next_message_part_id = messaging_properties.initial_next_message_part_id;
+    let initial_latency = messaging_properties.initial_latency;
 
     let client = Arc::new(Client {
         remote_addr,
@@ -196,9 +197,9 @@ pub async fn connect(
                 received_message: None,
                 last_received_message: Instant::now(),
                 last_sent_message: Instant::now(),
-                latency_monitor: DurationMonitor::filled_with(Duration::from_millis(50), 10),
+                latency_monitor: DurationMonitor::filled_with(initial_latency, 10),
             })),
-            average_latency: RwLock::new(Duration::from_millis(50)),
+            average_latency: RwLock::new(initial_latency),
             packets_to_send_sender,
             message_parts_to_confirm_sender,
             packet_loss_resending_sender,
