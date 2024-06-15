@@ -15,7 +15,6 @@ pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16: u16 = ORDERED_ROTATABLE_U8_VEC_
 pub struct DurationMonitor {
     stored: VecDeque<Duration>,
     total: Duration,
-    average_duration: Duration,
 }
 
 impl DurationMonitor {
@@ -38,7 +37,6 @@ impl DurationMonitor {
             Self {
                 stored,
                 total: duration * size as u32,
-                average_duration: duration,
             }
         }
     }
@@ -53,7 +51,6 @@ impl DurationMonitor {
         self.total -= removed;
         self.stored.push_back(duration);
         self.total += duration;
-        self.average_duration = self.total / self.stored.len() as u32;
     }
 
     /// Returns the current average duration of the buffer.
@@ -62,7 +59,7 @@ impl DurationMonitor {
     ///
     /// * `Duration` - The average duration of the durations in the buffer.
     pub fn average_duration(&self) -> Duration {
-        self.average_duration
+        self.total / self.stored.len() as u32
     }
 }
 
