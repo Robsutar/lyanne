@@ -6,6 +6,9 @@ pub mod client;
 #[cfg(feature = "server")]
 pub mod server;
 
+#[cfg(feature = "troubles_simulator")]
+pub mod troubles_simulator;
+
 pub struct MessagingProperties {
     pub part_limit: usize,
     pub timeout_interpretation: Duration,
