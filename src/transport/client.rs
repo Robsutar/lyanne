@@ -21,7 +21,7 @@ use crate::{
     packets::{
         ClientTickCalledPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
     },
-    utils,
+    utils::{self, DurationMonitor},
 };
 
 use colored::*;
@@ -124,6 +124,7 @@ pub struct ConnectedServerMessaging {
     received_message: Option<(Instant, DeserializedMessage)>,
     last_received_message: Instant,
     last_sent_message: Instant,
+    latency_monitor: DurationMonitor,
 }
 
 /// Mutable and shared between threads properties of the connected server
@@ -131,6 +132,7 @@ pub struct ConnectedServerMessaging {
 /// Intended to be used inside [`ClientAsync`]
 pub struct ConnectedServer {
     messaging: Arc<RwLock<ConnectedServerMessaging>>,
+    average_latency: RwLock<Duration>,
     packets_to_send_sender: crossbeam_channel::Sender<Option<SerializedPacket>>,
     message_parts_to_confirm_sender: crossbeam_channel::Sender<MessagePartId>,
     packet_loss_resending_sender: crossbeam_channel::Sender<MessagePartLargeId>,
@@ -146,6 +148,12 @@ impl ConnectedServer {
         self.packets_to_send_sender
             .send(Some(serialized_packet))
             .unwrap();
+    }
+
+    /// # Returns
+    /// The average time of messaging response of the server after a client message + server tick delay
+    pub fn average_latency(&self) -> Duration {
+        *self.average_latency.read().unwrap()
     }
 }
 
@@ -188,7 +196,9 @@ pub async fn connect(
                 received_message: None,
                 last_received_message: Instant::now(),
                 last_sent_message: Instant::now(),
+                latency_monitor: DurationMonitor::filled_with(Duration::from_millis(50), 10),
             })),
+            average_latency: RwLock::new(Duration::from_millis(50)),
             packets_to_send_sender,
             message_parts_to_confirm_sender,
             packet_loss_resending_sender,
@@ -309,26 +319,33 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
 
     let server = &client.connected_server;
     //TODO: unstead write() use try_write
-    let mut messaging = server.messaging.write().unwrap();
+    let mut messaging_write = server.messaging.write().unwrap();
 
-    if now - messaging.last_received_message >= client.messaging_properties.timeout_interpretation {
+    if now - messaging_write.last_received_message
+        >= client.messaging_properties.timeout_interpretation
+    {
         let reason = DisconnectReason::MessageReceiveTimeout;
         let mut disconnected = client.disconnected.write().unwrap();
         *disconnected = Some(reason);
         return ClientTickResult::Disconnect(reason);
     }
 
-    if messaging.pending_server_confirmation.is_empty() {
-        if let Some((time, message)) = messaging.received_message.take() {
+    if messaging_write.pending_server_confirmation.is_empty() {
+        if let Some((time, message)) = messaging_write.received_message.take() {
+            let delay = time - messaging_write.last_sent_message;
+            messaging_write.latency_monitor.push(delay);
+            let average_latency = messaging_write.latency_monitor.average_duration();
+            *server.average_latency.write().unwrap() = average_latency;
+
             println!(
                 "{}",
                 format!(
-                    "last ping-pong delay: {:?}",
-                    time - messaging.last_sent_message
+                    "last ping-pong delay: {:?}, average latency: {:?}",
+                    delay, average_latency
                 )
                 .bright_black()
             );
-            messaging.last_received_message = time;
+            messaging_write.last_received_message = time;
 
             server.send_packet_serialized(
                 client
@@ -345,7 +362,9 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
         }
     } else {
         let mut packet_loss_count: MessagePartLargeId = 0;
-        for (large_id, (ref mut instant, _)) in messaging.pending_server_confirmation.iter_mut() {
+        for (large_id, (ref mut instant, _)) in
+            messaging_write.pending_server_confirmation.iter_mut()
+        {
             if now - *instant >= client.messaging_properties.timeout_interpretation {
                 let reason = DisconnectReason::PendingMessageConfirmationTimeout;
                 let mut disconnected = client.disconnected.write().unwrap();

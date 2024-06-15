@@ -25,7 +25,7 @@ use crate::{
         ConfirmAuthenticationPacket, Packet, PacketRegistry, SerializedPacket,
         SerializedPacketList, ServerTickCalledPacket,
     },
-    utils,
+    utils::{self, DurationMonitor},
 };
 
 use super::{MessageChannel, MessagingProperties};
@@ -160,6 +160,7 @@ struct ConnectedClientMessaging {
     received_message: Option<(Instant, DeserializedMessage)>,
     last_received_message: Instant,
     last_sent_message: Instant,
+    latency_monitor: DurationMonitor,
 }
 
 /// Mutable and shared between threads properties of the connected client
@@ -167,6 +168,7 @@ struct ConnectedClientMessaging {
 /// Intended to be used inside [`ServerAsync`]
 pub struct ConnectedClient {
     messaging: Arc<RwLock<ConnectedClientMessaging>>,
+    average_latency: RwLock<Duration>,
     disconnect_sender: crossbeam_channel::Sender<ClientDisconnectReason>,
     disconnect_receiver: crossbeam_channel::Receiver<ClientDisconnectReason>,
     packets_to_send_sender: crossbeam_channel::Sender<Option<SerializedPacket>>,
@@ -197,6 +199,12 @@ impl ConnectedClient {
             Ok(_) => true,
             Err(_) => false,
         }
+    }
+
+    /// # Returns
+    /// The average time of messaging response of this client after a server message
+    pub fn average_latency(&self) -> Duration {
+        *self.average_latency.read().unwrap()
     }
 }
 
@@ -300,11 +308,16 @@ pub fn tick(server: Arc<Server>) -> ServerTickResult {
         if let Ok(mut messaging_write) = client.messaging.try_write() {
             if messaging_write.pending_client_confirmation.is_empty() {
                 if let Some((time, message)) = messaging_write.received_message.take() {
+                    let delay = time - messaging_write.last_sent_message;
+                    messaging_write.latency_monitor.push(delay);
+                    let average_latency = messaging_write.latency_monitor.average_duration();
+                    *client.average_latency.write().unwrap() = average_latency;
+
                     println!(
                         "{}",
                         format!(
-                            "last ping-pong delay: {:?}",
-                            time - messaging_write.last_sent_message
+                            "last ping-pong delay: {:?}, average latency: {:?}",
+                            delay, average_latency
                         )
                         .bright_black()
                     );
@@ -370,7 +383,9 @@ pub fn tick(server: Arc<Server>) -> ServerTickResult {
                     received_message: None,
                     last_received_message: Instant::now(),
                     last_sent_message: Instant::now(),
+                    latency_monitor: DurationMonitor::filled_with(Duration::from_millis(50), 10),
                 })),
+                average_latency: RwLock::new(Duration::from_millis(50)),
                 packets_to_send_sender,
                 disconnect_sender,
                 disconnect_receiver,
