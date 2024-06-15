@@ -157,8 +157,9 @@ struct ConnectedClientMessaging {
     next_message_to_receive_start_id: MessagePartId,
     pending_client_confirmation: BTreeMap<MessagePartLargeId, (Instant, MessagePart)>,
     incoming_messages: BTreeMap<MessagePartLargeId, MessagePart>,
-    received_message: Option<DeserializedMessage>,
+    received_message: Option<(Instant, DeserializedMessage)>,
     last_received_message: Instant,
+    last_sent_message: Instant,
 }
 
 /// Mutable and shared between threads properties of the connected client
@@ -298,8 +299,16 @@ pub fn tick(server: Arc<Server>) -> ServerTickResult {
         drop(messaging);
         if let Ok(mut messaging_write) = client.messaging.try_write() {
             if messaging_write.pending_client_confirmation.is_empty() {
-                if let Some(message) = messaging_write.received_message.take() {
-                    messaging_write.last_received_message = now;
+                if let Some((time, message)) = messaging_write.received_message.take() {
+                    println!(
+                        "{}",
+                        format!(
+                            "last ping-pong delay: {:?}",
+                            time - messaging_write.last_sent_message
+                        )
+                        .bright_black()
+                    );
+                    messaging_write.last_received_message = time;
                     received_messages.push((addr.clone(), message));
 
                     client.packets_to_send_sender.send(None).unwrap();
@@ -360,6 +369,7 @@ pub fn tick(server: Arc<Server>) -> ServerTickResult {
                     incoming_messages: BTreeMap::new(),
                     received_message: None,
                     last_received_message: Instant::now(),
+                    last_sent_message: Instant::now(),
                 })),
                 packets_to_send_sender,
                 disconnect_sender,
@@ -455,8 +465,8 @@ pub async fn read_next_bytes(
             println!("{}", "packet loss simulation!!!".red());
             return ReadClientBytesResult::PacketLossSimulation;
         } else if let Some(delay) = net_troubles_simulator.ranged_ping_delay() {
-            println!("{}", format!("delay of {:?} simulation!!!", delay).red());
             sleep(delay).await;
+            println!("{}", format!("delay of {:?} was simulated!!!", delay).red());
         }
     }
 
@@ -561,7 +571,8 @@ pub async fn read_next_bytes(
                                             message.packets.len()
                                         ));
                                     }
-                                    messaging_write.received_message = Some(message);
+                                    messaging_write.received_message =
+                                        Some((Instant::now(), message));
 
                                     log.push_str(&format!("\n{}", "AND DONE".purple()));
                                     println!("{}", log.bright_blue());
@@ -659,6 +670,12 @@ fn create_client_packet_sending_thread(
                     &server.messaging_properties,
                     next_message_to_send_start_id,
                 ) {
+                    if let Ok(mut messaging_write) = messaging.write() {
+                        messaging_write.last_sent_message = Instant::now();
+                    }else {
+                        break;
+                    }
+
                     next_message_to_send_start_id =
                         message_parts[message_parts.len() - 1].id().wrapping_add(1);
 

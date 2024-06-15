@@ -4,7 +4,7 @@ use std::{
     io,
     net::SocketAddr,
     sync::{Arc, RwLock},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use tokio::{
@@ -121,8 +121,9 @@ pub struct ConnectedServerMessaging {
     next_message_to_receive_start_id: MessagePartId,
     pending_server_confirmation: BTreeMap<MessagePartLargeId, (Instant, MessagePart)>,
     incoming_messages: BTreeMap<MessagePartLargeId, MessagePart>,
-    received_message: Option<DeserializedMessage>,
+    received_message: Option<(Instant, DeserializedMessage)>,
     last_received_message: Instant,
+    last_sent_message: Instant,
 }
 
 /// Mutable and shared between threads properties of the connected server
@@ -186,6 +187,7 @@ pub async fn connect(
                 incoming_messages: BTreeMap::new(),
                 received_message: None,
                 last_received_message: Instant::now(),
+                last_sent_message: Instant::now(),
             })),
             packets_to_send_sender,
             message_parts_to_confirm_sender,
@@ -317,8 +319,16 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
     }
 
     if messaging.pending_server_confirmation.is_empty() {
-        if let Some(message) = messaging.received_message.take() {
-            messaging.last_received_message = now;
+        if let Some((time, message)) = messaging.received_message.take() {
+            println!(
+                "{}",
+                format!(
+                    "last ping-pong delay: {:?}",
+                    time - messaging.last_sent_message
+                )
+                .bright_black()
+            );
+            messaging.last_received_message = time;
 
             server.send_packet_serialized(
                 client
@@ -378,8 +388,8 @@ pub async fn read_next_bytes(client: &Arc<Client>, bytes: Vec<u8>) -> ReadServer
             println!("{}", "packet loss simulation!!!".red());
             return ReadServerBytesResult::PacketLossSimulation;
         } else if let Some(delay) = net_troubles_simulator.ranged_ping_delay() {
-            println!("{}", format!("delay of {:?} simulation!!!", delay).red());
             sleep(delay).await;
+            println!("{}", format!("delay of {:?} was simulated!!!", delay).red());
         }
     }
 
@@ -477,7 +487,7 @@ pub async fn read_next_bytes(client: &Arc<Client>, bytes: Vec<u8>) -> ReadServer
                                         message.packets.len()
                                     ));
                                 }
-                                messaging_write.received_message = Some(message);
+                                messaging_write.received_message = Some((Instant::now(), message));
 
                                 log.push_str(&format!("\n             AND DONE "));
                                 println!("{}", log.purple());
@@ -548,6 +558,12 @@ fn create_server_packet_sending_thread(
                     &client.messaging_properties,
                     next_message_to_send_start_id,
                 ) {
+                    if let Ok(mut messaging_write) = messaging.write() {
+                        messaging_write.last_sent_message = Instant::now();
+                    }else {
+                        break;
+                    }
+
                     next_message_to_send_start_id =
                         message_parts[message_parts.len() - 1].id().wrapping_add(1);
 
@@ -628,7 +644,8 @@ async fn read_handler_schedule(client: Arc<Client>) -> io::Result<ReadServerByte
         Ok(bytes) => {
             let bytes: Vec<u8> = bytes?;
 
-            return Ok(read_next_bytes(&client, bytes).await);
+            let exit = Ok(read_next_bytes(&client, bytes).await);
+            exit
         }
         Err(e) => {
             return Err(io::Error::new(
