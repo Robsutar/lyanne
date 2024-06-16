@@ -21,7 +21,7 @@ use crate::{
     packets::{
         ClientTickCalledPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
     },
-    utils::{self, DurationMonitor},
+    utils::{self, DurationMonitor, RttCalculator},
 };
 
 use colored::*;
@@ -125,6 +125,8 @@ pub struct ConnectedServerMessaging {
     last_received_message: Instant,
     last_sent_message: Instant,
     latency_monitor: DurationMonitor,
+    packet_loss_rtt_calculator: RttCalculator,
+    average_packet_loss_rtt: Duration,
 }
 
 /// Mutable and shared between threads properties of the connected server
@@ -198,6 +200,8 @@ pub async fn connect(
                 last_received_message: Instant::now(),
                 last_sent_message: Instant::now(),
                 latency_monitor: DurationMonitor::filled_with(initial_latency, 10),
+                packet_loss_rtt_calculator: RttCalculator::new(initial_latency),
+                average_packet_loss_rtt: initial_latency,
             })),
             average_latency: RwLock::new(initial_latency),
             packets_to_send_sender,
@@ -335,14 +339,19 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
         if let Some((time, message)) = messaging_write.received_message.take() {
             let delay = time - messaging_write.last_sent_message;
             messaging_write.latency_monitor.push(delay);
+            messaging_write.average_packet_loss_rtt =
+                messaging_write.packet_loss_rtt_calculator.update_rtt(
+                    &client.messaging_properties.packet_loss_rtt_properties,
+                    delay,
+                );
             let average_latency = messaging_write.latency_monitor.average_duration();
             *server.average_latency.write().unwrap() = average_latency;
 
             println!(
                 "{}",
                 format!(
-                    "last ping-pong delay: {:?}, average latency: {:?}",
-                    delay, average_latency
+                    "last ping-pong delay: {:?}, average latency: {:?}, average packet loss rtt: {:?}",
+                    delay, average_latency, messaging_write.average_packet_loss_rtt
                 )
                 .bright_black()
             );
@@ -363,6 +372,7 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
         }
     } else {
         let mut packet_loss_count: MessagePartLargeId = 0;
+        let average_packet_loss_rtt = messaging_write.average_packet_loss_rtt;
         for (large_id, (ref mut instant, _)) in
             messaging_write.pending_server_confirmation.iter_mut()
         {
@@ -372,7 +382,7 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
                 *disconnected = Some(reason);
                 return ClientTickResult::Disconnect(reason);
             }
-            if now - *instant >= client.messaging_properties.packet_loss_interpretation {
+            if now - *instant >= average_packet_loss_rtt {
                 *instant = now;
                 let _ = server.packet_loss_resending_sender.send(*large_id);
                 packet_loss_count += 1;

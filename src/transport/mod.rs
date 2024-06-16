@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use crate::utils::RttProperties;
+
 #[cfg(feature = "client")]
 pub mod client;
 
@@ -12,8 +14,9 @@ pub mod troubles_simulator;
 pub struct MessagingProperties {
     pub part_limit: usize,
     pub timeout_interpretation: Duration,
-    pub packet_loss_interpretation: Duration,
     pub initial_next_message_part_id: u8,
+    pub initial_latency: Duration,
+    pub packet_loss_rtt_properties: RttProperties,
 }
 
 impl Default for MessagingProperties {
@@ -24,6 +27,7 @@ impl Default for MessagingProperties {
             packet_loss_interpretation: Duration::from_millis(100),
             initial_next_message_part_id: 1,
             initial_latency: Duration::from_millis(50),
+            packet_loss_rtt_properties: RttProperties::new(0.125, 0.25),
         }
     }
 }

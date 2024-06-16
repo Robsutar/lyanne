@@ -63,6 +63,72 @@ impl DurationMonitor {
     }
 }
 
+/// Represents properties for RTT (Round-Trip Time) calculation
+pub struct RttProperties {
+    alpha: f64, // Weight given to new RTT measurements
+    beta: f64,  // Weight given to new variations in RTT measurements
+}
+
+impl RttProperties {
+    /// Constructs a new `RttProperties` instance with the given `alpha` and `beta` values.
+    ///
+    /// # Arguments
+    ///
+    /// * `alpha` - Weight for new RTT measurements
+    /// * `beta` - Weight for new variations in RTT measurements
+    pub fn new(alpha: f64, beta: f64) -> Self {
+        Self { alpha, beta }
+    }
+}
+
+/// Represents a calculator for RTT (Round-Trip Time)
+pub struct RttCalculator {
+    /// Estimated round-trip time
+    estimated: Duration,
+    /// Variation in round-trip time
+    var: Duration,
+}
+
+impl RttCalculator {
+    /// Constructs a new `RttCalculator` instance with an initial RTT value.
+    ///
+    /// # Arguments
+    ///
+    /// * `initial_rtt` - The initial round-trip time value
+    ///
+    /// The initial variation is set to half of the initial RTT.
+    pub fn new(initial_rtt: Duration) -> Self {
+        RttCalculator {
+            estimated: initial_rtt,
+            var: initial_rtt / 2,
+        }
+    }
+
+    /// Updates the estimated RTT and variation based on new RTT measurements.
+    ///
+    /// # Arguments
+    ///
+    /// * `properties` - The `RttProperties` containing alpha and beta values
+    /// * `new_rtt` - The new round-trip time measurement
+    ///
+    /// Returns the updated RTT with a safety margin (estimated + 4 * variation).
+    pub fn update_rtt(&mut self, properties: &RttProperties, new_rtt: Duration) -> Duration {
+        let new_rtt_secs = new_rtt.as_secs_f64();
+        let estimated_secs = self.estimated.as_secs_f64();
+        let var_secs = self.var.as_secs_f64();
+
+        let new_var = (1.0 - properties.beta) * var_secs
+            + properties.beta * (new_rtt_secs - estimated_secs).abs();
+        let new_estimated =
+            (1.0 - properties.alpha) * estimated_secs + properties.alpha * new_rtt_secs;
+
+        self.var = Duration::from_secs_f64(new_var);
+        self.estimated = Duration::from_secs_f64(new_estimated);
+
+        self.estimated + self.var * 4
+    }
+}
+
 /// A trait that requires implementing a method to return a `u8` index.
 /// This is used by `OrderedRotatableU8Vec` to get the `u8` value for sorting purposes.
 pub trait IndexableU8 {
