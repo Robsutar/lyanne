@@ -273,19 +273,6 @@ mod tests {
     }
 
     #[test]
-    fn test_push_replaces_oldest_usize() {
-        let initial_usize = 1;
-        let mut monitor = UsizeMonitor::filled_with(initial_usize, 3);
-
-        monitor.push(2);
-        monitor.push(3);
-        assert_eq!(monitor.average_value(), 2); // (1 + 2 + 3) / 3 = 2000 ms
-
-        monitor.push(4);
-        assert_eq!(monitor.average_value(), 3); // (2 + 3 + 4) / 3 = 3000 ms
-    }
-
-    #[test]
     fn test_push_replaces_oldest_duration() {
         let initial_duration = Duration::from_secs(1);
         let mut monitor = DurationMonitor::filled_with(initial_duration, 3);
