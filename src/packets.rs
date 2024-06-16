@@ -5,11 +5,11 @@ use std::{
     io,
 };
 
-#[cfg(feature = "use_bevy")]
+#[cfg(feature = "bevy")]
 use bevy::ecs::system::Commands;
-#[cfg(feature = "use_bevy")]
+#[cfg(feature = "bevy")]
 use bevy::ecs::system::Resource;
-#[cfg(feature = "use_bevy")]
+#[cfg(feature = "bevy")]
 use bevy::ecs::world::World;
 use serde::{Deserialize, Serialize};
 
@@ -17,12 +17,12 @@ pub use lyanne_derive::Packet;
 pub trait Packet:
     Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any + Send + Sync
 {
-    #[cfg(all(feature = "use_bevy", feature = "client"))]
+    #[cfg(all(feature = "bevy", feature = "client"))]
     fn run_client_schedule(
         world: &mut World,
     ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
 
-    #[cfg(all(feature = "use_bevy", feature = "server"))]
+    #[cfg(all(feature = "bevy", feature = "server"))]
     fn run_server_schedule(
         world: &mut World,
     ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
@@ -30,13 +30,13 @@ pub trait Packet:
 
 pub type PacketToDowncast = dyn Any + Send + Sync;
 
-#[cfg(all(feature = "use_bevy", feature = "client"))]
+#[cfg(all(feature = "bevy", feature = "client"))]
 #[derive(Resource)]
 pub struct ClientPacketResource<P: Packet> {
     pub packet: Option<P>,
 }
 
-#[cfg(all(feature = "use_bevy", feature = "server"))]
+#[cfg(all(feature = "bevy", feature = "server"))]
 #[derive(Resource)]
 pub struct ServerPacketResource<P: Packet> {
     pub packet: Option<P>,
@@ -53,10 +53,10 @@ pub struct PacketRegistry {
             Box<dyn Fn(&[u8]) -> io::Result<Box<PacketToDowncast>> + Send + Sync>,
         ),
     >,
-    #[cfg(all(feature = "use_bevy", feature = "client"))]
+    #[cfg(all(feature = "bevy", feature = "client"))]
     bevy_client_caller_map:
         HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
-    #[cfg(all(feature = "use_bevy", feature = "server"))]
+    #[cfg(all(feature = "bevy", feature = "server"))]
     bevy_server_caller_map:
         HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
     last_id: u16,
@@ -68,9 +68,9 @@ impl PacketRegistry {
             packet_type_ids: HashMap::new(),
             serde_map: HashMap::new(),
             last_id: 0,
-            #[cfg(all(feature = "use_bevy", feature = "client"))]
+            #[cfg(all(feature = "bevy", feature = "client"))]
             bevy_client_caller_map: HashMap::new(),
-            #[cfg(all(feature = "use_bevy", feature = "server"))]
+            #[cfg(all(feature = "bevy", feature = "server"))]
             bevy_server_caller_map: HashMap::new(),
         };
         exit.add::<ConfirmAuthenticationPacket>();
@@ -121,7 +121,7 @@ impl PacketRegistry {
         self.serde_map
             .insert(packet_id, (Box::new(serialize), Box::new(deserialize)));
 
-        #[cfg(all(feature = "use_bevy", feature = "client"))]
+        #[cfg(all(feature = "bevy", feature = "client"))]
         self.bevy_client_caller_map.insert(
             packet_id,
             Box::new(
@@ -141,7 +141,7 @@ impl PacketRegistry {
             ),
         );
 
-        #[cfg(all(feature = "use_bevy", feature = "server"))]
+        #[cfg(all(feature = "bevy", feature = "server"))]
         self.bevy_server_caller_map.insert(
             packet_id,
             Box::new(
@@ -192,7 +192,7 @@ impl PacketRegistry {
         }
     }
 
-    #[cfg(all(feature = "use_bevy", feature = "server"))]
+    #[cfg(all(feature = "bevy", feature = "server"))]
     pub fn bevy_server_call(
         &self,
         commands: &mut Commands,
@@ -205,7 +205,7 @@ impl PacketRegistry {
         call(commands, deserialized_packet.packet);
     }
 
-    #[cfg(all(feature = "use_bevy", feature = "client"))]
+    #[cfg(all(feature = "bevy", feature = "client"))]
     pub fn bevy_client_call(
         &self,
         commands: &mut Commands,

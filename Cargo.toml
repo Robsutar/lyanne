@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = [ 
+members = [
     "derive",
-    "examples/bevy-ping-pong", 
-    "examples/bevy-ping-pong/client", 
+    "examples/bevy-ping-pong",
+    "examples/bevy-ping-pong/client",
     "examples/bevy-ping-pong/server",
 ]
 
@@ -13,16 +13,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = [ "use_bevy", "troubles_simulator", "client", "server" ]
-use_bevy = [ "bevy", "lyanne-derive/use_bevy" ]
-troubles_simulator = [ ]
-client = [ "lyanne-derive/client" ]
-server = [ "lyanne-derive/server" ]
+default = ["bevy", "troubles_simulator", "client", "server"]
+bevy = ["dep:bevy", "lyanne-derive/bevy"]
+troubles_simulator = []
+client = ["lyanne-derive/client"]
+server = ["lyanne-derive/server"]
 
 [dependencies]
 lyanne-derive = { path = "derive" }
-tokio = { version = "^1.0.0", features = [ "full" ] }
-serde = { version = "^1.0.0", features = [ "derive" ] }
+tokio = { version = "^1.0.0", features = ["full"] }
+serde = { version = "^1.0.0", features = ["derive"] }
 bincode = "^1.0.0"
 bevy = { version = "^0.13.0", optional = true }
 crossbeam-channel = { version = "^0.5" }
