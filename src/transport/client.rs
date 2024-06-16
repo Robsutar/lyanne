@@ -127,6 +127,7 @@ pub struct ConnectedServerMessaging {
     latency_monitor: DurationMonitor,
     packet_loss_rtt_calculator: RttCalculator,
     average_packet_loss_rtt: Duration,
+    bytes_len_receiving: usize,
 }
 
 /// Mutable and shared between threads properties of the connected server
@@ -202,6 +203,7 @@ pub async fn connect(
                 latency_monitor: DurationMonitor::filled_with(initial_latency, 10),
                 packet_loss_rtt_calculator: RttCalculator::new(initial_latency),
                 average_packet_loss_rtt: initial_latency,
+                bytes_len_receiving: 0,
             })),
             average_latency: RwLock::new(initial_latency),
             packets_to_send_sender,
@@ -346,12 +348,14 @@ pub fn tick(client: Arc<Client>) -> ClientTickResult {
                 );
             let average_latency = messaging_write.latency_monitor.average_value();
             *server.average_latency.write().unwrap() = average_latency;
+            let bytes_len_receiving = messaging_write.bytes_len_receiving;
+            messaging_write.bytes_len_receiving = 0;
 
             println!(
                 "{}",
                 format!(
-                    "last ping-pong delay: {:?}, average latency: {:?}, average packet loss rtt: {:?}",
-                    delay, average_latency, messaging_write.average_packet_loss_rtt
+                    "last ping-pong delay: {:?}, average latency: {:?}, average packet loss rtt: {:?}, total received bytes len: {:?}",
+                    delay, average_latency, messaging_write.average_packet_loss_rtt, bytes_len_receiving
                 )
                 .bright_black()
             );
@@ -424,6 +428,7 @@ pub async fn read_next_bytes(client: &Arc<Client>, bytes: Vec<u8>) -> ReadServer
     }
 
     if let Ok(mut messaging_write) = client.connected_server.messaging.write() {
+        messaging_write.bytes_len_receiving += bytes.len();
         match bytes[0] {
             MessageChannel::MESSAGE_PART_CONFIRM => {
                 let REMOVE_VAR = utils::remove_with_rotation(

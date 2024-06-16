@@ -163,6 +163,7 @@ struct ConnectedClientMessaging {
     latency_monitor: DurationMonitor,
     packet_loss_rtt_calculator: RttCalculator,
     average_packet_loss_rtt: Duration,
+    bytes_len_receiving: usize,
 }
 
 /// Mutable and shared between threads properties of the connected client
@@ -319,12 +320,14 @@ pub fn tick(server: Arc<Server>) -> ServerTickResult {
                         );
                     let average_latency = messaging_write.latency_monitor.average_value();
                     *client.average_latency.write().unwrap() = average_latency;
+                    let bytes_len_receiving = messaging_write.bytes_len_receiving;
+                    messaging_write.bytes_len_receiving = 0;
 
                     println!(
                         "{}",
                         format!(
-                            "last ping-pong delay: {:?}, average latency: {:?}, average packet loss rtt: {:?}",
-                            delay, average_latency, messaging_write.average_packet_loss_rtt
+                            "last ping-pong delay: {:?}, average latency: {:?}, average packet loss rtt: {:?}, total received bytes len: {:?}",
+                            delay, average_latency, messaging_write.average_packet_loss_rtt, bytes_len_receiving
                         )
                         .bright_black()
                     );
@@ -399,6 +402,7 @@ pub fn tick(server: Arc<Server>) -> ServerTickResult {
                         server.messaging_properties.initial_latency,
                     ),
                     average_packet_loss_rtt: server.messaging_properties.initial_latency,
+                    bytes_len_receiving: 0,
                 })),
                 average_latency: RwLock::new(server.messaging_properties.initial_latency),
                 packets_to_send_sender,
@@ -483,7 +487,6 @@ pub async fn read_next_bytes(
     server: &Arc<Server>,
     tuple: (SocketAddr, Vec<u8>),
 ) -> ReadClientBytesResult {
-    println!("{} {:?}", "bytes: ".red(), tuple.1.len());
     let (addr, bytes) = tuple;
     if bytes.len() < 2 {
         return ReadClientBytesResult::InsufficientBytesLen;
@@ -502,6 +505,7 @@ pub async fn read_next_bytes(
 
     if let Some(client) = server.connected_clients.get(&addr) {
         if let Ok(mut messaging_write) = client.messaging.write() {
+            messaging_write.bytes_len_receiving += bytes.len();
             match bytes[0] {
                 MessageChannel::MESSAGE_PART_CONFIRM => {
                     let REMOVE_VAR = utils::remove_with_rotation(
