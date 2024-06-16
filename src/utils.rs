@@ -11,6 +11,54 @@ pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE: usize = (std::mem::size_of::<u8>() 
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U8: u8 = ORDERED_ROTATABLE_U8_VEC_MAX_SIZE as u8;
 pub const ORDERED_ROTATABLE_U8_VEC_MAX_SIZE_U16: u16 = ORDERED_ROTATABLE_U8_VEC_MAX_SIZE as u16;
 
+/// A struct to monitor and calculate the average of a fixed-size buffer of recent `usize` values.
+pub struct UsizeMonitor {
+    stored: VecDeque<usize>,
+    total: usize,
+}
+
+impl UsizeMonitor {
+    /// Initializes the UsizeMonitor with a fixed-size buffer filled with the given initial value.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The initial value to fill the buffer with.
+    /// * `size` - The size of the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the size exceeds the maximum allowable size (`u32::MAX`).
+    pub fn filled_with(value: usize, size: usize) -> Self {
+        let mut stored = VecDeque::new();
+        stored.resize(size, value);
+        Self {
+            stored,
+            total: value * size,
+        }
+    }
+
+    /// Adds a new value to the buffer, updates the total and the average value.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The new value to add to the buffer.
+    pub fn push(&mut self, value: usize) {
+        let removed = self.stored.pop_front().unwrap();
+        self.total -= removed;
+        self.stored.push_back(value);
+        self.total += value;
+    }
+
+    /// Returns the current average value of the buffer.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The average value of the values in the buffer.
+    pub fn average_value(&self) -> usize {
+        self.total / self.stored.len()
+    }
+}
+
 /// A struct to monitor and calculate the average duration of a fixed-size buffer of recent durations.
 pub struct DurationMonitor {
     stored: VecDeque<Duration>,
@@ -270,6 +318,19 @@ mod tests {
         fn index(&self) -> u8 {
             self.index
         }
+    }
+
+    #[test]
+    fn test_push_replaces_oldest_usize() {
+        let initial_usize = 1;
+        let mut monitor = UsizeMonitor::filled_with(initial_usize, 3);
+
+        monitor.push(2);
+        monitor.push(3);
+        assert_eq!(monitor.average_value(), 2); // (1 + 2 + 3) / 3 = 2000 ms
+
+        monitor.push(4);
+        assert_eq!(monitor.average_value(), 3); // (2 + 3 + 4) / 3 = 3000 ms
     }
 
     #[test]
