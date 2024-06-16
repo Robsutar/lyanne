@@ -317,7 +317,7 @@ pub fn tick(server: Arc<Server>) -> ServerTickResult {
                             &server.messaging_properties.packet_loss_rtt_properties,
                             delay,
                         );
-                    let average_latency = messaging_write.latency_monitor.average_duration();
+                    let average_latency = messaging_write.latency_monitor.average_value();
                     *client.average_latency.write().unwrap() = average_latency;
 
                     println!(

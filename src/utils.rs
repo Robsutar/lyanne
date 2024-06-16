@@ -106,7 +106,7 @@ impl DurationMonitor {
     /// # Returns
     ///
     /// * `Duration` - The average duration of the durations in the buffer.
-    pub fn average_duration(&self) -> Duration {
+    pub fn average_value(&self) -> Duration {
         self.total / self.stored.len() as u32
     }
 }
@@ -340,15 +340,15 @@ mod tests {
 
         monitor.push(Duration::from_secs(2));
         assert_eq!(
-            monitor.average_duration(),
+            monitor.average_value(),
             Duration::from_millis(1000) + Duration::from_millis(1000) / 3
         ); // (1 + 1 + 2) / 3 ~= 1333,333 ms
 
         monitor.push(Duration::from_secs(3));
-        assert_eq!(monitor.average_duration(), Duration::from_millis(2000)); // (1 + 2 + 3) / 3 = 2000 ms
+        assert_eq!(monitor.average_value(), Duration::from_millis(2000)); // (1 + 2 + 3) / 3 = 2000 ms
 
         monitor.push(Duration::from_secs(4));
-        assert_eq!(monitor.average_duration(), Duration::from_millis(3000)); // (2 + 3 + 4) / 3 = 3000 ms
+        assert_eq!(monitor.average_value(), Duration::from_millis(3000)); // (2 + 3 + 4) / 3 = 3000 ms
     }
 
     #[test]
