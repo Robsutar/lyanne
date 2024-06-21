@@ -4,6 +4,7 @@
 		{"id":"9dea3c8a07580007","type":"group","x":-540,"y":478,"width":1220,"height":680,"label":"Message part send"},
 		{"id":"7739193640a70e9a","type":"group","x":622,"y":-980,"width":718,"height":1048,"label":"#5 Client is not connected"},
 		{"id":"4b41cc8d4b75604e","type":"group","x":-540,"y":-448,"width":1025,"height":516,"label":"#3 Client is connected"},
+		{"id":"e38c0c52d5c9b80d","type":"group","x":1580,"y":111,"width":1100,"height":462,"label":"Connected clients iteration"},
 		{"id":"4e7a5c0a9fa6e877","type":"group","x":741,"y":519,"width":603,"height":639,"label":"Packets sender"},
 		{"id":"1e7127097efeb367","type":"group","x":-540,"y":-980,"width":539,"height":318,"label":"#1 + #2 Ignored Addr"},
 		{"id":"7a4196861d045306","type":"group","x":1580,"y":-300,"width":375,"height":343,"label":"Clients to auth"},
@@ -72,9 +73,16 @@
 		{"id":"9520485d4bd14544","type":"text","text":"- Send addr and message to #clients_to_auth_sender\n- Send addr to #addrs_in_auth\n- Remove client from #pending_auth","x":650,"y":-148,"width":289,"height":195,"color":"6"},
 		{"id":"7787a05db0207806","type":"text","text":"**#4** Client is inside #addrs_in_auth","x":181,"y":-742,"width":250,"height":60,"color":"6"},
 		{"id":"0ce1aa5bb0f6272a","type":"text","text":"Ignore, client probabily is handling packet loss on authentication, but the server already have computed that auth message","x":180,"y":-960,"width":250,"height":189,"color":"6"},
+		{"id":"d216ca2819c7c92e","type":"text","text":"Send the part id to #client_message_part_resend_sender","x":1600,"y":482,"width":315,"height":71},
+		{"id":"9093102c9fd52544","type":"text","text":"If #check_time is grater than #client_packet_loss_delay","x":1610,"y":364,"width":295,"height":67},
+		{"id":"e2d83f877fcd9605","type":"text","text":"Iterate for #pending_confirmation","x":1632,"y":257,"width":250,"height":60},
+		{"id":"514af72c293a06f1","type":"text","text":"- Take it\n- Move that message to the received message in tick result","x":1952,"y":447,"width":353,"height":106},
+		{"id":"e067f877dc415bbe","type":"text","text":"Iterate for #connected_clients","x":2004,"y":131,"width":250,"height":60},
+		{"id":"e7a0f5e9a3d7fd12","type":"text","text":"If #received_message is disponible","x":2018,"y":257,"width":221,"height":79},
 		{"id":"08c83b46ca73d0f8","type":"text","text":"- Store data, to the tick result, to refuse/accept that client authentication\n- Send addr to #addrs_in_auth_removal_sender","x":1600,"y":-154,"width":335,"height":177},
 		{"id":"0e70f4911f8c3378","type":"text","text":"#clients_to_auth_receiver receive data","x":1642,"y":-280,"width":250,"height":60},
-		{"id":"9ea3018bf0286ed2","type":"text","text":"Server tick","x":2059,"y":-115,"width":140,"height":50,"color":"1"}
+		{"id":"9ea3018bf0286ed2","type":"text","text":"Server tick","x":2059,"y":-115,"width":140,"height":50,"color":"1"},
+		{"id":"f4efa7bcaf6752cc","type":"text","text":"- Send server tick packet to #client_packets_to_send_sender\n- Send message to create signal to #client_packets_to_send_sender","x":2305,"y":257,"width":346,"height":148}
 	],
 	"edges":[
 		{"id":"9201c0d500f0bb4b","fromNode":"621bfb5145b4a0a5","fromSide":"bottom","toNode":"512e56422b584673","toSide":"top","color":"4"},
@@ -125,6 +133,13 @@
 		{"id":"3063799431fa7277","fromNode":"16df201ab2c88670","fromSide":"right","toNode":"abcdbfcf77ca9f0e","toSide":"left"},
 		{"id":"c62d9607c637a171","fromNode":"07aa38270f9c9ec1","fromSide":"bottom","toNode":"16df201ab2c88670","toSide":"top","color":"2"},
 		{"id":"503b558a2ba0eed0","fromNode":"0e70f4911f8c3378","fromSide":"bottom","toNode":"08c83b46ca73d0f8","toSide":"top"},
+		{"id":"1e4a3e2a0af48c49","fromNode":"e067f877dc415bbe","fromSide":"bottom","toNode":"e2d83f877fcd9605","toSide":"top","color":"2"},
+		{"id":"6f0b4a32db1f21d8","fromNode":"e2d83f877fcd9605","fromSide":"bottom","toNode":"9093102c9fd52544","toSide":"top","color":"1"},
+		{"id":"0b01d5f0e0b751a9","fromNode":"9093102c9fd52544","fromSide":"bottom","toNode":"d216ca2819c7c92e","toSide":"top"},
+		{"id":"aad984fa13f50df6","fromNode":"e067f877dc415bbe","fromSide":"bottom","toNode":"f4efa7bcaf6752cc","toSide":"top"},
+		{"id":"b3a74653e664952e","fromNode":"e067f877dc415bbe","fromSide":"bottom","toNode":"e7a0f5e9a3d7fd12","toSide":"top","color":"1"},
+		{"id":"32649b883a024ccb","fromNode":"e7a0f5e9a3d7fd12","fromSide":"bottom","toNode":"514af72c293a06f1","toSide":"top"},
+		{"id":"e1489a059f716c56","fromNode":"9ea3018bf0286ed2","fromSide":"bottom","toNode":"e067f877dc415bbe","toSide":"top","color":"2"},
 		{"id":"ec85116b6e8fa819","fromNode":"9ea3018bf0286ed2","fromSide":"top","toNode":"0e70f4911f8c3378","toSide":"right","color":"2"}
 	]
 }
