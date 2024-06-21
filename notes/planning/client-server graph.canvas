@@ -1,16 +1,26 @@
 {
 	"nodes":[
 		{"id":"5b06772bb07664ff","type":"group","x":-640,"y":-1120,"width":2880,"height":2400,"label":"Server"},
+		{"id":"1e7127097efeb367","type":"group","x":-540,"y":-980,"width":539,"height":318,"label":"#1 + #2 Ignored Addr"},
+		{"id":"a1f7fcb4e37ffc78","type":"text","text":"Receive bytes of some client","x":73,"y":-564,"width":169,"height":63,"color":"1"},
+		{"id":"e4f839d8136640ff","type":"text","text":"**#2** Addr is inside #ignored_addrs","x":-520,"y":-756,"width":200,"height":74,"color":"6"},
+		{"id":"59d7967c51465e17","type":"text","text":"**#1** Addr is inside #temporarily_ignored_addrs","x":-281,"y":-756,"width":260,"height":74,"color":"6"},
 		{"id":"3adc5af6a63f38dd","type":"text","text":"Red lines = OPTIONAL action","x":-1040,"y":-222,"width":202,"height":82,"color":"1"},
 		{"id":"352b38e3b6022617","type":"text","text":"orange lines = REPEAT action","x":-1040,"y":-560,"width":180,"height":73,"color":"2"},
 		{"id":"e9c5fa1e8cf71cf7","type":"text","text":"green lines = OR action","x":-1040,"y":-453,"width":174,"height":73,"color":"4"},
 		{"id":"e4da0b51b399e269","type":"text","text":"Blue lines = not flow action ","x":-1040,"y":-343,"width":180,"height":89,"color":"5"},
 		{"id":"40c5a867d7a5e6e2","type":"text","text":"**#1**, **#2** .. are ifs, in order","x":-1040,"y":-990,"width":250,"height":60},
+		{"id":"fd67f99e46ee67c2","type":"text","text":"Send ignoring justification if there is some to the client","x":-391,"y":-960,"width":220,"height":103,"color":"6"},
 		{"id":"b2258610b3458700","type":"text","text":"Gray cards = sync context","x":-1040,"y":46,"width":174,"height":59},
 		{"id":"688c1ee3642db499","type":"text","text":"Purple cards = async context ","x":-1040,"y":137,"width":174,"height":86,"color":"6"},
 		{"id":"a448a148bb25ba22","type":"text","text":"Blue cards = not flow context ","x":-1040,"y":263,"width":214,"height":75,"color":"5"},
 		{"id":"ee7c140e9cc41579","type":"text","text":"Yellow cards = TODO","x":-1040,"y":476,"width":184,"height":57,"color":"3"},
 		{"id":"ea7e9ff30346e93e","type":"text","text":"Red cards = called externally ","x":-1040,"y":371,"width":189,"height":72,"color":"1"}
 	],
-	"edges":[]
+	"edges":[
+		{"id":"bae83da3b27df737","fromNode":"a1f7fcb4e37ffc78","fromSide":"top","toNode":"59d7967c51465e17","toSide":"bottom","color":"4"},
+		{"id":"16c8af1f7a4f3fa9","fromNode":"a1f7fcb4e37ffc78","fromSide":"top","toNode":"e4f839d8136640ff","toSide":"bottom","color":"4"},
+		{"id":"cf0adfe486982974","fromNode":"e4f839d8136640ff","fromSide":"top","toNode":"fd67f99e46ee67c2","toSide":"bottom"},
+		{"id":"2356f7f77541c3bd","fromNode":"59d7967c51465e17","fromSide":"top","toNode":"fd67f99e46ee67c2","toSide":"bottom"}
+	]
 }
