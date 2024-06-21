@@ -1,10 +1,18 @@
 {
 	"nodes":[
 		{"id":"5b06772bb07664ff","type":"group","x":-640,"y":-1120,"width":2880,"height":2400,"label":"Server"},
+		{"id":"4b41cc8d4b75604e","type":"group","x":-540,"y":-448,"width":1025,"height":516,"label":"#3 Client is connected"},
 		{"id":"1e7127097efeb367","type":"group","x":-540,"y":-980,"width":539,"height":318,"label":"#1 + #2 Ignored Addr"},
+		{"id":"c0184426108a8f3d","type":"text","text":"- Ignore bytes\n- Add bytes len to #client_tick_bytes_len","x":190,"y":-161,"width":275,"height":100,"color":"6"},
+		{"id":"731bff0bf5052eee","type":"text","text":"- Send addr to #clients_to_disconnect\n- Send addr to #temporarily_ignored_addrs with the justificative of invalid byte send","x":-520,"y":-161,"width":320,"height":208,"color":"6"},
+		{"id":"2724028adbb19459","type":"text","text":"- Add bytes len to #client_tick_bytes_len\n- Send bytes to #client_receiving_bytes_sender\n- Add overflow bytes len to #client_tick_bytes_len","x":-164,"y":-161,"width":321,"height":200,"color":"6"},
+		{"id":"bcb667df725836d9","type":"text","text":"**#1** Bytes size is not large sufficient for channel + 1 (2)","x":-492,"y":-278,"width":265,"height":60,"color":"6"},
+		{"id":"e1fa3d46dcf3990e","type":"text","text":"#client_tick_bytes_len < #max_client_tick_bytes_len","x":-128,"y":-280,"width":250,"height":60,"color":"6"},
 		{"id":"a1f7fcb4e37ffc78","type":"text","text":"Receive bytes of some client","x":73,"y":-564,"width":169,"height":63,"color":"1"},
 		{"id":"e4f839d8136640ff","type":"text","text":"**#2** Addr is inside #ignored_addrs","x":-520,"y":-756,"width":200,"height":74,"color":"6"},
 		{"id":"59d7967c51465e17","type":"text","text":"**#1** Addr is inside #temporarily_ignored_addrs","x":-281,"y":-756,"width":260,"height":74,"color":"6"},
+		{"id":"24f13c7c347e0fbf","type":"text","text":"**#3** Client is connected","x":80,"y":-428,"width":155,"height":75,"color":"6"},
+		{"id":"e470790eacff1da1","type":"text","text":"#client_tick_bytes_len >= #max_client_tick_bytes_len","x":202,"y":-280,"width":250,"height":60,"color":"6"},
 		{"id":"3adc5af6a63f38dd","type":"text","text":"Red lines = OPTIONAL action","x":-1040,"y":-222,"width":202,"height":82,"color":"1"},
 		{"id":"352b38e3b6022617","type":"text","text":"orange lines = REPEAT action","x":-1040,"y":-560,"width":180,"height":73,"color":"2"},
 		{"id":"e9c5fa1e8cf71cf7","type":"text","text":"green lines = OR action","x":-1040,"y":-453,"width":174,"height":73,"color":"4"},
@@ -18,9 +26,16 @@
 		{"id":"ea7e9ff30346e93e","type":"text","text":"Red cards = called externally ","x":-1040,"y":371,"width":189,"height":72,"color":"1"}
 	],
 	"edges":[
+		{"id":"db94dbbe93235341","fromNode":"e470790eacff1da1","fromSide":"bottom","toNode":"c0184426108a8f3d","toSide":"top"},
+		{"id":"86fd1269b87da379","fromNode":"bcb667df725836d9","fromSide":"bottom","toNode":"731bff0bf5052eee","toSide":"top"},
+		{"id":"794744bf754cd847","fromNode":"e1fa3d46dcf3990e","fromSide":"bottom","toNode":"2724028adbb19459","toSide":"top"},
+		{"id":"5f57f7dac7e48c7a","fromNode":"24f13c7c347e0fbf","fromSide":"left","toNode":"bcb667df725836d9","toSide":"top","color":"4"},
+		{"id":"d6ee63c1b819e25f","fromNode":"24f13c7c347e0fbf","fromSide":"bottom","toNode":"e1fa3d46dcf3990e","toSide":"top","color":"4"},
+		{"id":"f17909dac9b06131","fromNode":"a1f7fcb4e37ffc78","fromSide":"bottom","toNode":"24f13c7c347e0fbf","toSide":"top","color":"4"},
 		{"id":"bae83da3b27df737","fromNode":"a1f7fcb4e37ffc78","fromSide":"top","toNode":"59d7967c51465e17","toSide":"bottom","color":"4"},
 		{"id":"16c8af1f7a4f3fa9","fromNode":"a1f7fcb4e37ffc78","fromSide":"top","toNode":"e4f839d8136640ff","toSide":"bottom","color":"4"},
 		{"id":"cf0adfe486982974","fromNode":"e4f839d8136640ff","fromSide":"top","toNode":"fd67f99e46ee67c2","toSide":"bottom"},
-		{"id":"2356f7f77541c3bd","fromNode":"59d7967c51465e17","fromSide":"top","toNode":"fd67f99e46ee67c2","toSide":"bottom"}
+		{"id":"2356f7f77541c3bd","fromNode":"59d7967c51465e17","fromSide":"top","toNode":"fd67f99e46ee67c2","toSide":"bottom"},
+		{"id":"7140030cc4bf34cc","fromNode":"24f13c7c347e0fbf","fromSide":"bottom","toNode":"e470790eacff1da1","toSide":"top","color":"4"}
 	]
 }
