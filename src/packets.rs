@@ -74,8 +74,8 @@ impl PacketRegistry {
             bevy_server_caller_map: HashMap::new(),
         };
         exit.add::<ConfirmAuthenticationPacket>();
-        exit.add::<ClientTickCalledPacket>();
-        exit.add::<ServerTickCalledPacket>();
+        exit.add::<ClientTickEndPacket>();
+        exit.add::<ServerTickEndPacket>();
         //TODO: remove these two
         exit.add::<FooPacket>();
         exit.add::<BarPacket>();
@@ -330,10 +330,10 @@ impl SerializedPacketList {
 pub struct ConfirmAuthenticationPacket;
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct ClientTickCalledPacket;
+pub struct ClientTickEndPacket;
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct ServerTickCalledPacket;
+pub struct ServerTickEndPacket;
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct FooPacket {
