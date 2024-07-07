@@ -20,6 +20,7 @@ impl MessagePartTypes {
     pub const END: MessagePartType = 255;
 }
 
+#[derive(Debug)]
 pub struct MessagePart {
     bytes: Vec<u8>,
 }
@@ -45,6 +46,12 @@ impl MessagePart {
     pub fn id(&self) -> MessagePartId {
         self.bytes[0]
     }
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+    pub fn to_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
     pub fn part_type(&self) -> MessagePartType {
         self.bytes[1]
     }
@@ -54,12 +61,6 @@ impl MessagePart {
     pub fn take_content(mut self) -> Vec<u8> {
         self.bytes.drain(..2);
         self.bytes
-    }
-    pub fn clone_bytes_with_channel(&self) -> Vec<u8> {
-        let mut exit = Vec::with_capacity(self.bytes.len() + 1);
-        exit.push(MessageChannel::MESSAGE_PART_SEND);
-        exit.extend_from_slice(&self.bytes);
-        exit
     }
 }
 
@@ -76,7 +77,8 @@ impl MessagePart {
             ));
         }
 
-        let part_limit = props.part_limit;
+        // 1 for part id, 1 for type
+        let part_limit = props.part_limit - 1 - 1;
 
         let num_parts = (complete_message.len() as f32 / part_limit as f32).ceil() as usize;
         if num_parts > ORDERED_ROTATABLE_U8_VEC_MAX_SIZE {
