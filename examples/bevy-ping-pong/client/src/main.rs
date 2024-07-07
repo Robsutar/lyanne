@@ -7,20 +7,19 @@ use bevy::{
     prelude::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
-use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
-use lyanne::transport::client::{Client, ClientTickResult, ConnectResult};
-use lyanne::transport::troubles_simulator::NetTroublesSimulatorProperties;
-use lyanne::transport::MessagingProperties;
-use lyanne::{
-    packets::{BarPacket, FooPacket, FooPacketClientSchedule, PacketRegistry},
-    transport::client::{self},
+use lyanne::packets::{
+    BarPacket, FooPacket, FooPacketClientSchedule, PacketRegistry, SerializedPacketList,
 };
+use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
+use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectResult};
+use lyanne::transport::troubles_simulator::NetTroublesSimulatorProperties;
+use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;
 
 #[derive(Component)]
 struct ClientConnecting {
-    task: Task<Result<ConnectResult, io::Error>>,
+    task: Task<Result<ConnectResult, ConnectError>>,
 }
 
 #[derive(Component)]
@@ -52,7 +51,7 @@ fn init(mut commands: Commands) {
     let remote_addr = "127.0.0.1:8822".parse().unwrap();
     let packet_registry = Arc::new(PacketRegistry::new());
     let messaging_properties = Arc::new(MessagingProperties::default());
-    let net_troubles_simulator = Some(Arc::new(NetTroublesSimulatorProperties::bad_condition()));
+    let read_handler_properties = Arc::new(ReadHandlerProperties::default());
 
     let authentication_packets = vec![packet_registry
         .serialize(&FooPacket {
@@ -63,13 +62,13 @@ fn init(mut commands: Commands) {
     let task = task_pool.spawn(async move {
         Arc::clone(&runtime)
             .spawn(async move {
-                client::connect(
+                Client::connect(
                     remote_addr,
                     packet_registry,
                     messaging_properties,
-                    net_troubles_simulator,
+                    read_handler_properties,
                     runtime,
-                    authentication_packets,
+                    SerializedPacketList::create(authentication_packets),
                 )
                 .await
             })
@@ -102,11 +101,21 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
 
             match connect {
                 Ok(connect_result) => {
-                    info!("Client connected");
-
-                    commands.spawn(ClientConnected {
+                    let client_connected = ClientConnected {
                         client: connect_result.client,
+                    };
+                    info!(
+                        "Client connected, first message size: {:?}",
+                        connect_result.message.packets.len()
+                    );
+
+                    client_connected.client.send_packet(&BarPacket {
+                        message: "We connected!".to_owned(),
                     });
+
+                    Client::tick_after_message(&client_connected.client);
+
+                    commands.spawn(client_connected);
                 }
                 Err(err) => {
                     error!("Failed to bind client: {}", err);
@@ -119,27 +128,19 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
 fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
     for client_connected in query.iter_mut() {
         let client = Arc::clone(&client_connected.client);
-        let tick = client::tick(Arc::clone(&client_connected.client));
+        let tick = Client::tick_start(&client_connected.client);
         match tick {
             ClientTickResult::ReceivedMessage(message) => {
                 if true {
                     let mut rng = thread_rng();
-                    for _ in 0..rng.gen_range(70..71) {
+                    for _ in 0..rng.gen_range(12..13) {
                         let message = format!("Random str: {:?}", rng.gen::<i32>());
                         if rng.gen_bool(0.5) {
                             let packet = FooPacket { message };
-                            client_connected
-                                .client
-                                .connected_server
-                                .send(&client, &packet)
-                                .unwrap();
+                            client_connected.client.send_packet(&packet);
                         } else {
                             let packet = BarPacket { message };
-                            client_connected
-                                .client
-                                .connected_server
-                                .send(&client, &packet)
-                                .unwrap();
+                            client_connected.client.send_packet(&packet);
                         }
                     }
                 }
@@ -149,9 +150,15 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                         .packet_registry
                         .bevy_client_call(&mut commands, deserialized_packet);
                 }
+
+                println!("finishing tick");
+                Client::tick_after_message(&client);
             }
-            ClientTickResult::Disconnect(reason) => {
-                panic!("client disconnected: {:?}", reason)
+            ClientTickResult::Disconnected => {
+                panic!(
+                    "client disconnected: {:?}",
+                    client.take_disconnect_reason().unwrap()
+                )
             }
             _ => (),
         }

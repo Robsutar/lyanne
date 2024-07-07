@@ -9,12 +9,12 @@ use bevy::{
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
 use lyanne::packets::{BarPacketServerSchedule, ServerPacketResource};
-use lyanne::transport::server::{BindResult, ReadHandlerProperties};
+use lyanne::transport::server::{BindResult, ServerProperties};
 use lyanne::transport::troubles_simulator::NetTroublesSimulatorProperties;
-use lyanne::transport::MessagingProperties;
+use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{
     packets::{BarPacket, FooPacket, FooPacketServerSchedule, PacketRegistry},
-    transport::server::{self, Server},
+    transport::server::Server,
 };
 use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;
@@ -56,17 +56,17 @@ fn init(mut commands: Commands) {
     let packet_registry = Arc::new(PacketRegistry::new());
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
-    let net_troubles_simulator = Some(Arc::new(NetTroublesSimulatorProperties::bad_condition()));
+    let server_properties = Arc::new(ServerProperties::default());
 
     let task = task_pool.spawn(async move {
         Arc::clone(&runtime)
             .spawn(async move {
-                server::bind(
+                Server::bind(
                     addr,
                     packet_registry,
                     messaging_properties,
                     read_handler_properties,
-                    net_troubles_simulator,
+                    server_properties,
                     runtime,
                 )
                 .await
@@ -104,7 +104,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
 
                     commands.spawn(ServerConnected {
                         server: bind_result.server,
-                        tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
+                        tick_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
                     });
                 }
                 Err(err) => {
@@ -115,8 +115,12 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
     }
 }
 
-fn server_tick(mut commands: Commands, mut query: Query<&mut ServerConnected>, time: Res<Time>) {
-    for mut server_connected in query.iter_mut() {
+fn server_tick(
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut ServerConnected)>,
+    time: Res<Time>,
+) {
+    for (entity, mut server_connected) in query.iter_mut() {
         if server_connected
             .tick_timer
             .tick(time.delta())
@@ -125,27 +129,27 @@ fn server_tick(mut commands: Commands, mut query: Query<&mut ServerConnected>, t
             let server = Arc::clone(&server_connected.server);
 
             if true {
-                for entry in server_connected.server.connected_clients.iter() {
+                for entry in server_connected.server.connected_clients_iter() {
                     let connected_client = entry.value();
                     let mut rng = thread_rng();
-                    for _ in 0..rng.gen_range(70..71) {
+                    for _ in 0..rng.gen_range(12..13) {
                         let message = format!("Random str: {:?}", rng.gen::<i32>());
                         if rng.gen_bool(0.5) {
                             let packet = FooPacket { message };
-                            connected_client.send(&server, &packet).unwrap();
+                            server.send_packet(&connected_client, &packet);
                         } else {
                             let packet = BarPacket { message };
-                            connected_client.send(&server, &packet).unwrap();
+                            server.send_packet(&connected_client, &packet);
                         }
                     }
                 }
             }
 
             {
-                let tick_result = server::tick(Arc::clone(&server));
+                let tick_result = Server::tick_start(&server);
 
                 let clients_packets_to_process = tick_result.received_messages;
-                let clients_to_auth = tick_result.clients_to_authenticate;
+                let clients_to_auth = tick_result.to_auth;
 
                 for (_, message) in clients_packets_to_process {
                     for deserialized_packet in message.packets {
@@ -159,10 +163,12 @@ fn server_tick(mut commands: Commands, mut query: Query<&mut ServerConnected>, t
                     info!(
                         "authenticating client {:?}, message count: {:?}",
                         addr,
-                        message.packets.len()
+                        message.message.len()
                     );
-                    server.connect(addr);
+                    Server::authenticate(&server, addr, message);
                 }
+
+                Server::tick_end(&server);
             }
         }
     }
