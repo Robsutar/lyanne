@@ -1057,6 +1057,15 @@ impl Server {
     }
 
     /// # Returns
+    /// Connected client if found.
+    pub fn get_connected_client(
+        &self,
+        addr: &SocketAddr,
+    ) -> Option<dashmap::mapref::one::Ref<SocketAddr, ConnectedClient>> {
+        self.connected_clients.get(addr)
+    }
+
+    /// # Returns
     /// Iterator with the clients connected to the server.
     pub fn connected_clients_iter(
         &self,
@@ -1087,7 +1096,7 @@ impl Server {
     /// ```no_run
     /// let server: Arc<Server> = ...;
     /// let addr: SocketAddr = ...;
-    /// let client = server.connected_clients.get(&addr).unwrap();
+    /// let client = server.get_connected_client(&addr).unwrap();
     /// let packet = FooPacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
@@ -1114,7 +1123,7 @@ impl Server {
     /// ```no_run
     /// let server: Arc<Server> = ...;
     /// let addr: SocketAddr = ...;
-    /// let client = server.connected_clients.get(&addr).unwrap();
+    /// let client = server.get_connected_client(&addr).unwrap();
     /// let packet = FooPacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
