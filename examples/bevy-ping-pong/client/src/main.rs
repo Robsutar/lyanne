@@ -113,7 +113,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
                         message: "We connected!".to_owned(),
                     });
 
-                    Client::tick_after_message(&client_connected.client);
+                    client_connected.client.tick_after_message();
 
                     commands.spawn(client_connected);
                 }
@@ -128,7 +128,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
 fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
     for client_connected in query.iter_mut() {
         let client = Arc::clone(&client_connected.client);
-        let tick = Client::tick_start(&client_connected.client);
+        let tick = client_connected.client.tick_start();
         match tick {
             ClientTickResult::ReceivedMessage(message) => {
                 if true {
@@ -151,7 +151,7 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                         .bevy_client_call(&mut commands, deserialized_packet);
                 }
 
-                Client::tick_after_message(&client);
+                client.tick_after_message();
             }
             ClientTickResult::Disconnected => {
                 panic!(

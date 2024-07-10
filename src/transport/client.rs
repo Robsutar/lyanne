@@ -572,9 +572,9 @@ impl Client {
     ///
     /// # Panics
     /// If [`Client::tick_after_message`] call is pending.
-    pub fn tick_start(client: &Arc<Client>) -> ClientTickResult {
+    pub fn tick_start(self: &Arc<Self>) -> ClientTickResult {
         {
-            let tick_state = client.tick_state.read().unwrap();
+            let tick_state = self.tick_state.read().unwrap();
             if *tick_state != ClientTickState::TickStartPending {
                 panic!(
                     "Invalid client tick state, next pending is {:?}",
@@ -583,19 +583,19 @@ impl Client {
             }
         }
 
-        if Client::is_disconnected(&client) {
+        if Client::is_disconnected(&self) {
             return ClientTickResult::Disconnected;
         }
 
-        if let Ok((reason, context)) = client.reason_to_disconnect_receiver.try_recv() {
+        if let Ok((reason, context)) = self.reason_to_disconnect_receiver.try_recv() {
             //TODO: use context
-            *client.disconnect_reason.write().unwrap() = Some(Some(reason));
+            *self.disconnect_reason.write().unwrap() = Some(Some(reason));
             return ClientTickResult::Disconnected;
         }
 
         let now = Instant::now();
 
-        let connected_server = &client.connected_server;
+        let connected_server = &self.connected_server;
         if let Ok(mut messaging) = connected_server.messaging.try_write() {
             *connected_server.last_messaging_write.write().unwrap() = now;
             *connected_server.average_latency.write().unwrap() =
@@ -605,9 +605,8 @@ impl Client {
             let mut messages_to_resend: Vec<Arc<Vec<u8>>> = Vec::new();
 
             for sent_part in messaging.pending_confirmation.values_mut() {
-                if now - sent_part.sent_instant > client.messaging_properties.timeout_interpretation
-                {
-                    *client.disconnect_reason.write().unwrap() = Some(Some(
+                if now - sent_part.sent_instant > self.messaging_properties.timeout_interpretation {
+                    *self.disconnect_reason.write().unwrap() = Some(Some(
                         ServerDisconnectReason::PendingMessageConfirmationTimeout,
                     ));
                     return ClientTickResult::Disconnected;
@@ -626,7 +625,7 @@ impl Client {
 
             if let Some(message) = messaging.received_message.take() {
                 {
-                    let mut tick_state = client.tick_state.write().unwrap();
+                    let mut tick_state = self.tick_state.write().unwrap();
                     *tick_state = ClientTickState::TickAfterMessagePending;
                 }
 
@@ -636,22 +635,22 @@ impl Client {
                     .send(())
                     .unwrap();
 
-                Client::try_check_read_handler(&client);
+                self.try_check_read_handler();
 
                 return ClientTickResult::ReceivedMessage(message);
             } else if now - messaging.last_received_message_instant
-                >= client.messaging_properties.timeout_interpretation
+                >= self.messaging_properties.timeout_interpretation
             {
-                *client.disconnect_reason.write().unwrap() =
+                *self.disconnect_reason.write().unwrap() =
                     Some(Some(ServerDisconnectReason::MessageReceiveTimeout));
                 return ClientTickResult::Disconnected;
             } else {
                 return ClientTickResult::PendingMessage;
             }
         } else if now - *connected_server.last_messaging_write.read().unwrap()
-            >= client.messaging_properties.timeout_interpretation
+            >= self.messaging_properties.timeout_interpretation
         {
-            *client.disconnect_reason.write().unwrap() =
+            *self.disconnect_reason.write().unwrap() =
                 Some(Some(ServerDisconnectReason::WriteUnlockTimeout));
             return ClientTickResult::Disconnected;
         } else {
@@ -666,9 +665,9 @@ impl Client {
     ///
     /// # Panics
     /// If is not called after [`Client::tick_start`]
-    pub fn tick_after_message(client: &Arc<Client>) {
+    pub fn tick_after_message(self: &Arc<Self>) {
         {
-            let mut tick_state = client.tick_state.write().unwrap();
+            let mut tick_state = self.tick_state.write().unwrap();
             if *tick_state != ClientTickState::TickAfterMessagePending {
                 panic!(
                     "Invalid server tick state, next pending is {:?}",
@@ -679,13 +678,13 @@ impl Client {
             }
         }
 
-        let tick_packet_serialized = client
+        let tick_packet_serialized = self
             .packet_registry
             .serialize(&ClientTickEndPacket)
             .unwrap();
 
-        let connected_server = &client.connected_server;
-        client.send_packet_serialized(tick_packet_serialized.clone());
+        let connected_server = &self.connected_server;
+        self.send_packet_serialized(tick_packet_serialized.clone());
         connected_server.packets_to_send_sender.send(None).unwrap();
     }
 
@@ -766,13 +765,13 @@ impl Client {
         }
     }
 
-    fn create_async_task<F>(client: &Arc<Client>, future: F)
+    fn create_async_task<F>(self: &Arc<Self>, future: F)
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let _ = client
+        let _ = self
             .tasks_keeper_sender
-            .send(Arc::clone(&client.runtime).spawn(future));
+            .send(Arc::clone(&self.runtime).spawn(future));
     }
 
     fn create_async_tasks_keeper(
@@ -997,7 +996,7 @@ impl Client {
 
         let client_downgraded = Arc::downgrade(&client);
         let messaging_clone = Arc::clone(&messaging);
-        Client::create_async_task(&client, async move {
+        client.create_async_task(async move {
             ConnectedServer::create_receiving_bytes_handler(
                 client_downgraded,
                 messaging_clone,
@@ -1009,7 +1008,7 @@ impl Client {
         let client_downgraded = Arc::downgrade(&client);
         let messaging_clone = Arc::clone(&messaging);
         let initial_next_message_part_id = client.messaging_properties.initial_next_message_part_id;
-        Client::create_async_task(&client, async move {
+        client.create_async_task(async move {
             ConnectedServer::create_packets_to_send_handler(
                 client_downgraded,
                 messaging_clone,
@@ -1021,7 +1020,7 @@ impl Client {
         });
 
         let client_downgraded = Arc::downgrade(&client);
-        Client::create_async_task(&client, async move {
+        client.create_async_task(async move {
             ConnectedServer::create_message_part_confirmation_handler(
                 client_downgraded,
                 message_part_confirmation_receiver,
@@ -1030,7 +1029,7 @@ impl Client {
         });
 
         let client_downgraded = Arc::downgrade(&client);
-        Client::create_async_task(&client, async move {
+        client.create_async_task(async move {
             ConnectedServer::create_shared_socket_bytes_send_handler(
                 client_downgraded,
                 shared_socket_bytes_send_receiver,
@@ -1038,17 +1037,17 @@ impl Client {
             .await;
         });
 
-        Client::try_check_read_handler(&client);
+        client.try_check_read_handler();
 
         ConnectResult { client, message }
     }
 
-    fn try_check_read_handler(client: &Arc<Client>) {
-        if let Ok(mut active_count) = client.read_handler_properties.active_count.try_write() {
-            if *active_count < client.read_handler_properties.target_surplus_size - 1 {
+    fn try_check_read_handler(self: &Arc<Self>) {
+        if let Ok(mut active_count) = self.read_handler_properties.active_count.try_write() {
+            if *active_count < self.read_handler_properties.target_surplus_size - 1 {
                 *active_count += 1;
-                let downgraded_server = Arc::downgrade(&client);
-                Client::create_async_task(&client, async move {
+                let downgraded_server = Arc::downgrade(&self);
+                self.create_async_task(async move {
                     Client::create_read_handler(downgraded_server).await;
                 });
             }
@@ -1058,30 +1057,30 @@ impl Client {
     async fn create_read_handler(weak_client: Weak<Client>) {
         let mut was_used = false;
         loop {
-            if let Some(server) = weak_client.upgrade() {
-                if *server.read_handler_properties.active_count.write().unwrap()
-                    > server.read_handler_properties.target_surplus_size + 1
+            if let Some(client) = weak_client.upgrade() {
+                if *client.read_handler_properties.active_count.write().unwrap()
+                    > client.read_handler_properties.target_surplus_size + 1
                 {
                     let mut surplus_count =
-                        server.read_handler_properties.active_count.write().unwrap();
+                        client.read_handler_properties.active_count.write().unwrap();
                     if !was_used {
                         *surplus_count -= 1;
                     }
                     break;
                 } else {
-                    let read_timeout = server.read_handler_properties.timeout;
-                    let socket = Arc::clone(&server.socket);
-                    drop(server);
+                    let read_timeout = client.read_handler_properties.timeout;
+                    let socket = Arc::clone(&client.socket);
+                    drop(client);
                     let pre_read_next_bytes_result =
                         timeout(read_timeout, Client::pre_read_next_bytes(socket)).await;
-                    if let Some(server) = weak_client.upgrade() {
+                    if let Some(client) = weak_client.upgrade() {
                         match pre_read_next_bytes_result {
                             Ok(result) => {
                                 //TODO: handle errors
                                 let result = result.unwrap();
                                 if !was_used {
                                     was_used = true;
-                                    let mut surplus_count = server
+                                    let mut surplus_count = client
                                         .read_handler_properties
                                         .active_count
                                         .write()
@@ -1090,12 +1089,12 @@ impl Client {
                                 }
 
                                 //TODO: use this
-                                let read_result = Client::read_next_bytes(&server, result).await;
+                                let read_result = client.read_next_bytes(result).await;
                             }
                             Err(_) => {
                                 if was_used {
                                     was_used = false;
-                                    let mut surplus_count = server
+                                    let mut surplus_count = client
                                         .read_handler_properties
                                         .active_count
                                         .write()
@@ -1118,17 +1117,17 @@ impl Client {
         Ok(buf[..len].to_vec())
     }
 
-    async fn read_next_bytes(client: &Arc<Client>, bytes: Vec<u8>) -> ReadServerBytesResult {
+    async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
         if bytes.len() < 2 {
             ReadServerBytesResult::InsufficientBytesLen
         } else {
-            let mut messaging = client.connected_server.messaging.write().unwrap();
+            let mut messaging = self.connected_server.messaging.write().unwrap();
             // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
             messaging.tick_bytes_len += bytes.len() + 8 + 20;
-            if messaging.tick_bytes_len > client.messaging_properties.max_client_tick_bytes_len {
+            if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
                 ReadServerBytesResult::ServerMaxTickByteLenOverflow
             } else {
-                let _ = client.connected_server.receiving_bytes_sender.send(bytes);
+                let _ = self.connected_server.receiving_bytes_sender.send(bytes);
                 ReadServerBytesResult::ServerReceivedBytes
             }
         }
