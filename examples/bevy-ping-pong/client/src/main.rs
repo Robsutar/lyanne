@@ -151,7 +151,6 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                         .bevy_client_call(&mut commands, deserialized_packet);
                 }
 
-                println!("finishing tick");
                 Client::tick_after_message(&client);
             }
             ClientTickResult::Disconnected => {

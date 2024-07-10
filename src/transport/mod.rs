@@ -81,11 +81,6 @@ impl SentMessagePart {
         nonce: Nonce,
     ) -> Self {
         let cipher_bytes = cipher.encrypt(&nonce, part.as_bytes()).unwrap();
-        println!(
-            "before bytes: {:?}, after bytes {:?}",
-            part.as_bytes().len(),
-            cipher_bytes.len()
-        );
         let mut exit = Vec::with_capacity(1 + nonce.len() + cipher_bytes.len());
         exit.push(MessageChannel::MESSAGE_PART_SEND);
         exit.extend_from_slice(&nonce);
