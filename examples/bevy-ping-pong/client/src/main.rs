@@ -133,7 +133,7 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
             ClientTickResult::ReceivedMessage(message) => {
                 if true {
                     let mut rng = thread_rng();
-                    for _ in 0..rng.gen_range(12..13) {
+                    for _ in 0..rng.gen_range(500..501) {
                         let message = format!("Random str: {:?}", rng.gen::<i32>());
                         if rng.gen_bool(0.5) {
                             let packet = FooPacket { message };

@@ -132,7 +132,7 @@ fn server_tick(
                 for entry in server_connected.server.connected_clients_iter() {
                     let connected_client = entry.value();
                     let mut rng = thread_rng();
-                    for _ in 0..rng.gen_range(12..13) {
+                    for _ in 0..rng.gen_range(500..501) {
                         let message = format!("Random str: {:?}", rng.gen::<i32>());
                         if rng.gen_bool(0.5) {
                             let packet = FooPacket { message };
