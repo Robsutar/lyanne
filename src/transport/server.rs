@@ -606,7 +606,7 @@ impl Server {
         });
 
         let server_downgraded = Arc::downgrade(&server);
-        Server::create_async_task(&server, async move {
+        server.create_async_task(async move {
             Server::create_pending_auth_resend_handler(
                 server_downgraded,
                 pending_auth_resend_receiver,
@@ -615,7 +615,7 @@ impl Server {
         });
 
         let server_downgraded = Arc::downgrade(&server);
-        Server::create_async_task(&server, async move {
+        server.create_async_task(async move {
             Server::create_pending_rejection_confirm_resend_handler(
                 server_downgraded,
                 pending_rejection_confirm_resend_receiver,
@@ -624,7 +624,7 @@ impl Server {
         });
 
         let server_downgraded = Arc::downgrade(&server);
-        Server::create_async_task(&server, async move {
+        server.create_async_task(async move {
             Server::create_ignored_addrs_asking_reason_handler(
                 server_downgraded,
                 ignored_addrs_asking_reason_read_signal_receiver,
@@ -652,9 +652,9 @@ impl Server {
     /// - [`Server::tick_start`]
     /// - [`Server::tick_end`]
     /// - ...
-    pub fn tick_start(server: &Arc<Server>) -> ServerTickResult {
+    pub fn tick_start(self: &Arc<Self>) -> ServerTickResult {
         {
-            let mut tick_state = server.tick_state.write().unwrap();
+            let mut tick_state = self.tick_state.write().unwrap();
             if *tick_state != ServerTickState::TickStartPending {
                 panic!(
                     "Invalid server tick state, next pending is {:?}",
@@ -667,37 +667,35 @@ impl Server {
 
         let now = Instant::now();
 
-        let mut assigned_addrs_in_auth = server.assigned_addrs_in_auth.write().unwrap();
+        let mut assigned_addrs_in_auth = self.assigned_addrs_in_auth.write().unwrap();
         let dispatched_assigned_addrs_in_auth = std::mem::take(&mut *assigned_addrs_in_auth);
         for addr in dispatched_assigned_addrs_in_auth {
-            server.addrs_in_auth.remove(&addr).unwrap();
+            self.addrs_in_auth.remove(&addr).unwrap();
         }
 
-        server.pending_auth.retain(|_, pending_auth_send| {
-            now - pending_auth_send.received_time
-                < server.messaging_properties.timeout_interpretation
+        self.pending_auth.retain(|_, pending_auth_send| {
+            now - pending_auth_send.received_time < self.messaging_properties.timeout_interpretation
         });
-        for context in server.pending_auth.iter() {
+        for context in self.pending_auth.iter() {
             if let Some(last_sent_time) = context.last_sent_time {
                 if now - last_sent_time
-                    < server
+                    < self
                         .server_properties
                         .pending_auth_packet_loss_interpretation
                 {
                     continue;
                 }
             }
-            server
-                .pending_auth_resend_sender
+            self.pending_auth_resend_sender
                 .send(context.key().clone())
                 .unwrap();
         }
 
-        server.temporary_ignored_addrs.retain(|addr, until_to| {
+        self.temporary_ignored_addrs.retain(|addr, until_to| {
             if now < *until_to {
                 true
             } else {
-                server.ignored_addrs.remove(addr);
+                self.ignored_addrs.remove(addr);
                 false
             }
         });
@@ -711,17 +709,17 @@ impl Server {
             (ClientDisconnectReason, Option<JustifiedRejectionContext>),
         > = HashMap::new();
 
-        while let Ok((addr, addr_to_auth)) = server.clients_to_auth_receiver.try_recv() {
+        while let Ok((addr, addr_to_auth)) = self.clients_to_auth_receiver.try_recv() {
             to_auth.insert(addr, addr_to_auth);
         }
 
-        while let Ok((addr, reason)) = server.clients_to_disconnect_receiver.try_recv() {
+        while let Ok((addr, reason)) = self.clients_to_disconnect_receiver.try_recv() {
             if !addrs_to_disconnect.contains_key(&addr) {
                 addrs_to_disconnect.insert(addr, reason);
             }
         }
 
-        'l1: for client in server.connected_clients.iter() {
+        'l1: for client in self.connected_clients.iter() {
             if addrs_to_disconnect.contains_key(client.key()) {
                 continue 'l1;
             }
@@ -735,7 +733,7 @@ impl Server {
 
                 for sent_part in messaging.pending_confirmation.values_mut() {
                     if now - sent_part.sent_instant
-                        > server.messaging_properties.timeout_interpretation
+                        > self.messaging_properties.timeout_interpretation
                     {
                         addrs_to_disconnect.insert(
                             client.key().clone(),
@@ -763,7 +761,7 @@ impl Server {
                     client.open_message_signal_sender.send(()).unwrap();
                     received_messages.insert(client.key().clone(), message);
                 } else if now - messaging.last_received_message_instant
-                    >= server.messaging_properties.timeout_interpretation
+                    >= self.messaging_properties.timeout_interpretation
                 {
                     addrs_to_disconnect.insert(
                         client.key().clone(),
@@ -772,7 +770,7 @@ impl Server {
                     continue 'l1;
                 }
             } else if now - *client.last_messaging_write.read().unwrap()
-                >= server.messaging_properties.timeout_interpretation
+                >= self.messaging_properties.timeout_interpretation
             {
                 addrs_to_disconnect.insert(
                     client.key().clone(),
@@ -782,29 +780,25 @@ impl Server {
             }
         }
 
-        server.pending_rejection_confirm.retain(|_, context| {
+        self.pending_rejection_confirm.retain(|_, context| {
             now - context.rejection_instant
-                < server.messaging_properties.disconnect_reason_resend_cancel
+                < self.messaging_properties.disconnect_reason_resend_cancel
         });
-        for context in server.pending_rejection_confirm.iter() {
+        for context in self.pending_rejection_confirm.iter() {
             if let Some(last_sent_time) = context.last_sent_time {
-                if now - last_sent_time < server.messaging_properties.disconnect_reason_resend_delay
-                {
+                if now - last_sent_time < self.messaging_properties.disconnect_reason_resend_delay {
                     continue;
                 }
             }
-            server
-                .pending_rejection_confirm_resend_sender
+            self.pending_rejection_confirm_resend_sender
                 .send(context.key().clone())
                 .unwrap();
         }
 
         for (addr, (reason, context)) in addrs_to_disconnect {
-            server.connected_clients.remove(&addr).unwrap();
+            self.connected_clients.remove(&addr).unwrap();
             if let Some(context) = context {
-                server
-                    .pending_rejection_confirm
-                    .insert(addr.clone(), context);
+                self.pending_rejection_confirm.insert(addr.clone(), context);
             }
             disconnected.insert(addr, reason);
         }
@@ -813,12 +807,11 @@ impl Server {
             assigned_addrs_in_auth.insert(addr.clone());
         }
 
-        server
-            .ignored_addrs_asking_reason_read_signal_sender
+        self.ignored_addrs_asking_reason_read_signal_sender
             .send(())
             .unwrap();
 
-        Server::try_check_read_handler(&server);
+        self.try_check_read_handler();
 
         ServerTickResult {
             received_messages,
@@ -834,9 +827,9 @@ impl Server {
     ///
     /// # Panics
     /// If is not called after [`Server::tick_start`]
-    pub fn tick_end(server: &Arc<Server>) {
+    pub fn tick_end(self: &Arc<Self>) {
         {
-            let mut tick_state = server.tick_state.write().unwrap();
+            let mut tick_state = self.tick_state.write().unwrap();
             if *tick_state != ServerTickState::TickEndPending {
                 panic!(
                     "Invalid server tick state, next pending is {:?}",
@@ -847,13 +840,13 @@ impl Server {
             }
         }
 
-        let tick_packet_serialized = server
+        let tick_packet_serialized = self
             .packet_registry
             .serialize(&ServerTickEndPacket)
             .unwrap();
 
-        for client in server.connected_clients.iter() {
-            server.send_packet_serialized(&client, tick_packet_serialized.clone());
+        for client in self.connected_clients.iter() {
+            self.send_packet_serialized(&client, tick_packet_serialized.clone());
             client.packets_to_send_sender.send(None).unwrap();
         }
     }
@@ -866,13 +859,13 @@ impl Server {
     /// # Panics
     /// - if addr is already connected.
     /// - if addr was not marked in the last tick to be possibly authenticated.
-    pub fn authenticate(server: &Arc<Server>, addr: SocketAddr, addr_to_auth: AddrToAuth) {
-        if server.connected_clients.contains_key(&addr) {
+    pub fn authenticate(self: &Arc<Self>, addr: SocketAddr, addr_to_auth: AddrToAuth) {
+        if self.connected_clients.contains_key(&addr) {
             panic!("Addr is already connected.",)
-        } else if !server.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
+        } else if !self.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
             panic!("Addr was not marked to be authenticated in the last server tick.",)
         } else {
-            server.addrs_in_auth.remove(&addr).unwrap();
+            self.addrs_in_auth.remove(&addr).unwrap();
 
             let (receiving_bytes_sender, receiving_bytes_receiver) = crossbeam_channel::unbounded();
             let (open_message_signal_sender, open_message_signal_receiver) =
@@ -889,7 +882,7 @@ impl Server {
 
             let messaging = Arc::new(RwLock::new(ConnectedClientMessaging {
                 cipher: ChaChaPoly1305::new(Key::from_slice(addr_to_auth.shared_key.as_bytes())),
-                next_message_to_receive_start_id: server
+                next_message_to_receive_start_id: self
                     .messaging_properties
                     .initial_next_message_part_id,
                 pending_confirmation: BTreeMap::new(),
@@ -898,11 +891,11 @@ impl Server {
                 received_message: None,
                 last_received_message_instant: now,
                 packet_loss_rtt_calculator: RttCalculator::new(
-                    server.messaging_properties.initial_latency,
+                    self.messaging_properties.initial_latency,
                 ),
-                average_packet_loss_rtt: server.messaging_properties.initial_latency,
+                average_packet_loss_rtt: self.messaging_properties.initial_latency,
                 latency_monitor: DurationMonitor::filled_with(
-                    server.messaging_properties.initial_latency,
+                    self.messaging_properties.initial_latency,
                     16,
                 ),
                 message_part_confirmation_sender,
@@ -913,15 +906,15 @@ impl Server {
                 addr,
                 messaging: Arc::clone(&messaging),
                 last_messaging_write: RwLock::new(now),
-                average_latency: RwLock::new(server.messaging_properties.initial_latency),
+                average_latency: RwLock::new(self.messaging_properties.initial_latency),
                 receiving_bytes_sender,
                 open_message_signal_sender,
                 packets_to_send_sender,
             };
 
-            let server_downgraded = Arc::downgrade(&server);
+            let server_downgraded = Arc::downgrade(&self);
             let messaging_clone = Arc::clone(&messaging);
-            Server::create_async_task(&server, async move {
+            self.create_async_task(async move {
                 ConnectedClient::create_receiving_bytes_handler(
                     server_downgraded,
                     addr,
@@ -931,11 +924,11 @@ impl Server {
                 .await;
             });
 
-            let server_downgraded = Arc::downgrade(&server);
+            let server_downgraded = Arc::downgrade(&self);
             let messaging_clone = Arc::clone(&messaging);
             let initial_next_message_part_id =
-                server.messaging_properties.initial_next_message_part_id;
-            Server::create_async_task(&server, async move {
+                self.messaging_properties.initial_next_message_part_id;
+            self.create_async_task(async move {
                 ConnectedClient::create_packets_to_send_handler(
                     server_downgraded,
                     messaging_clone,
@@ -946,8 +939,8 @@ impl Server {
                 .await;
             });
 
-            let server_downgraded = Arc::downgrade(&server);
-            Server::create_async_task(&server, async move {
+            let server_downgraded = Arc::downgrade(&self);
+            self.create_async_task(async move {
                 ConnectedClient::create_message_part_confirmation_handler(
                     server_downgraded,
                     addr,
@@ -956,8 +949,8 @@ impl Server {
                 .await;
             });
 
-            let server_downgraded = Arc::downgrade(&server);
-            Server::create_async_task(&server, async move {
+            let server_downgraded = Arc::downgrade(&self);
+            self.create_async_task(async move {
                 ConnectedClient::create_shared_socket_bytes_send_handler(
                     server_downgraded,
                     addr,
@@ -966,7 +959,7 @@ impl Server {
                 .await;
             });
 
-            server.connected_clients.insert(addr, connected_client);
+            self.connected_clients.insert(addr, connected_client);
         }
     }
 
@@ -983,17 +976,17 @@ impl Server {
     /// - if addr is already connected.
     /// - if addr was not marked in the last tick to be possibly authenticated.
     pub fn refuse(
-        server: &Arc<Server>,
+        self: &Arc<Self>,
         addr: SocketAddr,
         _addr_to_auth: AddrToAuth,
         message: SerializedPacketList,
     ) {
-        if server.connected_clients.contains_key(&addr) {
+        if self.connected_clients.contains_key(&addr) {
             panic!("Addr is already connected.",)
-        } else if !server.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
+        } else if !self.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
             panic!("Addr was not marked to be authenticated in the last server tick.",)
         } else {
-            server.pending_rejection_confirm.insert(
+            self.pending_rejection_confirm.insert(
                 addr,
                 JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
             );
@@ -1011,7 +1004,7 @@ impl Server {
     /// If is None, no message will be sent to the client. That message has limited size.
     ///
     pub fn disconnect_from(
-        server: &Arc<Server>,
+        self: &Arc<Self>,
         client: &ConnectedClient,
         message: Option<SerializedPacketList>,
     ) {
@@ -1025,8 +1018,7 @@ impl Server {
                 None
             }
         };
-        server
-            .clients_to_disconnect_sender
+        self.clients_to_disconnect_sender
             .send((
                 client.addr.clone(),
                 (ClientDisconnectReason::ManualDisconnect, context),
@@ -1141,11 +1133,11 @@ impl Server {
     }
 
     /// TODO:
-    pub fn disconnect_detached(server: Arc<Server>) {
-        Server::create_async_task(&Arc::clone(&server), async move {
+    pub fn disconnect_detached(self: Arc<Self>) {
+        Arc::clone(&self).create_async_task(async move {
             let disconnect_request_bytes = vec![MessageChannel::DISCONNECT_REQUEST, 0];
-            for client in server.connected_clients.iter() {
-                let _ = server
+            for client in self.connected_clients.iter() {
+                let _ = self
                     .socket
                     .send_to(&disconnect_request_bytes, client.addr)
                     .await;
@@ -1154,13 +1146,13 @@ impl Server {
         });
     }
 
-    fn create_async_task<F>(server: &Arc<Server>, future: F)
+    fn create_async_task<F>(self: &Arc<Self>, future: F)
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let _ = server
+        let _ = self
             .tasks_keeper_sender
-            .send(Arc::clone(&server.runtime).spawn(future));
+            .send(Arc::clone(&self.runtime).spawn(future));
     }
 
     fn create_async_tasks_keeper(
@@ -1220,12 +1212,12 @@ impl Server {
         }
     }
 
-    fn try_check_read_handler(server: &Arc<Server>) {
-        if let Ok(mut active_count) = server.read_handler_properties.active_count.try_write() {
-            if *active_count < server.read_handler_properties.target_surplus_size - 1 {
+    fn try_check_read_handler(self: &Arc<Self>) {
+        if let Ok(mut active_count) = self.read_handler_properties.active_count.try_write() {
+            if *active_count < self.read_handler_properties.target_surplus_size - 1 {
                 *active_count += 1;
-                let downgraded_server = Arc::downgrade(&server);
-                Server::create_async_task(&server, async move {
+                let downgraded_server = Arc::downgrade(&self);
+                self.create_async_task(async move {
                     Server::create_read_handler(downgraded_server).await;
                 });
             }
@@ -1269,7 +1261,7 @@ impl Server {
                                 }
 
                                 //TODO: use this
-                                let read_result = Server::read_next_bytes(&server, result).await;
+                                let read_result = server.read_next_bytes(result).await;
                             }
                             Err(_) => {
                                 if was_used {
@@ -1298,47 +1290,47 @@ impl Server {
     }
 
     async fn read_next_bytes(
-        server: &Arc<Server>,
+        self: &Arc<Self>,
         tuple: (SocketAddr, Vec<u8>),
     ) -> ReadClientBytesResult {
         let (addr, bytes) = tuple;
         if bytes.len() < 2 {
             ReadClientBytesResult::InsufficientBytesLen
-        } else if server.pending_rejection_confirm.contains_key(&addr) {
+        } else if self.pending_rejection_confirm.contains_key(&addr) {
             if bytes[0] == MessageChannel::REJECTION_CONFIRM {
-                server.pending_rejection_confirm.remove(&addr);
+                self.pending_rejection_confirm.remove(&addr);
                 ReadClientBytesResult::DoneDisconnectConfirm
             } else {
                 ReadClientBytesResult::PendingDisconnectConfirm
             }
-        } else if let Some(reason) = server.ignored_addrs.get(&addr) {
+        } else if let Some(reason) = self.ignored_addrs.get(&addr) {
             if reason.finished_bytes.is_some()
-                && server.ignored_addrs_asking_reason.len()
-                    < server.server_properties.max_ignored_addrs_asking_reason
+                && self.ignored_addrs_asking_reason.len()
+                    < self.server_properties.max_ignored_addrs_asking_reason
             {
-                server.ignored_addrs_asking_reason.insert(addr);
+                self.ignored_addrs_asking_reason.insert(addr);
             }
             ReadClientBytesResult::IgnoredClientHandle
-        } else if let Some(client) = server.connected_clients.get(&addr) {
+        } else if let Some(client) = self.connected_clients.get(&addr) {
             let mut messaging = client.messaging.write().unwrap();
             // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
             messaging.tick_bytes_len += bytes.len() + 8 + 20;
-            if messaging.tick_bytes_len > server.messaging_properties.max_client_tick_bytes_len {
+            if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
                 ReadClientBytesResult::ClientMaxTickByteLenOverflow
             } else {
                 let _ = client.receiving_bytes_sender.send(bytes);
                 ReadClientBytesResult::ClientReceivedBytes
             }
-        } else if server.addrs_in_auth.contains(&addr) {
+        } else if self.addrs_in_auth.contains(&addr) {
             ReadClientBytesResult::AddrInAuth
-        } else if let Some((_, pending_auth_send)) = server.pending_auth.remove(&addr) {
+        } else if let Some((_, pending_auth_send)) = self.pending_auth.remove(&addr) {
             if bytes[0] == MessageChannel::AUTH_MESSAGE {
                 // 1 for channel, 32 for public key, and 1 for the smallest possible serialized packet
                 if bytes.len() < 1 + 32 + 1 {
                     ReadClientBytesResult::AuthInsufficientBytesLen
                 } else {
                     let packets =
-                        DeserializedPacket::deserialize_list(&bytes[33..], &server.packet_registry);
+                        DeserializedPacket::deserialize_list(&bytes[33..], &self.packet_registry);
                     if let Ok(message) = packets {
                         let mut sent_server_public_key: [u8; 32] = [0; 32];
                         sent_server_public_key.copy_from_slice(&bytes[1..33]);
@@ -1347,8 +1339,8 @@ impl Server {
                         if sent_server_public_key != pending_auth_send.server_public_key {
                             ReadClientBytesResult::InvalidPendingAuth
                         } else {
-                            server.addrs_in_auth.insert(addr.clone());
-                            let _ = server.clients_to_auth_sender.send((
+                            self.addrs_in_auth.insert(addr.clone());
+                            let _ = self.clients_to_auth_sender.send((
                                 addr,
                                 AddrToAuth {
                                     shared_key: pending_auth_send
@@ -1360,7 +1352,7 @@ impl Server {
                             ReadClientBytesResult::DonePendingAuth
                         }
                     } else {
-                        server.ignore_addr_temporary(
+                        self.ignore_addr_temporary(
                             addr,
                             IgnoredAddrReason::without_reason(),
                             Instant::now() + Duration::from_secs(5),
@@ -1369,7 +1361,7 @@ impl Server {
                     }
                 }
             } else {
-                server.pending_auth.insert(addr, pending_auth_send);
+                self.pending_auth.insert(addr, pending_auth_send);
                 ReadClientBytesResult::PendingPendingAuth
             }
         } else if bytes.len() == 33 && bytes[0] == MessageChannel::PUBLIC_KEY_SEND {
@@ -1384,7 +1376,7 @@ impl Server {
             finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
             finished_bytes.extend_from_slice(server_public_key_bytes);
 
-            server.pending_auth.insert(
+            self.pending_auth.insert(
                 addr,
                 AddrPendingAuthSend {
                     received_time: Instant::now(),

@@ -146,7 +146,7 @@ fn server_tick(
             }
 
             {
-                let tick_result = Server::tick_start(&server);
+                let tick_result = server.tick_start();
 
                 let clients_packets_to_process = tick_result.received_messages;
                 let clients_to_auth = tick_result.to_auth;
@@ -165,10 +165,10 @@ fn server_tick(
                         addr,
                         message.message.len()
                     );
-                    Server::authenticate(&server, addr, message);
+                    server.authenticate(addr, message);
                 }
 
-                Server::tick_end(&server);
+                server.tick_end();
             }
         }
     }
