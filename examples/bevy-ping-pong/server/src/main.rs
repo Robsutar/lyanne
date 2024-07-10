@@ -168,6 +168,10 @@ fn server_tick(
                     server.authenticate(addr, message);
                 }
 
+                for (addr, reason) in tick_result.disconnected {
+                    info!("client disconnected: {:?}, reason: {:?}", addr, reason)
+                }
+
                 server.tick_end();
             }
         }
