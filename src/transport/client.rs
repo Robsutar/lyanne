@@ -232,6 +232,7 @@ impl ConnectedServer {
                         ) {
                             let delay = Instant::now() - removed.sent_instant;
                             messaging.latency_monitor.push(delay);
+                            // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
                             messaging.average_packet_loss_rtt = Duration::from_millis(250);
                         }
                     }
