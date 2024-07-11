@@ -88,7 +88,7 @@ impl PacketRegistry {
         let type_id = TypeId::of::<P>();
 
         let packet_id_copy = packet_id;
-        let packet_id_bytes = packet_id_copy.to_be_bytes();
+        let packet_id_bytes = packet_id_copy.to_le_bytes();
         let serialize = move |packet: &PacketToDowncast| -> io::Result<SerializedPacket> {
             let packet = packet.downcast_ref::<P>().ok_or_else(|| {
                 return io::Error::new(io::ErrorKind::InvalidData, "Type mismatch");
@@ -98,7 +98,7 @@ impl PacketRegistry {
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
             let packet_length = bytes.len() as u16;
-            let packet_length_bytes = packet_length.to_be_bytes();
+            let packet_length_bytes = packet_length.to_le_bytes();
 
             let mut full_bytes: Vec<u8> = Vec::with_capacity(bytes.len() + 4);
             full_bytes.extend_from_slice(&packet_id_bytes);
@@ -233,9 +233,9 @@ impl SerializedPacket {
     }
 
     pub fn read_first(buf: &[u8], packet_buf_index: usize) -> io::Result<SerializedPacket> {
-        let packet_id = u16::from_be_bytes([buf[packet_buf_index], buf[packet_buf_index + 1]]);
+        let packet_id = u16::from_le_bytes([buf[packet_buf_index], buf[packet_buf_index + 1]]);
         let packet_length: u16 =
-            u16::from_be_bytes([buf[packet_buf_index + 2], buf[packet_buf_index + 3]]);
+            u16::from_le_bytes([buf[packet_buf_index + 2], buf[packet_buf_index + 3]]);
 
         let packet_size: usize = packet_length.into();
         if buf.len() < 4 + packet_buf_index + packet_size {
