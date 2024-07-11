@@ -164,8 +164,8 @@ pub struct ConnectedServerMessaging {
 
     /// The instant when the last message was received.
     last_received_message_instant: Instant,
-    /// The deserialized message that has been received.
-    received_message: Option<DeserializedMessage>,
+    /// The deserialized messages that have been received and have not been read yet.
+    received_messages: Vec<DeserializedMessage>,
 
     /// Calculator for packet loss round-trip time.
     packet_loss_rtt_calculator: RttCalculator,
@@ -178,6 +178,8 @@ pub struct ConnectedServerMessaging {
     message_part_confirmation_sender: crossbeam_channel::Sender<MessagePartId>,
     /// Sender for shared socket bytes.
     shared_socket_bytes_send_sender: crossbeam_channel::Sender<Arc<Vec<u8>>>,
+    /// Sender to signal the opening of a new message.
+    open_message_signal_sender: crossbeam_channel::Sender<()>,
 }
 
 /// Properties of a server that is connected to the server.
@@ -197,8 +199,6 @@ pub struct ConnectedServer {
     /// Sender for receiving bytes.
     receiving_bytes_sender: crossbeam_channel::Sender<Vec<u8>>,
 
-    /// Sender to signal the opening of a new message.
-    open_message_signal_sender: crossbeam_channel::Sender<()>,
     /// Sender for packets to be sent.
     packets_to_send_sender: crossbeam_channel::Sender<Option<SerializedPacket>>,
 }
@@ -237,7 +237,6 @@ impl ConnectedServer {
                         }
                     }
                     MessageChannel::MESSAGE_PART_SEND => {
-                        if messaging.received_message.is_none() {
                             // 1 for channel, 12 for nonce, and 1 for the smallest possible message part
                             if bytes.len() < 1 + 12 + 1 {
                                 let _ = client.reason_to_disconnect_sender.send((
@@ -294,9 +293,11 @@ impl ConnectedServer {
                                                 messaging.next_message_to_receive_start_id =
                                                     new_next_message_to_receive_start_id;
 
-                                                messaging.received_message = Some(message);
+                                            messaging.received_messages.push(message);
                                                 messaging.last_received_message_instant =
                                                     Instant::now();
+
+                                            messaging.open_message_signal_sender.send(()).unwrap();
                                             } else {
                                                 let _ = client.reason_to_disconnect_sender.send(
                                                     (ServerDisconnectReason::InvalidProtocolCommunication, None),
@@ -318,7 +319,6 @@ impl ConnectedServer {
                                     None,
                                 ));
                                 break;
-                            }
                         }
                     }
                     MessageChannel::DISCONNECT_REQUEST => {
@@ -620,17 +620,14 @@ impl Client {
                     .unwrap();
             }
 
-            if let Some(message) = messaging.received_message.take() {
+            if !messaging.received_messages.is_empty() {
+                let message = messaging.received_messages.remove(0);
                 {
                     let mut tick_state = self.tick_state.write().unwrap();
                     *tick_state = ClientTickState::TickAfterMessagePending;
                 }
 
                 messaging.tick_bytes_len = 0;
-                connected_server
-                    .open_message_signal_sender
-                    .send(())
-                    .unwrap();
 
                 self.try_check_read_handler();
 
@@ -947,12 +944,13 @@ impl Client {
             incoming_message: BTreeMap::new(),
             tick_bytes_len: 0,
             last_received_message_instant: Instant::now(),
-            received_message: None,
+            received_messages: Vec::new(),
             packet_loss_rtt_calculator: RttCalculator::new(messaging_properties.initial_latency),
             average_packet_loss_rtt: messaging_properties.initial_latency,
             latency_monitor: DurationMonitor::filled_with(messaging_properties.initial_latency, 16),
             message_part_confirmation_sender,
             shared_socket_bytes_send_sender,
+            open_message_signal_sender,
         }));
 
         let connected_server = ConnectedServer {
@@ -961,7 +959,6 @@ impl Client {
             last_messaging_write: RwLock::new(now),
             average_latency: RwLock::new(messaging_properties.initial_latency),
             receiving_bytes_sender,
-            open_message_signal_sender,
             packets_to_send_sender,
         };
 
