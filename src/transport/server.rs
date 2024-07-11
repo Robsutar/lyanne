@@ -257,11 +257,7 @@ impl ConnectedClient {
                         ) {
                             let delay = Instant::now() - removed.sent_instant;
                             messaging.latency_monitor.push(delay);
-                            messaging.average_packet_loss_rtt =
-                                messaging.packet_loss_rtt_calculator.update_rtt(
-                                    &server.messaging_properties.packet_loss_rtt_properties,
-                                    delay,
-                                );
+                            messaging.average_packet_loss_rtt = Duration::from_millis(250);
                         }
                     }
                     MessageChannel::MESSAGE_PART_SEND => {
