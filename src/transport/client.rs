@@ -323,7 +323,9 @@ impl ConnectedServer {
                         .unwrap();
 
                         next_message_to_send_start_id =
-                            message_parts[message_parts.len() - 1].id().wrapping_add(1);
+                            crate::messages::next_message_to_receive_start_id(
+                                message_parts[message_parts.len() - 1].id(),
+                            );
 
                         for part in message_parts {
                             let part_id = part.id();

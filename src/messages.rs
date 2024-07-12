@@ -318,14 +318,8 @@ impl MessagePartMap {
             self.map.insert(part_id, part);
             if let Ok(check) = DeserializedMessageCheck::new(&self.map) {
                 let completed_parts = std::mem::replace(&mut self.map, BTreeMap::new());
-                let new_next_message_to_receive_start_id = {
-                    let last_id = *completed_parts.last_key_value().unwrap().0;
-                    if last_id > MAX_MESSAGE_PART_SIZE {
-                        0
-                    } else {
-                        last_id + 1
-                    }
-                };
+                let new_next_message_to_receive_start_id =
+                    next_message_to_receive_start_id(*completed_parts.last_key_value().unwrap().0);
 
                 self.next_message_to_receive_start_id = new_next_message_to_receive_start_id;
                 match DeserializedMessage::deserialize(packet_registry, check, completed_parts) {
@@ -339,4 +333,15 @@ impl MessagePartMap {
             MessagePartMapTryInsertResult::NotInBounds
         }
     }
+}
+
+pub fn next_message_to_receive_start_id(last_id: MessagePartId) -> MessagePartId {
+    let new_next_message_to_receive_start_id = {
+        if last_id > MAX_MESSAGE_PART_SIZE {
+            0
+        } else {
+            last_id + 1
+        }
+    };
+    new_next_message_to_receive_start_id
 }
