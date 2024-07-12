@@ -314,7 +314,9 @@ impl MessagePartMap {
         part: MessagePart,
     ) -> MessagePartMapTryInsertResult {
         let part_id = part.id();
-        if part_id >= self.next_message_to_receive_start_id {
+        if part_id >= self.next_message_to_receive_start_id + MAX_MESSAGE_PART_SIZE {
+            MessagePartMapTryInsertResult::NotInBounds
+        } else if part_id >= self.next_message_to_receive_start_id {
             self.map.insert(part_id, part);
             if let Ok(check) = DeserializedMessageCheck::new(&self.map) {
                 let completed_parts = std::mem::replace(&mut self.map, BTreeMap::new());
@@ -337,7 +339,7 @@ impl MessagePartMap {
 
 pub fn next_message_to_receive_start_id(last_id: MessagePartId) -> MessagePartId {
     let new_next_message_to_receive_start_id = {
-        if last_id > MAX_MESSAGE_PART_SIZE {
+        if last_id >= MAX_MESSAGE_PART_SIZE {
             0
         } else {
             last_id + 1
