@@ -297,8 +297,7 @@ pub enum MessagePartMapTryInsertResult {
 }
 
 pub struct MessagePartMap {
-    map: BTreeMap<MessagePartId, MessagePart>,
-    next_message_to_receive_start_id: MessagePartId,
+    max_id_to_receive: MessagePartId,
 }
 
 impl MessagePartMap {
@@ -306,6 +305,7 @@ impl MessagePartMap {
         Self {
             map: BTreeMap::new(),
             next_message_to_receive_start_id,
+            max_id_to_receive: next_message_to_receive_start_id + MAX_MESSAGE_PART_SIZE / 2,
         }
     }
     pub fn try_insert(
@@ -314,16 +314,23 @@ impl MessagePartMap {
         part: MessagePart,
     ) -> MessagePartMapTryInsertResult {
         let part_id = part.id();
-        if part_id >= self.next_message_to_receive_start_id + MAX_MESSAGE_PART_SIZE {
+        if part_id >= self.max_id_to_receive {
             MessagePartMapTryInsertResult::NotInBounds
         } else if part_id >= self.next_message_to_receive_start_id {
             self.map.insert(part_id, part);
             if let Ok(check) = DeserializedMessageCheck::new(&self.map) {
                 let completed_parts = std::mem::replace(&mut self.map, BTreeMap::new());
-                let new_next_message_to_receive_start_id =
-                    next_message_to_receive_start_id(*completed_parts.last_key_value().unwrap().0);
 
-                self.next_message_to_receive_start_id = new_next_message_to_receive_start_id;
+                let last_id = *completed_parts.last_key_value().unwrap().0;
+                if last_id >= MAX_MESSAGE_PART_SIZE {
+                    self.next_message_to_receive_start_id = 0;
+                    let first_id = *completed_parts.first_key_value().unwrap().0;
+                    self.max_id_to_receive = first_id;
+                } else {
+                    self.next_message_to_receive_start_id = last_id + 1;
+                    self.max_id_to_receive =
+                        self.next_message_to_receive_start_id + MAX_MESSAGE_PART_SIZE / 2;
+                }
                 match DeserializedMessage::deserialize(packet_registry, check, completed_parts) {
                     Ok(message) => MessagePartMapTryInsertResult::SuccessfullyCreated(message),
                     Err(e) => MessagePartMapTryInsertResult::ErrorInCompleteMessageDeserialize(e),
@@ -338,12 +345,9 @@ impl MessagePartMap {
 }
 
 pub fn next_message_to_receive_start_id(last_id: MessagePartId) -> MessagePartId {
-    let new_next_message_to_receive_start_id = {
         if last_id >= MAX_MESSAGE_PART_SIZE {
             0
         } else {
             last_id + 1
         }
-    };
-    new_next_message_to_receive_start_id
 }
