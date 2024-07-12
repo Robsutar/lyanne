@@ -2,14 +2,17 @@ use std::{collections::BTreeMap, io};
 
 use crate::{
     packets::{DeserializedPacket, PacketRegistry},
-    transport::{MessageChannel, MessagingProperties},
-    utils::ORDERED_ROTATABLE_U8_VEC_MAX_SIZE,
+    transport::MessagingProperties,
 };
 
-pub type MessagePartId = u8;
-pub type MessagePartLargeId = u16;
+pub type MessagePartId = u16;
 pub type MessagePartType = u8;
-pub const MESSAGE_PART_SERIALIZED_SIZE: usize = 1024;
+
+pub const MESSAGE_PART_ID_SIZE: usize = size_of::<MessagePartId>();
+pub const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
+
+pub const MAX_MESSAGE_PART_SIZE: MessagePartId = MessagePartId::MAX / 2;
+pub const MAX_MESSAGE_PART_SIZE_USIZE: usize = MessagePartId::MAX as usize / 2;
 
 struct MessagePartTypes;
 
@@ -28,7 +31,7 @@ pub struct MessagePart {
 impl MessagePart {
     pub fn new(id: MessagePartId, part_type: MessagePartType, content: Vec<u8>) -> Self {
         let mut bytes = Vec::with_capacity(2 + content.len());
-        bytes.push(id);
+        bytes.extend(id.to_le_bytes());
         bytes.push(part_type);
         bytes.extend(content);
         Self { bytes }
@@ -44,7 +47,7 @@ impl MessagePart {
         Ok(exit)
     }
     pub fn id(&self) -> MessagePartId {
-        self.bytes[0]
+        MessagePartId::from_le_bytes([self.bytes[0], self.bytes[1]])
     }
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
@@ -53,13 +56,13 @@ impl MessagePart {
         self.bytes
     }
     pub fn part_type(&self) -> MessagePartType {
-        self.bytes[1]
+        self.bytes[2]
     }
     pub fn content(&self) -> &[u8] {
-        &self.bytes[2..]
+        &self.bytes[3..]
     }
     pub fn take_content(mut self) -> Vec<u8> {
-        self.bytes.drain(..2);
+        self.bytes.drain(..3);
         self.bytes
     }
 }
@@ -77,16 +80,15 @@ impl MessagePart {
             ));
         }
 
-        // 1 for part id, 1 for type
-        let part_limit = props.part_limit - 1 - 1;
+        let part_limit = props.part_limit - MESSAGE_PART_ID_SIZE - MESSAGE_PART_TYPE_SIZE;
 
         let num_parts = (complete_message.len() as f32 / part_limit as f32).ceil() as usize;
-        if num_parts > ORDERED_ROTATABLE_U8_VEC_MAX_SIZE {
+        if num_parts > MAX_MESSAGE_PART_SIZE_USIZE {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
                     "Number of parts {:?} reached the limit of {:?}",
-                    num_parts, ORDERED_ROTATABLE_U8_VEC_MAX_SIZE
+                    num_parts, MAX_MESSAGE_PART_SIZE_USIZE
                 ),
             ));
         }
@@ -112,7 +114,7 @@ impl MessagePart {
             };
             parts.push(MessagePart::new(current_id, part_type, complete_message));
             complete_message = part_data;
-            current_id = current_id.wrapping_add(1);
+            current_id = current_id + 1;
         }
 
         let part_type = if parts.is_empty() {
@@ -139,7 +141,7 @@ enum DeserializedMessageCheckKind {
 
 impl DeserializedMessageCheck {
     pub fn new(
-        tree: &BTreeMap<MessagePartLargeId, MessagePart>,
+        tree: &BTreeMap<MessagePartId, MessagePart>,
     ) -> io::Result<DeserializedMessageCheck> {
         if tree.is_empty() {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "Empty vec"));
@@ -194,7 +196,7 @@ impl DeserializedMessageCheck {
                     }
                 }
 
-                let diff = first.id().wrapping_add(tree.len() as u8).wrapping_sub(1);
+                let diff = first.id() + (tree.len() as MessagePartId) - 1;
 
                 if diff != last.id() {
                     return Err(io::Error::new(
@@ -240,7 +242,7 @@ impl DeserializedMessage {
     pub fn deserialize(
         packet_registry: &PacketRegistry,
         check: DeserializedMessageCheck,
-        tree: BTreeMap<MessagePartLargeId, MessagePart>,
+        tree: BTreeMap<MessagePartId, MessagePart>,
     ) -> io::Result<Self> {
         match check.kind {
             DeserializedMessageCheckKind::Single => {
@@ -283,6 +285,58 @@ impl DeserializedMessage {
                     format!("Invalid end type {:?}", part_type),
                 ));
             }
+        }
+    }
+}
+
+pub enum MessagePartMapTryInsertResult {
+    NotInBounds,
+    Stored,
+    ErrorInCompleteMessageDeserialize(std::io::Error),
+    SuccessfullyCreated(DeserializedMessage),
+}
+
+pub struct MessagePartMap {
+    map: BTreeMap<MessagePartId, MessagePart>,
+    next_message_to_receive_start_id: MessagePartId,
+}
+
+impl MessagePartMap {
+    pub fn new(next_message_to_receive_start_id: MessagePartId) -> Self {
+        Self {
+            map: BTreeMap::new(),
+            next_message_to_receive_start_id,
+        }
+    }
+    pub fn try_insert(
+        &mut self,
+        packet_registry: &PacketRegistry,
+        part: MessagePart,
+    ) -> MessagePartMapTryInsertResult {
+        let part_id = part.id();
+        if part_id >= self.next_message_to_receive_start_id {
+            self.map.insert(part_id, part);
+            if let Ok(check) = DeserializedMessageCheck::new(&self.map) {
+                let completed_parts = std::mem::replace(&mut self.map, BTreeMap::new());
+                let new_next_message_to_receive_start_id = {
+                    let last_id = *completed_parts.last_key_value().unwrap().0;
+                    if last_id > MAX_MESSAGE_PART_SIZE {
+                        0
+                    } else {
+                        last_id + 1
+                    }
+                };
+
+                self.next_message_to_receive_start_id = new_next_message_to_receive_start_id;
+                match DeserializedMessage::deserialize(packet_registry, check, completed_parts) {
+                    Ok(message) => MessagePartMapTryInsertResult::SuccessfullyCreated(message),
+                    Err(e) => MessagePartMapTryInsertResult::ErrorInCompleteMessageDeserialize(e),
+                }
+            } else {
+                MessagePartMapTryInsertResult::Stored
+            }
+        } else {
+            MessagePartMapTryInsertResult::NotInBounds
         }
     }
 }

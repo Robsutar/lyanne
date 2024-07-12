@@ -1,6 +1,4 @@
-use colored::*;
 use std::{
-    cmp::Ordering,
     collections::BTreeMap,
     fmt,
     future::Future,
@@ -20,19 +18,19 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
     messages::{
-        DeserializedMessage, DeserializedMessageCheck, MessagePart, MessagePartId,
-        MessagePartLargeId,
+        DeserializedMessage, MessagePart, MessagePartId, MessagePartMap,
+        MessagePartMapTryInsertResult, MESSAGE_PART_ID_SIZE,
     },
     packets::{
         ClientTickEndPacket, DeserializedPacket, Packet, PacketRegistry, SerializedPacket,
         SerializedPacketList,
     },
-    utils::{self, DurationMonitor, RttCalculator},
+    utils::{DurationMonitor, RttCalculator},
 };
 
 use super::{
     JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties,
-    SentMessagePart,
+    SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
 
 /// Possible results when receiving bytes by the server
@@ -136,7 +134,6 @@ impl From<io::Error> for ConnectError {
 #[derive(Debug)]
 pub enum ClientTickResult {
     ReceivedMessage(DeserializedMessage),
-    PacketLossHandling(MessagePartLargeId),
     PendingMessage,
     /// The client was disconnected from the server.
     ///
@@ -151,14 +148,12 @@ pub enum ClientTickResult {
 pub struct ConnectedServerMessaging {
     /// The cipher used for encrypting and decrypting messages.
     cipher: ChaCha20Poly1305,
-    /// The ID of the next message part to be received.
-    next_message_to_receive_start_id: MessagePartId,
 
     /// Map of message parts pending confirmation.
-    pending_confirmation: BTreeMap<MessagePartLargeId, SentMessagePart>,
+    pending_confirmation: BTreeMap<MessagePartId, SentMessagePart>,
 
     /// Map of incoming message parts.
-    incoming_message: BTreeMap<MessagePartLargeId, MessagePart>,
+    incoming_message: MessagePartMap,
     /// The length of bytes received in the current tick.
     tick_bytes_len: usize,
 
@@ -226,10 +221,8 @@ impl ConnectedServer {
                 let mut messaging = messaging.write().unwrap();
                 match bytes[0] {
                     MessageChannel::MESSAGE_PART_CONFIRM => {
-                        if let Some(removed) = utils::remove_with_rotation(
-                            &mut messaging.pending_confirmation,
-                            bytes[1],
-                        ) {
+                        let part_id = MessagePartId::from_be_bytes([bytes[1], bytes[2]]);
+                        if let Some(removed) = messaging.pending_confirmation.remove(&part_id) {
                             let delay = Instant::now() - removed.sent_instant;
                             messaging.latency_monitor.push(delay);
                             // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
@@ -237,88 +230,52 @@ impl ConnectedServer {
                         }
                     }
                     MessageChannel::MESSAGE_PART_SEND => {
-                            // 1 for channel, 12 for nonce, and 1 for the smallest possible message part
-                            if bytes.len() < 1 + 12 + 1 {
-                                let _ = client.reason_to_disconnect_sender.send((
-                                    ServerDisconnectReason::InvalidProtocolCommunication,
-                                    None,
-                                ));
-                                break;
-                            }
+                        // 12 for nonce, and 1 for the smallest possible message part
+                        if bytes.len() < MESSAGE_CHANNEL_SIZE + 12 + 1 {
+                            let _ = client
+                                .reason_to_disconnect_sender
+                                .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                            break;
+                        }
 
-                            let nonce = Nonce::from_slice(&bytes[1..13]);
-                            let cipher_text = &bytes[13..];
+                        let nonce = Nonce::from_slice(&bytes[1..13]);
+                        let cipher_text = &bytes[13..];
 
-                            if let Ok(decrypted_message) =
-                                messaging.cipher.decrypt(nonce, cipher_text)
-                            {
-                                if let Ok(part) = MessagePart::deserialize(decrypted_message) {
-                                    let part_id = part.id();
-                                    let _ =
-                                        messaging.message_part_confirmation_sender.send(part_id);
+                        if let Ok(decrypted_message) = messaging.cipher.decrypt(nonce, cipher_text)
+                        {
+                            if let Ok(part) = MessagePart::deserialize(decrypted_message) {
+                                let part_id = part.id();
+                                let _ = messaging.message_part_confirmation_sender.send(part_id);
 
-                                    if Ordering::Less
-                                        != utils::compare_with_rotation(
-                                            part.id(),
-                                            messaging.next_message_to_receive_start_id,
-                                        )
-                                    {
-                                        let large_index: MessagePartLargeId = {
-                                            if part_id >= messaging.next_message_to_receive_start_id
-                                            {
-                                                part_id as MessagePartLargeId
-                                            } else {
-                                                part_id as MessagePartLargeId + 256
-                                            }
-                                        };
-
-                                        messaging.incoming_message.insert(large_index, part);
-                                        if let Ok(check) = DeserializedMessageCheck::new(
-                                            &messaging.incoming_message,
-                                        ) {
-                                            let incoming_messages = std::mem::replace(
-                                                &mut messaging.incoming_message,
-                                                BTreeMap::new(),
-                                            );
-                                            let new_next_message_to_receive_start_id =
-                                                ((incoming_messages.last_key_value().unwrap().0
-                                                    + 1)
-                                                    % 256)
-                                                    as MessagePartId;
-                                            if let Ok(message) = DeserializedMessage::deserialize(
-                                                &client.packet_registry,
-                                                check,
-                                                incoming_messages,
-                                            ) {
-                                                messaging.next_message_to_receive_start_id =
-                                                    new_next_message_to_receive_start_id;
-
+                                match messaging
+                                    .incoming_message
+                                    .try_insert(&client.packet_registry, part) {
+                                        MessagePartMapTryInsertResult::ErrorInCompleteMessageDeserialize(_) => {
+                                            let _ = client.reason_to_disconnect_sender.send((
+                                                ServerDisconnectReason::InvalidProtocolCommunication,
+                                                None,
+                                            ));
+                                            break;
+                                        },
+                                        MessagePartMapTryInsertResult::SuccessfullyCreated(message) => {
                                             messaging.received_messages.push(message);
-                                                messaging.last_received_message_instant =
-                                                    Instant::now();
-
+                                            messaging.last_received_message_instant = Instant::now();
                                             messaging.open_message_signal_sender.send(()).unwrap();
-                                            } else {
-                                                let _ = client.reason_to_disconnect_sender.send(
-                                                    (ServerDisconnectReason::InvalidProtocolCommunication, None),
-                                                );
-                                                break;
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    let _ = client.reason_to_disconnect_sender.send((
-                                        ServerDisconnectReason::InvalidProtocolCommunication,
-                                        None,
-                                    ));
-                                    break;
-                                }
+                                        },
+                                        _ => ()
+                                    };
                             } else {
                                 let _ = client.reason_to_disconnect_sender.send((
                                     ServerDisconnectReason::InvalidProtocolCommunication,
                                     None,
                                 ));
                                 break;
+                            }
+                        } else {
+                            let _ = client
+                                .reason_to_disconnect_sender
+                                .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                            break;
                         }
                     }
                     MessageChannel::DISCONNECT_REQUEST => {
@@ -346,7 +303,7 @@ impl ConnectedServer {
         messaging: Arc<RwLock<ConnectedServerMessaging>>,
         open_message_signal_receiver: crossbeam_channel::Receiver<()>,
         packets_to_send_receiver: crossbeam_channel::Receiver<Option<SerializedPacket>>,
-        mut next_message_to_send_start_id: u8,
+        mut next_message_to_send_start_id: MessagePartId,
     ) {
         'l1: while let Ok(_) = open_message_signal_receiver.recv() {
             let mut packets_to_send: Vec<SerializedPacket> = Vec::new();
@@ -368,8 +325,9 @@ impl ConnectedServer {
                         next_message_to_send_start_id =
                             message_parts[message_parts.len() - 1].id().wrapping_add(1);
 
-                        let mut large_id = message_parts[0].id() as MessagePartLargeId;
                         for part in message_parts {
+                            let part_id = part.id();
+
                             let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
                             let sent_part = SentMessagePart::new(
                                 Instant::now(),
@@ -379,13 +337,11 @@ impl ConnectedServer {
                             );
 
                             let finished_bytes = Arc::clone(&sent_part.finished_bytes);
-                            messaging.pending_confirmation.insert(large_id, sent_part);
+                            messaging.pending_confirmation.insert(part_id, sent_part);
 
                             let _ = messaging
                                 .shared_socket_bytes_send_sender
                                 .send(finished_bytes);
-
-                            large_id += 1;
                         }
 
                         continue 'l1;
@@ -403,9 +359,14 @@ impl ConnectedServer {
     ) {
         while let Ok(part_id) = message_part_confirmation_receiver.recv() {
             if let Some(client) = client.upgrade() {
+                let part_id_bytes = part_id.to_be_bytes();
                 if client
                     .socket
-                    .send(&vec![MessageChannel::MESSAGE_PART_CONFIRM, part_id])
+                    .send(&vec![
+                        MessageChannel::MESSAGE_PART_CONFIRM,
+                        part_id_bytes[0],
+                        part_id_bytes[1],
+                    ])
                     .await
                     .is_err()
                 {
@@ -514,7 +475,7 @@ impl Client {
                 Ok(len) => {
                     let len = len?;
                     let bytes = &buf[..len];
-                    if bytes.len() < 2 {
+                    if bytes.len() < MESSAGE_CHANNEL_SIZE + MESSAGE_PART_ID_SIZE {
                         return Err(ConnectError::InvalidProtocolCommunication);
                     }
 
@@ -804,9 +765,8 @@ impl Client {
         let shared_key = client_private_key.diffie_hellman(&server_public_key);
         let cipher = ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
 
-        let mut next_message_to_receive_start_id =
-            messaging_properties.initial_next_message_part_id;
-        let mut first_incoming_message: BTreeMap<MessagePartLargeId, MessagePart> = BTreeMap::new();
+        let mut first_incoming_message =
+            MessagePartMap::new(messaging_properties.initial_next_message_part_id);
         socket.send(&authentication_bytes).await?;
         loop {
             let now = Instant::now();
@@ -818,14 +778,14 @@ impl Client {
                 Ok(len) => {
                     let len = len?;
                     let bytes = &buf[..len];
-                    if bytes.len() < 2 {
+                    if bytes.len() < MESSAGE_CHANNEL_SIZE + MESSAGE_PART_ID_SIZE {
                         return Err(ConnectError::InvalidProtocolCommunication);
                     }
 
                     match bytes[0] {
                         MessageChannel::MESSAGE_PART_SEND => {
-                            // 1 for channel, 12 for nonce, and 1 for the smallest possible message part
-                            if bytes.len() < 1 + 12 + 1 {
+                            // 12 for nonce, and 1 for the smallest possible message part
+                            if bytes.len() < MESSAGE_CHANNEL_SIZE + 12 + 1 {
                                 return Err(ConnectError::InvalidProtocolCommunication);
                             }
 
@@ -835,62 +795,39 @@ impl Client {
                             if let Ok(decrypted_message) = cipher.decrypt(nonce, cipher_text) {
                                 if let Ok(part) = MessagePart::deserialize(decrypted_message) {
                                     let part_id = part.id();
-                                    socket
-                                        .send(&vec![MessageChannel::MESSAGE_PART_CONFIRM, part_id])
-                                        .await?;
-
-                                    if Ordering::Less
-                                        != utils::compare_with_rotation(
-                                            part.id(),
-                                            next_message_to_receive_start_id,
-                                        )
                                     {
-                                        let large_index: MessagePartLargeId = {
-                                            if part_id >= next_message_to_receive_start_id {
-                                                part_id as MessagePartLargeId
-                                            } else {
-                                                part_id as MessagePartLargeId + 256
-                                            }
-                                        };
+                                        let part_id_bytes = part_id.to_be_bytes();
+                                        socket
+                                            .send(&vec![
+                                                MessageChannel::MESSAGE_PART_CONFIRM,
+                                                part_id_bytes[0],
+                                                part_id_bytes[1],
+                                            ])
+                                            .await?;
+                                    }
 
-                                        first_incoming_message.insert(large_index, part);
-                                        if let Ok(check) =
-                                            DeserializedMessageCheck::new(&first_incoming_message)
-                                        {
-                                            let incoming_messages = std::mem::replace(
-                                                &mut first_incoming_message,
-                                                BTreeMap::new(),
+                                    match first_incoming_message.try_insert(&packet_registry, part) {
+                                        MessagePartMapTryInsertResult::ErrorInCompleteMessageDeserialize(e) => {
+                                            println!("error : {:?}", e);
+                                            return Err(
+                                                ConnectError::InvalidProtocolCommunication,
                                             );
-                                            let new_next_message_to_receive_start_id =
-                                                ((incoming_messages.last_key_value().unwrap().0
-                                                    + 1)
-                                                    % 256)
-                                                    as MessagePartId;
-                                            if let Ok(message) = DeserializedMessage::deserialize(
-                                                &packet_registry,
-                                                check,
-                                                incoming_messages,
-                                            ) {
-                                                next_message_to_receive_start_id =
-                                                    new_next_message_to_receive_start_id;
-                                                return Ok(Client::connect_create_client(
-                                                    socket,
-                                                    packet_registry,
-                                                    messaging_properties,
-                                                    read_handler_properties,
-                                                    runtime,
-                                                    remote_addr,
-                                                    now,
-                                                    cipher,
-                                                    next_message_to_receive_start_id,
-                                                    message,
-                                                ));
-                                            } else {
-                                                return Err(
-                                                    ConnectError::InvalidProtocolCommunication,
-                                                );
-                                            }
-                                        }
+                                        },
+                                        MessagePartMapTryInsertResult::SuccessfullyCreated(message) => {
+                                            return Ok(Client::connect_create_client(
+                                                socket,
+                                                packet_registry,
+                                                messaging_properties,
+                                                read_handler_properties,
+                                                runtime,
+                                                remote_addr,
+                                                now,
+                                                cipher,
+                                                first_incoming_message,
+                                                message,
+                                            ));
+                                        },
+                                        _ => ()
                                     }
                                 } else {
                                     return Err(ConnectError::InvalidProtocolCommunication);
@@ -919,7 +856,7 @@ impl Client {
         remote_addr: SocketAddr,
         now: Instant,
         cipher: ChaCha20Poly1305,
-        next_message_to_receive_start_id: u8,
+        first_incoming_message: MessagePartMap,
         message: DeserializedMessage,
     ) -> ConnectResult {
         let (tasks_keeper_sender, tasks_keeper_receiver) = crossbeam_channel::unbounded();
@@ -939,9 +876,8 @@ impl Client {
 
         let messaging = Arc::new(RwLock::new(ConnectedServerMessaging {
             cipher,
-            next_message_to_receive_start_id,
             pending_confirmation: BTreeMap::new(),
-            incoming_message: BTreeMap::new(),
+            incoming_message: first_incoming_message,
             tick_bytes_len: 0,
             last_received_message_instant: Instant::now(),
             received_messages: Vec::new(),
@@ -1112,7 +1048,7 @@ impl Client {
     }
 
     async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
-        if bytes.len() < 2 {
+        if bytes.len() < MESSAGE_CHANNEL_SIZE + MESSAGE_PART_ID_SIZE {
             ReadServerBytesResult::InsufficientBytesLen
         } else {
             let mut messaging = self.connected_server.messaging.write().unwrap();

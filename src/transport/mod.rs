@@ -1,10 +1,8 @@
 use std::{
-    io::Read,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
-use bevy::core::NonSendMarker;
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 
 use crate::{
@@ -27,7 +25,7 @@ pub struct MessagingProperties {
     pub timeout_interpretation: Duration,
     pub disconnect_reason_resend_delay: Duration,
     pub disconnect_reason_resend_cancel: Duration,
-    pub initial_next_message_part_id: u8,
+    pub initial_next_message_part_id: MessagePartId,
     pub initial_latency: Duration,
     pub packet_loss_rtt_properties: RttProperties,
     pub max_client_tick_bytes_len: usize,
@@ -36,8 +34,8 @@ pub struct MessagingProperties {
 impl Default for MessagingProperties {
     fn default() -> Self {
         Self {
-            // 1024 buffer size, 1 for channel, 12 for nonce, 16 for encryption
-            part_limit: 1024 - 1 - 12 - 16,
+            // 1024 buffer size, 12 for nonce, 16 for encryption
+            part_limit: 1024 - MESSAGE_CHANNEL_SIZE - 12 - 16,
             timeout_interpretation: Duration::from_secs(10),
             disconnect_reason_resend_delay: Duration::from_secs(3),
             disconnect_reason_resend_cancel: Duration::from_secs(10),
@@ -63,6 +61,8 @@ impl MessageChannel {
     pub const REJECTION_JUSTIFICATION: MessageChannelType = 6;
     pub const IGNORED_REASON: MessageChannelType = 7;
 }
+
+pub const MESSAGE_CHANNEL_SIZE: usize = 1;
 
 pub(crate) struct SentMessagePart {
     /// The instant that the part was sent by the first time.
