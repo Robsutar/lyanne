@@ -297,6 +297,8 @@ pub enum MessagePartMapTryInsertResult {
 }
 
 pub struct MessagePartMap {
+    map: BTreeMap<MessagePartId, MessagePart>,
+    next_message_to_receive_start_id: MessagePartId,
     max_id_to_receive: MessagePartId,
 }
 
