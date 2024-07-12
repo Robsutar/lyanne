@@ -347,9 +347,9 @@ impl MessagePartMap {
 }
 
 pub fn next_message_to_receive_start_id(last_id: MessagePartId) -> MessagePartId {
-        if last_id >= MAX_MESSAGE_PART_SIZE {
-            0
-        } else {
-            last_id + 1
-        }
+    if last_id >= MAX_MESSAGE_PART_SIZE {
+        0
+    } else {
+        last_id + 1
+    }
 }
