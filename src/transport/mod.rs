@@ -6,7 +6,7 @@ use std::{
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 
 use crate::{
-    messages::{MessagePart, MessagePartId},
+    messages::{MessageId, MessagePart, MessagePartId, MESSAGE_ID_SIZE, MESSAGE_PART_ID_SIZE},
     packets::SerializedPacketList,
     utils::RttProperties,
 };
@@ -19,6 +19,8 @@ pub mod server;
 
 #[cfg(feature = "troubles_simulator")]
 pub mod troubles_simulator;
+
+pub const MINIMAL_BYTES_LEN: usize = MESSAGE_CHANNEL_SIZE + MESSAGE_ID_SIZE + MESSAGE_PART_ID_SIZE;
 
 pub struct MessagingProperties {
     pub part_limit: usize,
@@ -81,7 +83,7 @@ impl SentMessagePart {
         nonce: Nonce,
     ) -> Self {
         let cipher_bytes = cipher.encrypt(&nonce, part.as_bytes()).unwrap();
-        let mut exit = Vec::with_capacity(1 + nonce.len() + cipher_bytes.len());
+        let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + nonce.len() + cipher_bytes.len());
         exit.push(MessageChannel::MESSAGE_PART_SEND);
         exit.extend_from_slice(&nonce);
         exit.extend(cipher_bytes);

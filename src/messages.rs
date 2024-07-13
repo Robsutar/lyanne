@@ -5,14 +5,15 @@ use crate::{
     transport::MessagingProperties,
 };
 
+pub type MessageId = u16;
 pub type MessagePartId = u16;
 pub type MessagePartType = u8;
 
+pub const MESSAGE_ID_SIZE: usize = size_of::<MessageId>();
 pub const MESSAGE_PART_ID_SIZE: usize = size_of::<MessagePartId>();
 pub const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
 
-pub const MAX_MESSAGE_PART_SIZE: MessagePartId = MessagePartId::MAX / 2;
-pub const MAX_MESSAGE_PART_SIZE_USIZE: usize = MessagePartId::MAX as usize / 2;
+pub const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
 
 struct MessagePartTypes;
 
@@ -29,8 +30,14 @@ pub struct MessagePart {
 }
 
 impl MessagePart {
-    pub fn new(id: MessagePartId, part_type: MessagePartType, content: Vec<u8>) -> Self {
+    pub fn new(
+        message_id: MessageId,
+        id: MessagePartId,
+        part_type: MessagePartType,
+        content: Vec<u8>,
+    ) -> Self {
         let mut bytes = Vec::with_capacity(2 + content.len());
+        bytes.extend(message_id.to_le_bytes());
         bytes.extend(id.to_le_bytes());
         bytes.push(part_type);
         bytes.extend(content);
@@ -46,8 +53,11 @@ impl MessagePart {
         let exit = Self { bytes };
         Ok(exit)
     }
+    pub fn message_id(&self) -> MessageId {
+        MessageId::from_le_bytes([self.bytes[0], self.bytes[1]])
+    }
     pub fn id(&self) -> MessagePartId {
-        MessagePartId::from_le_bytes([self.bytes[0], self.bytes[1]])
+        MessagePartId::from_le_bytes([self.bytes[2], self.bytes[3]])
     }
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
@@ -56,22 +66,22 @@ impl MessagePart {
         self.bytes
     }
     pub fn part_type(&self) -> MessagePartType {
-        self.bytes[2]
+        self.bytes[4]
     }
     pub fn content(&self) -> &[u8] {
-        &self.bytes[3..]
+        &self.bytes[5..]
     }
     pub fn take_content(mut self) -> Vec<u8> {
-        self.bytes.drain(..3);
+        self.bytes.drain(..5);
         self.bytes
     }
 }
 
 impl MessagePart {
     pub fn create_list(
-        mut complete_message: Vec<u8>,
         props: &MessagingProperties,
-        first_id: MessagePartId,
+        message_id: MessageId,
+        mut complete_message: Vec<u8>,
     ) -> io::Result<Vec<MessagePart>> {
         if complete_message.is_empty() {
             return Err(io::Error::new(
@@ -80,22 +90,25 @@ impl MessagePart {
             ));
         }
 
-        let part_limit = props.part_limit - MESSAGE_PART_ID_SIZE - MESSAGE_PART_TYPE_SIZE;
+        let part_limit =
+            props.part_limit - MESSAGE_ID_SIZE - MESSAGE_PART_ID_SIZE - MESSAGE_PART_TYPE_SIZE;
 
         let num_parts = (complete_message.len() as f32 / part_limit as f32).ceil() as usize;
-        if num_parts > MAX_MESSAGE_PART_SIZE_USIZE {
+        if num_parts > MessagePartId::MAX as usize {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
                     "Number of parts {:?} reached the limit of {:?}",
-                    num_parts, MAX_MESSAGE_PART_SIZE_USIZE
+                    num_parts,
+                    MessagePartId::MAX as usize
                 ),
             ));
         }
 
         if num_parts == 1 {
             return Ok(vec![MessagePart::new(
-                first_id,
+                message_id,
+                0,
                 MessagePartTypes::SINGLE,
                 complete_message,
             )]);
@@ -103,7 +116,7 @@ impl MessagePart {
 
         let mut parts = Vec::with_capacity(num_parts);
 
-        let mut current_id = first_id;
+        let mut current_id = 0;
 
         while complete_message.len() > part_limit {
             let part_data = complete_message.split_off(part_limit);
@@ -112,7 +125,12 @@ impl MessagePart {
             } else {
                 MessagePartTypes::CENTER
             };
-            parts.push(MessagePart::new(current_id, part_type, complete_message));
+            parts.push(MessagePart::new(
+                message_id,
+                current_id,
+                part_type,
+                complete_message,
+            ));
             complete_message = part_data;
             current_id = current_id + 1;
         }
@@ -122,7 +140,12 @@ impl MessagePart {
         } else {
             MessagePartTypes::END
         };
-        parts.push(MessagePart::new(current_id, part_type, complete_message));
+        parts.push(MessagePart::new(
+            message_id,
+            current_id,
+            part_type,
+            complete_message,
+        ));
 
         Ok(parts)
     }
@@ -290,66 +313,77 @@ impl DeserializedMessage {
 }
 
 pub enum MessagePartMapTryInsertResult {
-    NotInBounds,
+    PastMessageId,
     Stored,
+}
+
+pub enum MessagePartMapTryReadResult {
+    PendingParts,
     ErrorInCompleteMessageDeserialize(std::io::Error),
     SuccessfullyCreated(DeserializedMessage),
 }
 
 pub struct MessagePartMap {
-    map: BTreeMap<MessagePartId, MessagePart>,
-    next_message_to_receive_start_id: MessagePartId,
-    max_id_to_receive: MessagePartId,
+    pub next_message_id: MessageId,
+    pub maps: BTreeMap<MessageId, (BTreeMap<MessagePartId, MessagePart>, usize)>,
 }
 
 impl MessagePartMap {
-    pub fn new(next_message_to_receive_start_id: MessagePartId) -> Self {
+    pub fn new(initial_next_message_id: MessagePartId) -> Self {
         Self {
-            map: BTreeMap::new(),
-            next_message_to_receive_start_id,
-            max_id_to_receive: next_message_to_receive_start_id + MAX_MESSAGE_PART_SIZE / 2,
+            next_message_id: initial_next_message_id,
+            maps: BTreeMap::new(),
         }
     }
-    pub fn try_insert(
-        &mut self,
-        packet_registry: &PacketRegistry,
-        part: MessagePart,
-    ) -> MessagePartMapTryInsertResult {
-        let part_id = part.id();
-        if part_id >= self.max_id_to_receive {
-            MessagePartMapTryInsertResult::NotInBounds
-        } else if part_id >= self.next_message_to_receive_start_id {
-            self.map.insert(part_id, part);
-            if let Ok(check) = DeserializedMessageCheck::new(&self.map) {
-                let completed_parts = std::mem::replace(&mut self.map, BTreeMap::new());
-
-                let last_id = *completed_parts.last_key_value().unwrap().0;
-                if last_id >= MAX_MESSAGE_PART_SIZE {
-                    self.next_message_to_receive_start_id = 0;
-                    let first_id = *completed_parts.first_key_value().unwrap().0;
-                    self.max_id_to_receive = first_id;
-                } else {
-                    self.next_message_to_receive_start_id = last_id + 1;
-                    self.max_id_to_receive =
-                        self.next_message_to_receive_start_id + MAX_MESSAGE_PART_SIZE / 2;
-                }
-                match DeserializedMessage::deserialize(packet_registry, check, completed_parts) {
-                    Ok(message) => MessagePartMapTryInsertResult::SuccessfullyCreated(message),
-                    Err(e) => MessagePartMapTryInsertResult::ErrorInCompleteMessageDeserialize(e),
-                }
-            } else {
-                MessagePartMapTryInsertResult::Stored
+    pub fn try_insert(&mut self, part: MessagePart) -> MessagePartMapTryInsertResult {
+        let part_message_id = part.message_id();
+        if part_message_id < self.next_message_id {
+            if self.next_message_id - part_message_id < MAX_STORABLE_MESSAGE_COUNT {
+                return MessagePartMapTryInsertResult::PastMessageId;
             }
         } else {
-            MessagePartMapTryInsertResult::NotInBounds
+            if part_message_id - self.next_message_id > MAX_STORABLE_MESSAGE_COUNT {
+                return MessagePartMapTryInsertResult::PastMessageId;
+            }
+        }
+
+        let (map, size) = self
+            .maps
+            .entry(part_message_id)
+            .or_insert_with(|| (BTreeMap::new(), 0));
+
+        let part_bytes_len = part.as_bytes().len();
+
+        map.insert(part.id(), part);
+
+        *size += part_bytes_len;
+        return MessagePartMapTryInsertResult::Stored;
+    }
+
+    pub fn try_read(&mut self, packet_registry: &PacketRegistry) -> MessagePartMapTryReadResult {
+        if let Some((map, _)) = self.maps.get(&self.next_message_id) {
+            if let Ok(check) = DeserializedMessageCheck::new(map) {
+                let (completed_parts, _) = self.maps.remove(&self.next_message_id).unwrap();
+
+                self.next_message_id = self.next_message_id.wrapping_add(1);
+
+                return match DeserializedMessage::deserialize(
+                    packet_registry,
+                    check,
+                    completed_parts,
+                ) {
+                    Ok(message) => MessagePartMapTryReadResult::SuccessfullyCreated(message),
+                    Err(e) => MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(e),
+                };
+            } else {
+                MessagePartMapTryReadResult::PendingParts
+            }
+        } else {
+            MessagePartMapTryReadResult::PendingParts
         }
     }
-}
 
-pub fn next_message_to_receive_start_id(last_id: MessagePartId) -> MessagePartId {
-    if last_id >= MAX_MESSAGE_PART_SIZE {
-        0
-    } else {
-        last_id + 1
+    pub fn total_size(&self) -> usize {
+        self.maps.values().map(|(_, size)| size).sum()
     }
 }
