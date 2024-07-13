@@ -886,10 +886,11 @@ impl Client {
         });
 
         loop {
+            let now = Instant::now();
             socket.send(&authentication_bytes).await?;
 
-            let read_timeout =
-                Instant::now() - sent_time + messaging_properties.timeout_interpretation;
+            // TODO: add value
+            let read_timeout = Duration::from_secs(3);
             let pre_read_next_bytes_result =
                 Client::pre_read_next_bytes(&socket, read_timeout).await;
 
@@ -912,7 +913,11 @@ impl Client {
                         ClientTickResult::WriteLocked => (),
                     }
                 }
-                Err(_) => return Err(ConnectError::Timeout),
+                Err(_) => {
+                    if now - sent_time > messaging_properties.timeout_interpretation {
+                        return Err(ConnectError::Timeout);
+                    }
+                }
             }
         }
     }
