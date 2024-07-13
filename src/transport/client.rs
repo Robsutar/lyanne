@@ -1017,7 +1017,7 @@ impl Client {
                     let socket = Arc::clone(&client.socket);
                     drop(client);
                     let pre_read_next_bytes_result =
-                        Client::pre_read_next_bytes(socket, read_timeout).await;
+                        Client::pre_read_next_bytes(&socket, read_timeout).await;
                     if let Some(client) = weak_client.upgrade() {
                         match pre_read_next_bytes_result {
                             Ok(result) => {
@@ -1055,7 +1055,7 @@ impl Client {
     }
 
     async fn pre_read_next_bytes(
-        socket: Arc<UdpSocket>,
+        socket: &Arc<UdpSocket>,
         read_timeout: Duration,
     ) -> io::Result<Vec<u8>> {
         let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, tokio::time::error::Elapsed> =

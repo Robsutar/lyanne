@@ -1211,7 +1211,7 @@ impl Server {
                     drop(server);
 
                     let pre_read_next_bytes_result =
-                        Server::pre_read_next_bytes(socket, read_timeout).await;
+                        Server::pre_read_next_bytes(&socket, read_timeout).await;
 
                     if let Some(server) = weak_server.upgrade() {
                         match pre_read_next_bytes_result {
@@ -1250,7 +1250,7 @@ impl Server {
     }
 
     async fn pre_read_next_bytes(
-        socket: Arc<UdpSocket>,
+        socket: &Arc<UdpSocket>,
         read_timeout: Duration,
     ) -> io::Result<(SocketAddr, Vec<u8>)> {
         let pre_read_next_bytes_result: Result<
