@@ -1,5 +1,4 @@
-use std::sync::RwLock;
-use std::{io, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -12,7 +11,6 @@ use lyanne::packets::{
 };
 use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
 use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectResult};
-use lyanne::transport::troubles_simulator::NetTroublesSimulatorProperties;
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;

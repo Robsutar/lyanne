@@ -1,4 +1,3 @@
-use std::sync::RwLock;
 use std::{io, sync::Arc, time::Duration};
 
 use bevy::time::TimePlugin;
@@ -10,7 +9,6 @@ use bevy::{
 };
 use lyanne::packets::{BarPacketServerSchedule, ServerPacketResource};
 use lyanne::transport::server::{BindResult, ServerProperties};
-use lyanne::transport::troubles_simulator::NetTroublesSimulatorProperties;
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{
     packets::{BarPacket, FooPacket, FooPacketServerSchedule, PacketRegistry},
@@ -104,7 +102,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
 
                     commands.spawn(ServerConnected {
                         server: bind_result.server,
-                        tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
+                        tick_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
                     });
                 }
                 Err(err) => {
@@ -151,11 +149,13 @@ fn server_tick(
                 let clients_packets_to_process = tick_result.received_messages;
                 let clients_to_auth = tick_result.to_auth;
 
-                for (_, message) in clients_packets_to_process {
-                    for deserialized_packet in message.packets {
-                        server
-                            .packet_registry
-                            .bevy_server_call(&mut commands, deserialized_packet);
+                for (_, message_list) in clients_packets_to_process {
+                    for message in message_list {
+                        for deserialized_packet in message.packets {
+                            server
+                                .packet_registry
+                                .bevy_server_call(&mut commands, deserialized_packet);
+                        }
                     }
                 }
 
