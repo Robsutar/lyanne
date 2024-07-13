@@ -91,6 +91,7 @@ pub enum ConnectError {
     Ignored(Vec<DeserializedPacket>),
     Rejected(Vec<DeserializedPacket>),
     IoError(io::Error),
+    Disconnected(ServerDisconnectReason),
 }
 
 impl fmt::Display for ConnectError {
@@ -111,6 +112,7 @@ impl fmt::Display for ConnectError {
                 message.len()
             ),
             ConnectError::IoError(ref err) => write!(f, "IO error: {}", err),
+            ConnectError::Disconnected(reason) => write!(f, "Disconnected: {:?}", reason),
         }
     }
 }
@@ -757,7 +759,7 @@ impl Client {
     /// Just to reduce [`Client::connect`] nesting.
     async fn connect_public_key_send_match_arm(
         socket: Arc<UdpSocket>,
-        mut buf: [u8; 1024],
+        buf: [u8; 1024],
         client_private_key: EphemeralSecret,
         message: SerializedPacketList,
         packet_registry: Arc<PacketRegistry>,
@@ -779,107 +781,6 @@ impl Client {
         let shared_key = client_private_key.diffie_hellman(&server_public_key);
         let cipher = ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
 
-        let mut first_incoming_message =
-            MessagePartMap::new(messaging_properties.initial_next_message_part_id);
-        socket.send(&authentication_bytes).await?;
-        loop {
-            let now = Instant::now();
-            if now - sent_time > messaging_properties.timeout_interpretation {
-                return Err(ConnectError::Timeout);
-            }
-
-            match timeout(Duration::from_secs(3), socket.recv(&mut buf)).await {
-                Ok(len) => {
-                    let len = len?;
-                    let bytes = &buf[..len];
-                    if bytes.len() < MINIMAL_BYTES_LEN {
-                        return Err(ConnectError::InvalidProtocolCommunication);
-                    }
-
-                    match bytes[0] {
-                        MessageChannel::MESSAGE_PART_SEND => {
-                            // 12 for nonce, and 1 for the smallest possible message part
-                            if bytes.len() < MESSAGE_CHANNEL_SIZE + 12 + 1 {
-                                return Err(ConnectError::InvalidProtocolCommunication);
-                            }
-
-                            let nonce = Nonce::from_slice(&bytes[1..13]);
-                            let cipher_text = &bytes[13..];
-
-                            if let Ok(decrypted_message) = cipher.decrypt(nonce, cipher_text) {
-                                if let Ok(part) = MessagePart::deserialize(decrypted_message) {
-                                    let message_id = part.message_id();
-                                    let part_id = part.id();
-                                    {
-                                        let message_id_bytes = message_id.to_be_bytes();
-                                        let part_id_bytes = part_id.to_be_bytes();
-                                        socket
-                                            .send(&vec![
-                                                MessageChannel::MESSAGE_PART_CONFIRM,
-                                                message_id_bytes[0],
-                                                message_id_bytes[1],
-                                                part_id_bytes[0],
-                                                part_id_bytes[1],
-                                            ])
-                                            .await?;
-                                    }
-
-                                    first_incoming_message.try_insert(part);
-
-                                    'l2: loop {
-                                        match first_incoming_message.try_read(&packet_registry){
-                                            MessagePartMapTryReadResult::PendingParts => break 'l2,
-                                            MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
-                                                return Err(
-                                                    ConnectError::InvalidProtocolCommunication,
-                                                );
-                                            },
-                                            MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
-                                                return Ok(Client::connect_create_client(
-                                                    socket,
-                                                    packet_registry,
-                                                    messaging_properties,
-                                                    read_handler_properties,
-                                                    runtime,
-                                                    remote_addr,
-                                                    now,
-                                                    cipher,
-                                                    first_incoming_message,
-                                                    message,
-                                                ));
-                                            },
-                                        }
-                                    }
-                                } else {
-                                    return Err(ConnectError::InvalidProtocolCommunication);
-                                }
-                            } else {
-                                return Err(ConnectError::InvalidProtocolCommunication);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {
-                    socket.send(&authentication_bytes).await?;
-                }
-            }
-        }
-    }
-
-    /// Just to reduce [`Client::connect_public_key_send_match_arm`] nesting.
-    fn connect_create_client(
-        socket: Arc<UdpSocket>,
-        packet_registry: Arc<PacketRegistry>,
-        messaging_properties: Arc<MessagingProperties>,
-        read_handler_properties: Arc<ReadHandlerProperties>,
-        runtime: Arc<Runtime>,
-        remote_addr: SocketAddr,
-        now: Instant,
-        cipher: ChaCha20Poly1305,
-        first_incoming_message: MessagePartMap,
-        message: DeserializedMessage,
-    ) -> ConnectResult {
         let (tasks_keeper_sender, tasks_keeper_receiver) = crossbeam_channel::unbounded();
         let (reason_to_disconnect_sender, reason_to_disconnect_receiver) =
             crossbeam_channel::bounded(1);
@@ -894,7 +795,9 @@ impl Client {
         let messaging = Arc::new(RwLock::new(ConnectedServerMessaging {
             cipher,
             pending_confirmation: BTreeMap::new(),
-            incoming_message: first_incoming_message,
+            incoming_message: MessagePartMap::new(
+                messaging_properties.initial_next_message_part_id,
+            ),
             tick_bytes_len: 0,
             last_received_message_instant: Instant::now(),
             received_messages: Vec::new(),
@@ -908,7 +811,7 @@ impl Client {
         let connected_server = ConnectedServer {
             addr: remote_addr,
             messaging: Arc::clone(&messaging),
-            last_messaging_write: RwLock::new(now),
+            last_messaging_write: RwLock::new(Instant::now()),
             average_latency: RwLock::new(messaging_properties.initial_latency),
             receiving_bytes_sender,
             packets_to_send_sender,
@@ -917,14 +820,14 @@ impl Client {
         let runtime_clone = Arc::clone(&runtime);
 
         let client = Arc::new(Client {
-            socket,
+            socket: Arc::clone(&socket),
             runtime,
             tasks_keeper_handle: Client::create_async_tasks_keeper(
                 runtime_clone,
                 tasks_keeper_receiver,
             ),
             tasks_keeper_sender,
-            tick_state: RwLock::new(ClientTickState::TickAfterMessagePending),
+            tick_state: RwLock::new(ClientTickState::TickStartPending),
             packet_registry: packet_registry.clone(),
             messaging_properties: Arc::clone(&messaging_properties),
             read_handler_properties: Arc::clone(&read_handler_properties),
@@ -982,9 +885,36 @@ impl Client {
             .await;
         });
 
-        client.try_check_read_handler();
+        loop {
+            socket.send(&authentication_bytes).await?;
 
-        ConnectResult { client, message }
+            let read_timeout =
+                Instant::now() - sent_time + messaging_properties.timeout_interpretation;
+            let pre_read_next_bytes_result =
+                Client::pre_read_next_bytes(&socket, read_timeout).await;
+
+            match pre_read_next_bytes_result {
+                Ok(result) => {
+                    //TODO: use this
+                    let read_result = client.read_next_bytes(result).await;
+
+                    match client.tick_start() {
+                        ClientTickResult::ReceivedMessage(message) => {
+                            client.try_check_read_handler();
+                            return Ok(ConnectResult { client, message });
+                        }
+                        ClientTickResult::PendingMessage => (),
+                        ClientTickResult::Disconnected => {
+                            return Err(ConnectError::Disconnected(
+                                client.take_disconnect_reason().unwrap(),
+                            ))
+                        }
+                        ClientTickResult::WriteLocked => (),
+                    }
+                }
+                Err(_) => return Err(ConnectError::Timeout),
+            }
+        }
     }
 
     fn try_check_read_handler(self: &Arc<Self>) {
@@ -1060,9 +990,9 @@ impl Client {
     ) -> io::Result<Vec<u8>> {
         let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, tokio::time::error::Elapsed> =
             timeout(read_timeout, async move {
-        let mut buf = [0u8; 1024];
-        let len = socket.recv(&mut buf).await?;
-        Ok(buf[..len].to_vec())
+                let mut buf = [0u8; 1024];
+                let len = socket.recv(&mut buf).await?;
+                Ok(buf[..len].to_vec())
             })
             .await;
 
