@@ -1017,12 +1017,10 @@ impl Client {
                     let socket = Arc::clone(&client.socket);
                     drop(client);
                     let pre_read_next_bytes_result =
-                        timeout(read_timeout, Client::pre_read_next_bytes(socket)).await;
+                        Client::pre_read_next_bytes(socket, read_timeout).await;
                     if let Some(client) = weak_client.upgrade() {
                         match pre_read_next_bytes_result {
                             Ok(result) => {
-                                //TODO: handle errors
-                                let result = result.unwrap();
                                 if !was_used {
                                     was_used = true;
                                     let mut surplus_count = client
@@ -1056,10 +1054,28 @@ impl Client {
         }
     }
 
-    async fn pre_read_next_bytes(socket: Arc<UdpSocket>) -> io::Result<Vec<u8>> {
+    async fn pre_read_next_bytes(
+        socket: Arc<UdpSocket>,
+        read_timeout: Duration,
+    ) -> io::Result<Vec<u8>> {
+        let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, tokio::time::error::Elapsed> =
+            timeout(read_timeout, async move {
         let mut buf = [0u8; 1024];
         let len = socket.recv(&mut buf).await?;
         Ok(buf[..len].to_vec())
+            })
+            .await;
+
+        match pre_read_next_bytes_result {
+            Ok(result) => match result {
+                Ok(result) => Ok(result),
+                Err(e) => Err(e),
+            },
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("Timeout of {:?}", read_timeout),
+            )),
+        }
     }
 
     async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
