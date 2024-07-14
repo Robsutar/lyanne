@@ -66,6 +66,19 @@ pub enum ServerDisconnectReason {
     DisconnectRequest,
 }
 
+/// General properties for the client management.
+pub struct ClientProperties {
+    pub auth_packet_loss_interpretation: Duration,
+}
+
+impl Default for ClientProperties {
+    fn default() -> Self {
+        Self {
+            auth_packet_loss_interpretation: Duration::from_secs(3),
+        }
+    }
+}
+
 /// Result when calling [`Client::connect`]
 pub struct ConnectResult {
     pub client: Arc<Client>,
@@ -485,6 +498,8 @@ pub struct Client {
     pub messaging_properties: Arc<MessagingProperties>,
     /// Properties related to read handlers.
     pub read_handler_properties: Arc<ReadHandlerProperties>,
+    /// Properties for the internal client management.
+    pub client_properties: Arc<ClientProperties>,
 
     /// Connected server.
     connected_server: ConnectedServer,
@@ -510,6 +525,7 @@ impl Client {
         packet_registry: Arc<PacketRegistry>,
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
+        client_properties: Arc<ClientProperties>,
         runtime: Arc<Runtime>,
         message: SerializedPacketList,
     ) -> Result<ConnectResult, ConnectError> {
@@ -577,6 +593,7 @@ impl Client {
                                 packet_registry,
                                 messaging_properties,
                                 read_handler_properties,
+                                client_properties,
                                 runtime,
                                 remote_addr,
                                 sent_time,
@@ -823,6 +840,7 @@ impl Client {
         packet_registry: Arc<PacketRegistry>,
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
+        client_properties: Arc<ClientProperties>,
         runtime: Arc<Runtime>,
         remote_addr: SocketAddr,
         sent_time: Instant,
@@ -889,6 +907,7 @@ impl Client {
             packet_registry: packet_registry.clone(),
             messaging_properties: Arc::clone(&messaging_properties),
             read_handler_properties: Arc::clone(&read_handler_properties),
+            client_properties: Arc::clone(&client_properties),
             connected_server,
             reason_to_disconnect_sender,
             reason_to_disconnect_receiver,
@@ -947,8 +966,7 @@ impl Client {
             let now = Instant::now();
             socket.send(&authentication_bytes).await?;
 
-            // TODO: add value
-            let read_timeout = Duration::from_secs(3);
+            let read_timeout = client_properties.auth_packet_loss_interpretation;
             let pre_read_next_bytes_result =
                 Client::pre_read_next_bytes(&socket, read_timeout).await;
 
