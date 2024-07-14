@@ -152,7 +152,7 @@ pub struct ConnectedServerMessaging {
     cipher: ChaCha20Poly1305,
 
     /// Map of message parts pending confirmation.
-    pending_confirmation: BTreeMap<(MessageId, MessagePartId), SentMessagePart>,
+    pending_confirmation: BTreeMap<MessageId, BTreeMap<MessagePartId, SentMessagePart>>,
 
     /// Map of incoming message parts.
     incoming_message: MessagePartMap,
@@ -223,14 +223,17 @@ impl ConnectedServer {
                     MessageChannel::MESSAGE_PART_CONFIRM => {
                         let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
                         let part_id = MessagePartId::from_be_bytes([bytes[3], bytes[4]]);
-                        if let Some(removed) = messaging
-                            .pending_confirmation
-                            .remove(&(message_id, part_id))
-                        {
-                            let delay = Instant::now() - removed.sent_instant;
-                            messaging.latency_monitor.push(delay);
-                            // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
-                            messaging.average_packet_loss_rtt = Duration::from_millis(250);
+                        if let Some(map) = messaging.pending_confirmation.get_mut(&message_id) {
+                            if let Some(removed) = map.remove(&part_id) {
+                                if map.is_empty() {
+                                    messaging.pending_confirmation.remove(&message_id).unwrap();
+                                }
+
+                                let delay = Instant::now() - removed.sent_instant;
+                                messaging.latency_monitor.push(delay);
+                                // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
+                                messaging.average_packet_loss_rtt = Duration::from_millis(250);
+                            }
                         }
                     }
                     MessageChannel::MESSAGE_PART_SEND => {
@@ -341,9 +344,12 @@ impl ConnectedServer {
                             );
 
                             let finished_bytes = Arc::clone(&sent_part.finished_bytes);
-                            messaging
+
+                            let pending_part_id_map = messaging
                                 .pending_confirmation
-                                .insert((part.message_id(), part_id), sent_part);
+                                .entry(part.message_id())
+                                .or_insert_with(|| BTreeMap::new());
+                            pending_part_id_map.insert(part_id, sent_part);
 
                             let _ = messaging
                                 .shared_socket_bytes_send_sender
@@ -573,15 +579,19 @@ impl Client {
             let average_packet_loss_rtt = messaging.average_packet_loss_rtt;
             let mut messages_to_resend: Vec<Arc<Vec<u8>>> = Vec::new();
 
-            for sent_part in messaging.pending_confirmation.values_mut() {
-                if now - sent_part.sent_instant > self.messaging_properties.timeout_interpretation {
-                    *self.disconnect_reason.write().unwrap() = Some(Some(
-                        ServerDisconnectReason::PendingMessageConfirmationTimeout,
-                    ));
-                    return ClientTickResult::Disconnected;
-                } else if now - sent_part.last_sent_time > average_packet_loss_rtt {
-                    sent_part.last_sent_time = now;
-                    messages_to_resend.push(Arc::clone(&sent_part.finished_bytes));
+            for pending_part_id_map in messaging.pending_confirmation.values_mut() {
+                for sent_part in pending_part_id_map.values_mut() {
+                    if now - sent_part.sent_instant
+                        > self.messaging_properties.timeout_interpretation
+                    {
+                        *self.disconnect_reason.write().unwrap() = Some(Some(
+                            ServerDisconnectReason::PendingMessageConfirmationTimeout,
+                        ));
+                        return ClientTickResult::Disconnected;
+                    } else if now - sent_part.last_sent_time > average_packet_loss_rtt {
+                        sent_part.last_sent_time = now;
+                        messages_to_resend.push(Arc::clone(&sent_part.finished_bytes));
+                    }
                 }
             }
 
