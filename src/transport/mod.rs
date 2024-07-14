@@ -123,9 +123,9 @@ pub struct JustifiedRejectionContext {
 }
 
 impl JustifiedRejectionContext {
-    /// The message will be sent to the client when it tries to connect.
+    /// The message will be sent when it tries to connect.
     pub fn from_serialized_list(rejection_instant: Instant, list: SerializedPacketList) -> Self {
-        if list.bytes.len() > 1024 - 1 {
+        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE {
             panic!("Max bytes length reached.");
         }
         let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
