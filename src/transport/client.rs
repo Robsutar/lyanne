@@ -204,6 +204,12 @@ impl ConnectedServer {
     }
 
     /// # Returns
+    /// The total size of the incoming message map.
+    pub fn stored_incoming_message_size(&self) -> usize {
+        self.messaging.read().unwrap().incoming_message.total_size()
+    }
+
+    /// # Returns
     /// The remove server address.
     pub fn addr(&self) -> &SocketAddr {
         &self.addr

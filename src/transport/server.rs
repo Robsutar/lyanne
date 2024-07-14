@@ -234,6 +234,12 @@ impl ConnectedClient {
         *self.average_latency.read().unwrap()
     }
 
+    /// # Returns
+    /// The total size of the incoming message map.
+    pub fn stored_incoming_message_size(&self) -> usize {
+        self.messaging.read().unwrap().incoming_message.total_size()
+    }
+
     async fn create_receiving_bytes_handler(
         server: Weak<Server>,
         addr: SocketAddr,
