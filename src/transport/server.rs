@@ -85,6 +85,7 @@ pub enum ClientDisconnectReason {
     DisconnectRequest,
 }
 
+/// General properties for the server management.
 pub struct ServerProperties {
     pub max_ignored_addrs_asking_reason: usize,
     pub pending_auth_packet_loss_interpretation: Duration,
