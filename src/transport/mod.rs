@@ -57,9 +57,8 @@ impl MessageChannel {
     //TODO: AUTH_MESSAGE has no cryptography, probably some dtls implementation is needed here
     pub const AUTH_MESSAGE: MessageChannelType = 3;
     pub const PUBLIC_KEY_SEND: MessageChannelType = 4;
-    pub const DISCONNECT_REQUEST: MessageChannelType = 5;
-    pub const REJECTION_JUSTIFICATION: MessageChannelType = 6;
-    pub const IGNORED_REASON: MessageChannelType = 7;
+    pub const REJECTION_JUSTIFICATION: MessageChannelType = 5;
+    pub const IGNORED_REASON: MessageChannelType = 6;
 }
 
 pub const MESSAGE_CHANNEL_SIZE: usize = 1;

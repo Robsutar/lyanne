@@ -347,11 +347,28 @@ impl ConnectedServer {
                             break 'l1;
                         }
                     }
-                    MessageChannel::DISCONNECT_REQUEST => {
-                        let _ = client
+                    MessageChannel::REJECTION_JUSTIFICATION => {
+                        // 4 for the minimal SerializedPacket
+                        if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
+                            let _ = client
+                                .reason_to_disconnect_sender
+                                .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                            break 'l1;
+                        } else if let Ok(message) =
+                            DeserializedPacket::deserialize_list(&bytes[1..], &client.packet_registry)
+                        {
+                            todo!();
+                            // client.rejections_to_confirm.insert(addr.clone());
+                            // let _ = client
+                            //     .clients_to_disconnect_sender
+                            //     .send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
+                            // break 'l1;
+                        } else {
+                            let _ = client
                             .reason_to_disconnect_sender
-                            .send((ServerDisconnectReason::DisconnectRequest, None));
+                            .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                         break 'l1;
+                        }
                     }
                     MessageChannel::AUTH_MESSAGE => {
                         // Client probably multiple authentication packets before being authenticated
