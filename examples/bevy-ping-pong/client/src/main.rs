@@ -107,12 +107,6 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
                         connect_result.message.packets.len()
                     );
 
-                    client_connected.client.send_packet(&BarPacket {
-                        message: "We connected!".to_owned(),
-                    });
-
-                    client_connected.client.tick_after_message();
-
                     commands.spawn(client_connected);
                 }
                 Err(err) => {
