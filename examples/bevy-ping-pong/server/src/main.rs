@@ -100,7 +100,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
                 Ok(bind_result) => {
                     info!("Server bind");
 
-                    if true {
+                    if false {
                         bind_result.server.ignore_addr(
                             "127.0.0.1".parse().unwrap(),
                             IgnoredAddrReason::from_serialized_list(SerializedPacketList::create(
