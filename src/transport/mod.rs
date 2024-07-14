@@ -6,7 +6,7 @@ use std::{
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 
 use crate::{
-    messages::{MessageId, MessagePart, MessagePartId, MESSAGE_ID_SIZE, MESSAGE_PART_ID_SIZE},
+    messages::{MessagePart, MessagePartId, MESSAGE_ID_SIZE, MESSAGE_PART_ID_SIZE},
     packets::SerializedPacketList,
     utils::RttProperties,
 };
@@ -19,8 +19,6 @@ pub mod server;
 
 #[cfg(feature = "troubles_simulator")]
 pub mod troubles_simulator;
-
-pub const MINIMAL_BYTES_LEN: usize = MESSAGE_CHANNEL_SIZE + MESSAGE_ID_SIZE + MESSAGE_PART_ID_SIZE;
 
 pub struct MessagingProperties {
     pub part_limit: usize,

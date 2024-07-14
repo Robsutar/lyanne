@@ -19,7 +19,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::{
     messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap,
-        MessagePartMapTryReadResult,
+        MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE,
     },
     packets::{
         ClientTickEndPacket, DeserializedPacket, Packet, PacketRegistry, SerializedPacket,
@@ -30,14 +30,12 @@ use crate::{
 
 use super::{
     JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties,
-    SentMessagePart, MESSAGE_CHANNEL_SIZE, MINIMAL_BYTES_LEN,
+    SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
 
 /// Possible results when receiving bytes by the server
 #[derive(Debug)]
 pub enum ReadServerBytesResult {
-    /// The received byte length is insufficient.
-    InsufficientBytesLen,
     /// Disconnect confirmation from the server is done.
     DoneDisconnectConfirm,
     /// Disconnect confirmation from the server is pending.
@@ -221,24 +219,34 @@ impl ConnectedServer {
                 let mut messaging = messaging.write().unwrap();
                 match bytes[0] {
                     MessageChannel::MESSAGE_PART_CONFIRM => {
-                        let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
-                        let part_id = MessagePartId::from_be_bytes([bytes[3], bytes[4]]);
-                        if let Some(map) = messaging.pending_confirmation.get_mut(&message_id) {
-                            if let Some(removed) = map.remove(&part_id) {
-                                if map.is_empty() {
-                                    messaging.pending_confirmation.remove(&message_id).unwrap();
-                                }
+                        if bytes.len() == 3 {
+                            let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
+                            todo!()
+                        } else if bytes.len() == 5 {
+                            let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
+                            let part_id = MessagePartId::from_be_bytes([bytes[3], bytes[4]]);
+                            if let Some(map) = messaging.pending_confirmation.get_mut(&message_id) {
+                                if let Some(removed) = map.remove(&part_id) {
+                                    if map.is_empty() {
+                                        messaging.pending_confirmation.remove(&message_id).unwrap();
+                                    }
 
-                                let delay = Instant::now() - removed.sent_instant;
-                                messaging.latency_monitor.push(delay);
-                                // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
-                                messaging.average_packet_loss_rtt = Duration::from_millis(250);
+                                    let delay = Instant::now() - removed.sent_instant;
+                                    messaging.latency_monitor.push(delay);
+                                    // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
+                                    messaging.average_packet_loss_rtt = Duration::from_millis(250);
+                                }
                             }
+                        } else {
+                            let _ = client
+                                .reason_to_disconnect_sender
+                                .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                            break 'l1;
                         }
                     }
                     MessageChannel::MESSAGE_PART_SEND => {
-                        // 12 for nonce, and 1 for the smallest possible message part
-                        if bytes.len() < MESSAGE_CHANNEL_SIZE + 12 + 1 {
+                        // 12 for nonce
+                        if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + 12 {
                             let _ = client
                                 .reason_to_disconnect_sender
                                 .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
@@ -492,7 +500,7 @@ impl Client {
                 Ok(len) => {
                     let len = len?;
                     let bytes = &buf[..len];
-                    if bytes.len() < MINIMAL_BYTES_LEN {
+                    if bytes.len() < MESSAGE_CHANNEL_SIZE {
                         return Err(ConnectError::InvalidProtocolCommunication);
                     }
 
@@ -503,7 +511,10 @@ impl Client {
                                 .await?;
                         }
                         MessageChannel::IGNORED_REASON => {
-                            if let Ok(message) =
+                            // 4 for the minimal SerializedPacket
+                            if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
+                                return Err(ConnectError::InvalidProtocolCommunication);
+                            } else if let Ok(message) =
                                 DeserializedPacket::deserialize_list(&bytes[1..], &packet_registry)
                             {
                                 return Err(ConnectError::Ignored(message));
@@ -1024,18 +1035,14 @@ impl Client {
     }
 
     async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
-        if bytes.len() < MINIMAL_BYTES_LEN {
-            ReadServerBytesResult::InsufficientBytesLen
+        let mut messaging = self.connected_server.messaging.write().unwrap();
+        // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
+        messaging.tick_bytes_len += bytes.len() + 8 + 20;
+        if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
+            ReadServerBytesResult::ServerMaxTickByteLenOverflow
         } else {
-            let mut messaging = self.connected_server.messaging.write().unwrap();
-            // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
-            messaging.tick_bytes_len += bytes.len() + 8 + 20;
-            if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
-                ReadServerBytesResult::ServerMaxTickByteLenOverflow
-            } else {
-                let _ = self.connected_server.receiving_bytes_sender.send(bytes);
-                ReadServerBytesResult::ServerReceivedBytes
-            }
+            let _ = self.connected_server.receiving_bytes_sender.send(bytes);
+            ReadServerBytesResult::ServerReceivedBytes
         }
     }
 }
