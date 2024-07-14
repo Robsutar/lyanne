@@ -245,8 +245,10 @@ impl ConnectedServer {
                             {
                                 let delay = Instant::now() - sent_instant;
                                 messaging.latency_monitor.push(delay);
-                                // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
-                                messaging.average_packet_loss_rtt = Duration::from_millis(250);
+                                messaging.average_packet_loss_rtt = messaging.packet_loss_rtt_calculator.update_rtt(
+                                    &client.messaging_properties.packet_loss_rtt_properties,
+                                    delay,
+                                );
                             }
                         } else if bytes.len() == 5 {
                             let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
@@ -262,8 +264,10 @@ impl ConnectedServer {
 
                                     let delay = Instant::now() - sent_instant;
                                     messaging.latency_monitor.push(delay);
-                                    // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
-                                    messaging.average_packet_loss_rtt = Duration::from_millis(250);
+                                    messaging.average_packet_loss_rtt = messaging.packet_loss_rtt_calculator.update_rtt(
+                                        &client.messaging_properties.packet_loss_rtt_properties,
+                                        delay,
+                                    );
                                 }
                             }
                         } else {
