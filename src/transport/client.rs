@@ -18,8 +18,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
     messages::{
-        DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap,
-        MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE,
+        DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap, MessagePartMapTryInsertResult, MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE
     },
     packets::{
         ClientTickEndPacket, DeserializedPacket, Packet, PacketRegistry, SerializedPacket,
@@ -171,7 +170,7 @@ pub struct ConnectedServerMessaging {
     latency_monitor: DurationMonitor,
 
     /// Sender for message part confirmations.
-    message_part_confirmation_sender: crossbeam_channel::Sender<(MessageId, MessagePartId)>,
+    message_part_confirmation_sender: crossbeam_channel::Sender<(MessageId, Option<MessagePartId>)>,
     /// Sender for shared socket bytes.
     shared_socket_bytes_send_sender: crossbeam_channel::Sender<Arc<Vec<u8>>>,
 }
@@ -222,7 +221,14 @@ impl ConnectedServer {
                     MessageChannel::MESSAGE_PART_CONFIRM => {
                         if bytes.len() == 3 {
                             let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
-                            todo!()
+                            if let Some((sent_instant, _)) =
+                                messaging.pending_confirmation.remove(&message_id)
+                            {
+                                let delay = Instant::now() - sent_instant;
+                                messaging.latency_monitor.push(delay);
+                                // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
+                                messaging.average_packet_loss_rtt = Duration::from_millis(250);
+                            }
                         } else if bytes.len() == 5 {
                             let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
                             let part_id = MessagePartId::from_be_bytes([bytes[3], bytes[4]]);
@@ -263,27 +269,46 @@ impl ConnectedServer {
                         if let Ok(decrypted_message) = messaging.cipher.decrypt(nonce, cipher_text)
                         {
                             if let Ok(part) = MessagePart::deserialize(decrypted_message) {
-                                let _ = messaging
-                                    .message_part_confirmation_sender
-                                    .send((part.message_id(), part.id()));
+                                let mut send_fully_message_confirmation = false;
+                                let message_id = part.message_id();
+                                let part_id = part.id();
 
-                                messaging.incoming_message.try_insert(part);
-
-                                'l2: loop {
-                                    match messaging.incoming_message.try_read(&client.packet_registry){
-                                        MessagePartMapTryReadResult::PendingParts => break 'l2,
-                                        MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
-                                            let _ = client.reason_to_disconnect_sender.send((
-                                                ServerDisconnectReason::InvalidProtocolCommunication,
-                                                None,
-                                            ));
-                                            break 'l1;
-                                        },
-                                        MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
-                                            messaging.received_messages.push(message);
-                                            messaging.last_received_message_instant = Instant::now();
-                                        },
-                                    }
+                                match messaging.incoming_message.try_insert(part) {
+                                    MessagePartMapTryInsertResult::PastMessageId => {
+                                        let _ = messaging
+                                        .message_part_confirmation_sender
+                                        .send((message_id, None));
+                                    },
+                                    MessagePartMapTryInsertResult::Stored => {
+                                        'l2: loop {
+                                            match messaging.incoming_message.try_read(&client.packet_registry){
+                                                MessagePartMapTryReadResult::PendingParts => break 'l2,
+                                                MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
+                                                    let _ = client.reason_to_disconnect_sender.send((
+                                                        ServerDisconnectReason::InvalidProtocolCommunication,
+                                                        None,
+                                                    ));
+                                                    break 'l1;
+                                                },
+                                                MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
+                                                    send_fully_message_confirmation = true;
+        
+                                                    messaging.received_messages.push(message);
+                                                    messaging.last_received_message_instant = Instant::now();
+                                                },
+                                            }
+                                        }
+        
+                                        if send_fully_message_confirmation {
+                                            let _ = messaging
+                                                .message_part_confirmation_sender
+                                                .send((message_id, None));
+                                        } else {
+                                            let _ = messaging
+                                                .message_part_confirmation_sender
+                                                .send((message_id, Some(part_id)));
+                                        }
+                                    },
                                 }
                             } else {
                                 let _ = client.reason_to_disconnect_sender.send((
@@ -379,24 +404,34 @@ impl ConnectedServer {
 
     async fn create_message_part_confirmation_handler(
         client: Weak<Client>,
-        message_part_confirmation_receiver: crossbeam_channel::Receiver<(MessageId, MessagePartId)>,
+        message_part_confirmation_receiver: crossbeam_channel::Receiver<(
+            MessageId,
+            Option<MessagePartId>,
+        )>,
     ) {
         while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv() {
             if let Some(client) = client.upgrade() {
                 let message_id_bytes = message_id.to_be_bytes();
-                let part_id_bytes = part_id.to_be_bytes();
-                if client
-                    .socket
-                    .send(&vec![
-                        MessageChannel::MESSAGE_PART_CONFIRM,
-                        message_id_bytes[0],
-                        message_id_bytes[1],
-                        part_id_bytes[0],
-                        part_id_bytes[1],
-                    ])
-                    .await
-                    .is_err()
-                {
+
+                let bytes = {
+                    if let Some(part_id) = part_id {
+                        let part_id_bytes = part_id.to_be_bytes();
+                        vec![
+                            MessageChannel::MESSAGE_PART_CONFIRM,
+                            message_id_bytes[0],
+                            message_id_bytes[1],
+                            part_id_bytes[0],
+                            part_id_bytes[1],
+                        ]
+                    } else {
+                        vec![
+                            MessageChannel::MESSAGE_PART_CONFIRM,
+                            message_id_bytes[0],
+                            message_id_bytes[1],
+                        ]
+                    }
+                };
+                if client.socket.send(&bytes).await.is_err() {
                     let _ = client
                         .reason_to_disconnect_sender
                         .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
