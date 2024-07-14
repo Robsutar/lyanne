@@ -551,7 +551,7 @@ impl Client {
 
             socket.send(&public_key_sent).await?;
             match timeout(
-                Duration::from_secs(3), // TODO: add value
+                client_properties.auth_packet_loss_interpretation,
                 socket.recv(&mut buf),
             )
             .await
