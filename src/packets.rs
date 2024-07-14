@@ -233,6 +233,13 @@ impl SerializedPacket {
     }
 
     pub fn read_first(buf: &[u8], packet_buf_index: usize) -> io::Result<SerializedPacket> {
+        if buf.len() - packet_buf_index < 4 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Buf size is not big sufficient to read packet id and packet length",
+            ));
+        }
+
         let packet_id = u16::from_le_bytes([buf[packet_buf_index], buf[packet_buf_index + 1]]);
         let packet_length: u16 =
             u16::from_le_bytes([buf[packet_buf_index + 2], buf[packet_buf_index + 3]]);
