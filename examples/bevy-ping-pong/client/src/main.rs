@@ -6,12 +6,15 @@ use bevy::{
     prelude::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
-use lyanne::packets::{
-    BarPacket, FooPacket, FooPacketClientSchedule, PacketRegistry, SerializedPacketList,
-};
 use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
 use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectResult};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
+use lyanne::{
+    packets::{
+        BarPacket, FooPacket, FooPacketClientSchedule, PacketRegistry, SerializedPacketList,
+    },
+    transport::client::ClientProperties,
+};
 use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;
 
@@ -50,6 +53,7 @@ fn init(mut commands: Commands) {
     let packet_registry = Arc::new(PacketRegistry::new());
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
+    let client_properties = Arc::new(ClientProperties::default());
 
     let authentication_packets = vec![packet_registry
         .serialize(&FooPacket {
@@ -65,6 +69,7 @@ fn init(mut commands: Commands) {
                     packet_registry,
                     messaging_properties,
                     read_handler_properties,
+                    client_properties,
                     runtime,
                     SerializedPacketList::create(authentication_packets),
                 )
