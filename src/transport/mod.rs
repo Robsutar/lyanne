@@ -65,8 +65,6 @@ impl MessageChannel {
 pub const MESSAGE_CHANNEL_SIZE: usize = 1;
 
 pub(crate) struct SentMessagePart {
-    /// The instant that the part was sent by the first time.
-    sent_instant: Instant,
     /// The last instant that the bytes were sent.
     last_sent_time: Instant,
     /// The serialized message part with all additional bytes (nonce, cryptograph, channel).
@@ -86,7 +84,6 @@ impl SentMessagePart {
         exit.extend_from_slice(&nonce);
         exit.extend(cipher_bytes);
         Self {
-            sent_instant,
             last_sent_time: sent_instant,
             finished_bytes: Arc::new(exit),
         }

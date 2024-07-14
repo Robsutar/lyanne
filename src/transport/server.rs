@@ -180,7 +180,8 @@ struct ConnectedClientMessaging {
     cipher: ChaCha20Poly1305,
 
     /// Map of message parts pending confirmation.
-    pending_confirmation: BTreeMap<MessageId, BTreeMap<MessagePartId, SentMessagePart>>,
+    /// The tuple is the sent instant, and the map of the message parts of the message.
+    pending_confirmation: BTreeMap<MessageId, (Instant, BTreeMap<MessagePartId, SentMessagePart>)>,
 
     /// Map of incoming message parts.
     incoming_message: MessagePartMap,
@@ -250,13 +251,16 @@ impl ConnectedClient {
                         } else if bytes.len() == 5 {
                             let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
                             let part_id = MessagePartId::from_be_bytes([bytes[3], bytes[4]]);
-                            if let Some(map) = messaging.pending_confirmation.get_mut(&message_id) {
-                                if let Some(removed) = map.remove(&part_id) {
+                            if let Some((sent_instant, map)) =
+                                messaging.pending_confirmation.get_mut(&message_id)
+                            {
+                                let sent_instant = *sent_instant;
+                                if let Some(_) = map.remove(&part_id) {
                                     if map.is_empty() {
                                         messaging.pending_confirmation.remove(&message_id).unwrap();
                                     }
 
-                                    let delay = Instant::now() - removed.sent_instant;
+                                    let delay = Instant::now() - sent_instant;
                                     messaging.latency_monitor.push(delay);
                                     // TODO: adjust that, see `2ccbdfd06a2f256d1e5f872cb7ed3d3ba523a402`
                                     messaging.average_packet_loss_rtt = Duration::from_millis(250);
@@ -369,23 +373,21 @@ impl ConnectedClient {
                         )
                         .unwrap();
 
+                        let sent_instant = Instant::now();
+
                         for part in message_parts {
                             let part_id = part.id();
 
                             let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-                            let sent_part = SentMessagePart::new(
-                                Instant::now(),
-                                &part,
-                                &messaging.cipher,
-                                nonce,
-                            );
+                            let sent_part =
+                                SentMessagePart::new(sent_instant, &part, &messaging.cipher, nonce);
 
                             let finished_bytes = Arc::clone(&sent_part.finished_bytes);
 
-                            let pending_part_id_map = messaging
+                            let (_, pending_part_id_map) = messaging
                                 .pending_confirmation
                                 .entry(part.message_id())
-                                .or_insert_with(|| BTreeMap::new());
+                                .or_insert_with(|| (sent_instant, BTreeMap::new()));
                             pending_part_id_map.insert(part_id, sent_part);
 
                             let _ = messaging
@@ -714,20 +716,21 @@ impl Server {
                 let average_packet_loss_rtt = messaging.average_packet_loss_rtt;
                 let mut messages_to_resend: Vec<Arc<Vec<u8>>> = Vec::new();
 
-                for pending_part_id_map in messaging.pending_confirmation.values_mut() {
+                for (sent_instant, pending_part_id_map) in
+                    messaging.pending_confirmation.values_mut()
+                {
+                    if now - *sent_instant > self.messaging_properties.timeout_interpretation {
+                        addrs_to_disconnect.insert(
+                            client.key().clone(),
+                            (
+                                ClientDisconnectReason::PendingMessageConfirmationTimeout,
+                                None,
+                            ),
+                        );
+                        continue 'l1;
+                    }
                     for sent_part in pending_part_id_map.values_mut() {
-                        if now - sent_part.sent_instant
-                            > self.messaging_properties.timeout_interpretation
-                        {
-                            addrs_to_disconnect.insert(
-                                client.key().clone(),
-                                (
-                                    ClientDisconnectReason::PendingMessageConfirmationTimeout,
-                                    None,
-                                ),
-                            );
-                            continue 'l1;
-                        } else if now - sent_part.last_sent_time > average_packet_loss_rtt {
+                        if now - sent_part.last_sent_time > average_packet_loss_rtt {
                             sent_part.last_sent_time = now;
                             messages_to_resend.push(Arc::clone(&sent_part.finished_bytes));
                         }
