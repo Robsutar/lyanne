@@ -82,7 +82,7 @@ pub enum ClientDisconnectReason {
     /// Client was manually disconnected.
     ManualDisconnect,
     /// Client disconnected itself.
-    DisconnectRequest,
+    DisconnectRequest(Vec<DeserializedPacket>),
 }
 
 /// General properties for the server management.
@@ -364,11 +364,29 @@ impl ConnectedClient {
                             break 'l1;
                         }
                     }
-                    MessageChannel::DISCONNECT_REQUEST => {
-                        let _ = server
-                            .clients_to_disconnect_sender
-                            .send((addr, (ClientDisconnectReason::DisconnectRequest, None)));
-                        break 'l1;
+                    MessageChannel::REJECTION_JUSTIFICATION => {
+                        // 4 for the minimal SerializedPacket
+                        if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
+                            let _ = server.clients_to_disconnect_sender.send((
+                                addr,
+                                (ClientDisconnectReason::InvalidProtocolCommunication, None),
+                            ));
+                            break 'l1;
+                        } else if let Ok(message) =
+                            DeserializedPacket::deserialize_list(&bytes[1..], &server.packet_registry)
+                        {
+                            server.rejections_to_confirm.insert(addr.clone());
+                            let _ = server
+                                .clients_to_disconnect_sender
+                                .send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
+                            break 'l1;
+                        } else {
+                            let _ = server.clients_to_disconnect_sender.send((
+                                addr,
+                                (ClientDisconnectReason::InvalidProtocolCommunication, None),
+                            ));
+                            break 'l1;
+                        }
                     }
                     MessageChannel::AUTH_MESSAGE => {
                         // Client probably multiple authentication packets before being authenticated
@@ -509,8 +527,10 @@ impl ConnectedClient {
 pub struct Server {
     /// Sender for make the spawned tasks keep alive.
     tasks_keeper_sender: crossbeam_channel::Sender<JoinHandle<()>>,
-    /// Sender for signaling the reading of ignored addresses' reasons.
+    /// Sender for signaling the reading of [`Server::ignored_addrs_asking_reason`]
     ignored_addrs_asking_reason_read_signal_sender: crossbeam_channel::Sender<()>,
+    /// Sender for signaling the reading of [`Server::rejections_to_confirm`]
+    rejections_to_confirm_signal_sender: crossbeam_channel::Sender<()>,
     /// Sender for addresses to be authenticated.
     clients_to_auth_sender: crossbeam_channel::Sender<(SocketAddr, AddrToAuth)>,
     /// Sender for addresses to be disconnected.
@@ -558,8 +578,10 @@ pub struct Server {
     ignored_addrs: DashMap<IpAddr, IgnoredAddrReason>,
     /// Map of temporarily ignored addresses with the time until they are ignored.
     temporary_ignored_addrs: DashMap<IpAddr, Instant>,
-    /// Set of addresses asking for the reason they are ignored.
+    /// Map of addresses asking for the reason they are ignored.
     ignored_addrs_asking_reason: DashMap<IpAddr, SocketAddr>,
+    /// Set of addresses asking for the rejection confirm.
+    rejections_to_confirm: DashSet<SocketAddr>,
 
     /// Set of addresses in the authentication process.
     addrs_in_auth: DashSet<SocketAddr>,
@@ -593,6 +615,10 @@ impl Server {
             ignored_addrs_asking_reason_read_signal_sender,
             ignored_addrs_asking_reason_read_signal_receiver,
         ) = crossbeam_channel::unbounded();
+        let (
+            rejections_to_confirm_signal_sender,
+            rejections_to_confirm_signal_receiver,
+        ) = crossbeam_channel::unbounded();
         let (clients_to_auth_sender, clients_to_auth_receiver) = crossbeam_channel::unbounded();
         let (clients_to_disconnect_sender, clients_to_disconnect_receiver) =
             crossbeam_channel::unbounded();
@@ -602,6 +628,7 @@ impl Server {
         let server = Arc::new(Server {
             tasks_keeper_sender,
             ignored_addrs_asking_reason_read_signal_sender,
+            rejections_to_confirm_signal_sender,
             clients_to_auth_sender,
             clients_to_disconnect_sender,
             pending_rejection_confirm_resend_sender,
@@ -628,6 +655,7 @@ impl Server {
             ignored_addrs: DashMap::new(),
             temporary_ignored_addrs: DashMap::new(),
             ignored_addrs_asking_reason: DashMap::new(),
+            rejections_to_confirm: DashSet::new(),
             addrs_in_auth: DashSet::new(),
             assigned_addrs_in_auth: RwLock::new(HashSet::new()),
             pending_auth: DashMap::new(),
@@ -657,6 +685,15 @@ impl Server {
             Server::create_ignored_addrs_asking_reason_handler(
                 server_downgraded,
                 ignored_addrs_asking_reason_read_signal_receiver,
+            )
+            .await;
+        });
+
+        let server_downgraded = Arc::downgrade(&server);
+        server.create_async_task(async move {
+            Server::create_rejections_to_confirm_handler(
+                server_downgraded,
+                rejections_to_confirm_signal_receiver,
             )
             .await;
         });
@@ -759,7 +796,7 @@ impl Server {
 
                 let average_packet_loss_rtt = messaging.average_packet_loss_rtt;
                 let mut messages_to_resend: Vec<Arc<Vec<u8>>> = Vec::new();
-                    
+
                 for (sent_instant, pending_part_id_map) in
                     messaging.pending_confirmation.values_mut()
                 {
@@ -840,6 +877,9 @@ impl Server {
         }
 
         self.ignored_addrs_asking_reason_read_signal_sender
+            .send(())
+            .unwrap();
+        self.rejections_to_confirm_signal_sender
             .send(())
             .unwrap();
 
@@ -1169,13 +1209,6 @@ impl Server {
     /// TODO:
     pub fn disconnect_detached(self: Arc<Self>) {
         Arc::clone(&self).create_async_task(async move {
-            let disconnect_request_bytes = vec![MessageChannel::DISCONNECT_REQUEST];
-            for client in self.connected_clients.iter() {
-                let _ = self
-                    .socket
-                    .send_to(&disconnect_request_bytes, client.addr)
-                    .await;
-            }
             todo!();
         });
     }
@@ -1243,6 +1276,21 @@ impl Server {
                     }
                 }
                 server.ignored_addrs_asking_reason.clear();
+            }
+        }
+    }
+
+    async fn create_rejections_to_confirm_handler(
+        server: Weak<Server>,
+        rejections_to_confirm_read_signal_receiver: crossbeam_channel::Receiver<()>,
+    ) {
+        let bytes = &vec![MessageChannel::REJECTION_CONFIRM];
+        while let Ok(_) = rejections_to_confirm_read_signal_receiver.recv() {
+            if let Some(server) = server.upgrade() {
+                for addr in server.rejections_to_confirm.iter() {
+                    let _ = server.socket.send_to(bytes, addr.clone()).await;
+                }
+                server.rejections_to_confirm.clear();
             }
         }
     }
