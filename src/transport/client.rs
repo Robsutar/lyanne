@@ -670,11 +670,6 @@ impl Client {
             } else if now - messaging.last_received_message_instant
                 >= self.messaging_properties.timeout_interpretation
             {
-                println!(
-                    "{:?}, {:?}",
-                    messaging.incoming_message.next_message_id,
-                    messaging.incoming_message.maps.keys(),
-                );
                 *self.disconnect_reason.write().unwrap() =
                     Some(Some(ServerDisconnectReason::MessageReceiveTimeout));
                 return ClientTickResult::Disconnected;

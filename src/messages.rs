@@ -326,8 +326,8 @@ pub enum MessagePartMapTryReadResult {
 }
 
 pub struct MessagePartMap {
-    pub next_message_id: MessageId,
-    pub maps: BTreeMap<MessageId, (BTreeMap<MessagePartId, MessagePart>, usize)>,
+    next_message_id: MessageId,
+    maps: BTreeMap<MessageId, (BTreeMap<MessagePartId, MessagePart>, usize)>,
 }
 
 impl MessagePartMap {
