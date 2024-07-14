@@ -7,8 +7,8 @@ use bevy::{
     prelude::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
-use lyanne::packets::{BarPacketServerSchedule, ServerPacketResource};
-use lyanne::transport::server::{BindResult, ServerProperties};
+use lyanne::packets::{BarPacketServerSchedule, SerializedPacketList, ServerPacketResource};
+use lyanne::transport::server::{BindResult, IgnoredAddrReason, ServerProperties};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{
     packets::{BarPacket, FooPacket, FooPacketServerSchedule, PacketRegistry},
@@ -99,6 +99,21 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
             match bind {
                 Ok(bind_result) => {
                     info!("Server bind");
+
+                    if true {
+                        bind_result.server.ignore_addr(
+                            "127.0.0.1".parse().unwrap(),
+                            IgnoredAddrReason::from_serialized_list(SerializedPacketList::create(
+                                vec![bind_result
+                                    .server
+                                    .packet_registry
+                                    .serialize(&FooPacket {
+                                        message: "Oh no!".to_owned(),
+                                    })
+                                    .unwrap()],
+                            )),
+                        );
+                    }
 
                     commands.spawn(ServerConnected {
                         server: bind_result.server,
