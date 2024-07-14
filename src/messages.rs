@@ -15,6 +15,8 @@ pub const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
 
 pub const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
 
+pub const MINIMAL_PART_BYTES_SIZE: usize = 5;
+
 struct MessagePartTypes;
 
 impl MessagePartTypes {
@@ -44,7 +46,7 @@ impl MessagePart {
         Self { bytes }
     }
     pub fn deserialize(bytes: Vec<u8>) -> io::Result<Self> {
-        if bytes.len() < 3 {
+        if bytes.len() < MINIMAL_PART_BYTES_SIZE {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Bytes are not sufficiently large",
