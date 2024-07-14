@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     future::Future,
     io,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{Arc, RwLock, Weak},
     time::{Duration, Instant},
 };
@@ -161,7 +161,7 @@ impl IgnoredAddrReason {
     }
     /// The message will be sent to the client when it tries to connect.
     pub fn from_serialized_list(list: SerializedPacketList) -> Self {
-        if list.bytes.len() > 1024 - 1 {
+        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE {
             panic!("Max bytes length reached.");
         }
         let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
@@ -555,11 +555,11 @@ pub struct Server {
     connected_clients: DashMap<SocketAddr, ConnectedClient>,
 
     /// Map of ignored addresses with reasons for ignoring them.
-    ignored_addrs: DashMap<SocketAddr, IgnoredAddrReason>,
+    ignored_addrs: DashMap<IpAddr, IgnoredAddrReason>,
     /// Map of temporarily ignored addresses with the time until they are ignored.
-    temporary_ignored_addrs: DashMap<SocketAddr, Instant>,
+    temporary_ignored_addrs: DashMap<IpAddr, Instant>,
     /// Set of addresses asking for the reason they are ignored.
-    ignored_addrs_asking_reason: DashSet<SocketAddr>,
+    ignored_addrs_asking_reason: DashMap<IpAddr, SocketAddr>,
 
     /// Set of addresses in the authentication process.
     addrs_in_auth: DashSet<SocketAddr>,
@@ -627,7 +627,7 @@ impl Server {
             connected_clients: DashMap::new(),
             ignored_addrs: DashMap::new(),
             temporary_ignored_addrs: DashMap::new(),
-            ignored_addrs_asking_reason: DashSet::new(),
+            ignored_addrs_asking_reason: DashMap::new(),
             addrs_in_auth: DashSet::new(),
             assigned_addrs_in_auth: RwLock::new(HashSet::new()),
             pending_auth: DashMap::new(),
@@ -1056,7 +1056,7 @@ impl Server {
     /// If that client is already ignored, the reason will be replaced.
     ///
     /// If that client is temporary ignored, it will be permanently ignored.
-    pub fn ignore_addr(&self, addr: SocketAddr, reason: IgnoredAddrReason) {
+    pub fn ignore_addr(&self, addr: IpAddr, reason: IgnoredAddrReason) {
         self.temporary_ignored_addrs.remove(&addr);
         self.ignored_addrs.insert(addr, reason);
     }
@@ -1067,7 +1067,7 @@ impl Server {
     /// If that client is already ignored, the reason will be replaced.
     pub fn ignore_addr_temporary(
         &self,
-        addr: SocketAddr,
+        addr: IpAddr,
         reason: IgnoredAddrReason,
         until_to: Instant,
     ) {
@@ -1076,7 +1076,7 @@ impl Server {
     }
 
     /// Removes the specified addr from the ignored list, even if it is temporary ignored.
-    pub fn remove_ignore_addr(&self, addr: &SocketAddr) {
+    pub fn remove_ignore_addr(&self, addr: &IpAddr) {
         self.ignored_addrs.remove(addr);
         self.temporary_ignored_addrs.remove(addr);
     }
@@ -1235,9 +1235,10 @@ impl Server {
         while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv() {
             if let Some(server) = server.upgrade() {
                 for addr in server.ignored_addrs_asking_reason.iter() {
-                    if let Some(reason) = server.ignored_addrs.get(&addr) {
+                    let ip = addr.key();
+                    if let Some(reason) = server.ignored_addrs.get(&ip) {
                         if let Some(finished_bytes) = &reason.finished_bytes {
-                            let _ = server.socket.send_to(&finished_bytes, addr.clone());
+                            let _ = server.socket.send_to(&finished_bytes, addr.clone()).await;
                         }
                     }
                 }
@@ -1346,6 +1347,10 @@ impl Server {
         tuple: (SocketAddr, Vec<u8>),
     ) -> ReadClientBytesResult {
         let (addr, bytes) = tuple;
+        let ip = match addr {
+            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+        };
         if bytes.len() < MESSAGE_CHANNEL_SIZE {
             ReadClientBytesResult::InsufficientBytesLen
         } else if self.pending_rejection_confirm.contains_key(&addr) {
@@ -1355,12 +1360,12 @@ impl Server {
             } else {
                 ReadClientBytesResult::PendingDisconnectConfirm
             }
-        } else if let Some(reason) = self.ignored_addrs.get(&addr) {
+        } else if let Some(reason) = self.ignored_addrs.get(&ip) {
             if reason.finished_bytes.is_some()
                 && self.ignored_addrs_asking_reason.len()
                     < self.server_properties.max_ignored_addrs_asking_reason
             {
-                self.ignored_addrs_asking_reason.insert(addr);
+                self.ignored_addrs_asking_reason.insert(ip, addr);
             }
             ReadClientBytesResult::IgnoredClientHandle
         } else if let Some(client) = self.connected_clients.get(&addr) {
@@ -1405,7 +1410,7 @@ impl Server {
                         }
                     } else {
                         self.ignore_addr_temporary(
-                            addr,
+                            ip,
                             IgnoredAddrReason::without_reason(),
                             Instant::now() + Duration::from_secs(5),
                         );
