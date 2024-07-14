@@ -959,6 +959,7 @@ impl Client {
                     match client.tick_start() {
                         ClientTickResult::ReceivedMessage(message) => {
                             client.try_check_read_handler();
+                            client.tick_after_message();
                             return Ok(ConnectResult { client, message });
                         }
                         ClientTickResult::PendingMessage => (),
