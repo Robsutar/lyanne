@@ -158,6 +158,24 @@ fn server_tick(
                 }
             }
 
+            if false {
+                let mut rng = thread_rng();
+                if rng.gen_bool(0.01) {
+                    info!("Disconnecting clients");
+                    for client in server.connected_clients_iter() {
+                        server.disconnect_from(
+                            &client,
+                            Some(SerializedPacketList::create(vec![server
+                                .packet_registry
+                                .serialize(&BarPacket {
+                                    message: "Bye bye".to_owned(),
+                                })
+                                .unwrap()])),
+                        )
+                    }
+                }
+            }
+
             {
                 let tick_result = server.tick_start();
 
