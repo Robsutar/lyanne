@@ -1122,7 +1122,7 @@ impl Server {
     /// TODO:
     pub fn disconnect_detached(self: Arc<Self>) {
         Arc::clone(&self).create_async_task(async move {
-            let disconnect_request_bytes = vec![MessageChannel::DISCONNECT_REQUEST, 0, 0, 0, 0];
+            let disconnect_request_bytes = vec![MessageChannel::DISCONNECT_REQUEST];
             for client in self.connected_clients.iter() {
                 let _ = self
                     .socket

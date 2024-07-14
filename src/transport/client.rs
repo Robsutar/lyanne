@@ -507,7 +507,7 @@ impl Client {
                     match bytes[0] {
                         MessageChannel::REJECTION_JUSTIFICATION => {
                             socket
-                                .send(&vec![MessageChannel::REJECTION_CONFIRM, 0])
+                                .send(&vec![MessageChannel::REJECTION_CONFIRM])
                                 .await?;
                         }
                         MessageChannel::IGNORED_REASON => {
