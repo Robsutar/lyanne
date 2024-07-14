@@ -42,7 +42,7 @@ impl Default for MessagingProperties {
             initial_next_message_part_id: 1,
             initial_latency: Duration::from_millis(50),
             packet_loss_rtt_properties: RttProperties::new(0.125, 0.25),
-            max_client_tick_bytes_len: 50000,
+            max_client_tick_bytes_len: usize::MAX,
         }
     }
 }
