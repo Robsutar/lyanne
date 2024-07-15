@@ -722,24 +722,6 @@ impl Client {
                     }
 
                     match bytes[0] {
-                        MessageChannel::REJECTION_JUSTIFICATION => {
-                            // 4 for the minimal SerializedPacket
-                            if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
-                                return Err(ConnectError::InvalidProtocolCommunication);
-                            } else if let Ok(message) =
-                                DeserializedPacket::deserialize_list(&bytes[1..], &packet_registry)
-                            {
-                                {
-                                    socket
-                                        .send(&vec![MessageChannel::REJECTION_CONFIRM])
-                                        .await?;
-                                }
-
-                                return Err(ConnectError::Rejected(message));
-                            } else {
-                                return Err(ConnectError::InvalidProtocolCommunication);
-                            }
-                        }
                         MessageChannel::IGNORED_REASON => {
                             // 4 for the minimal SerializedPacket
                             if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
