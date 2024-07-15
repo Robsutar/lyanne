@@ -24,7 +24,7 @@ struct ServerConnecting {
 
 #[derive(Component)]
 struct ServerConnected {
-    server: Arc<Server>,
+    server: Server,
     tick_timer: Timer,
 }
 
@@ -101,12 +101,12 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
                     info!("Server bind");
 
                     if false {
-                        bind_result.server.ignore_addr(
+                        bind_result.server.ignore_ip(
                             "127.0.0.1".parse().unwrap(),
                             IgnoredAddrReason::from_serialized_list(SerializedPacketList::create(
                                 vec![bind_result
                                     .server
-                                    .packet_registry
+                                    .packet_registry()
                                     .serialize(&FooPacket {
                                         message: "Oh no!".to_owned(),
                                     })
@@ -139,8 +139,7 @@ fn server_tick(
             .tick(time.delta())
             .just_finished()
         {
-            let server = Arc::clone(&server_connected.server);
-
+            let server = &server_connected.server;
             if true {
                 for entry in server_connected.server.connected_clients_iter() {
                     let connected_client = entry.value();
@@ -166,7 +165,7 @@ fn server_tick(
                         server.disconnect_from(
                             &client,
                             Some(SerializedPacketList::create(vec![server
-                                .packet_registry
+                                .packet_registry()
                                 .serialize(&BarPacket {
                                     message: "Bye bye".to_owned(),
                                 })
@@ -186,7 +185,7 @@ fn server_tick(
                     for message in message_list {
                         for deserialized_packet in message.packets {
                             server
-                                .packet_registry
+                                .packet_registry()
                                 .bevy_server_call(&mut commands, deserialized_packet);
                         }
                     }
