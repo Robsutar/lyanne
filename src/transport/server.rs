@@ -102,7 +102,7 @@ impl Default for ServerProperties {
 
 /// Result when calling [`Server::bind`].
 pub struct BindResult {
-    pub server: Arc<Server>,
+    pub server: Server,
 }
 
 /// Server tick flow state.
@@ -242,7 +242,7 @@ impl ConnectedClient {
     }
 
     async fn create_receiving_bytes_handler(
-        server: Weak<Server>,
+        server: Weak<ServerInternal>,
         addr: SocketAddr,
         messaging: Arc<RwLock<ConnectedClientMessaging>>,
         receiving_bytes_receiver: crossbeam_channel::Receiver<Vec<u8>>,
@@ -404,7 +404,7 @@ impl ConnectedClient {
     }
 
     async fn create_packets_to_send_handler(
-        server: Weak<Server>,
+        server: Weak<ServerInternal>,
         messaging: Weak<RwLock<ConnectedClientMessaging>>,
         packets_to_send_receiver: crossbeam_channel::Receiver<Option<SerializedPacket>>,
         mut next_message_id: MessagePartId,
@@ -462,7 +462,7 @@ impl ConnectedClient {
     }
 
     async fn create_message_part_confirmation_handler(
-        server: Weak<Server>,
+        server: Weak<ServerInternal>,
         addr: SocketAddr,
         message_part_confirmation_receiver: crossbeam_channel::Receiver<(
             MessageId,
@@ -503,7 +503,7 @@ impl ConnectedClient {
     }
 
     async fn create_shared_socket_bytes_send_handler(
-        server: Weak<Server>,
+        server: Weak<ServerInternal>,
         addr: SocketAddr,
         shared_socket_bytes_send_receiver: crossbeam_channel::Receiver<Arc<Vec<u8>>>,
     ) {
@@ -523,8 +523,8 @@ impl ConnectedClient {
 
 /// Properties of the server.
 ///
-/// Intended to be used with [`Arc`].
-pub struct Server {
+/// Intended to be used inside [`Server`].
+struct ServerInternal {
     /// Sender for make the spawned tasks keep alive.
     tasks_keeper_sender: crossbeam_channel::Sender<JoinHandle<()>>,
     /// Sender for signaling the reading of [`Server::ignored_addrs_asking_reason`]
@@ -563,21 +563,21 @@ pub struct Server {
     tick_state: RwLock<ServerTickState>,
 
     /// The registry for packets.
-    pub packet_registry: Arc<PacketRegistry>,
+    packet_registry: Arc<PacketRegistry>,
     /// Properties related to messaging.
-    pub messaging_properties: Arc<MessagingProperties>,
+    messaging_properties: Arc<MessagingProperties>,
     /// Properties related to read handlers.
-    pub read_handler_properties: Arc<ReadHandlerProperties>,
+    read_handler_properties: Arc<ReadHandlerProperties>,
     /// Properties for the internal server management.
-    pub server_properties: Arc<ServerProperties>,
+    server_properties: Arc<ServerProperties>,
 
     /// Map of connected clients, keyed by their socket address.
     connected_clients: DashMap<SocketAddr, ConnectedClient>,
 
     /// Map of ignored addresses with reasons for ignoring them.
-    ignored_addrs: DashMap<IpAddr, IgnoredAddrReason>,
+    ignored_ips: DashMap<IpAddr, IgnoredAddrReason>,
     /// Map of temporarily ignored addresses with the time until they are ignored.
-    temporary_ignored_addrs: DashMap<IpAddr, Instant>,
+    temporary_ignored_ips: DashMap<IpAddr, Instant>,
     /// Map of addresses asking for the reason they are ignored.
     ignored_addrs_asking_reason: DashMap<IpAddr, SocketAddr>,
     /// Set of addresses asking for the rejection confirm.
@@ -592,6 +592,32 @@ pub struct Server {
 
     /// Map of pending rejection confirmations.
     pending_rejection_confirm: DashMap<SocketAddr, JustifiedRejectionContext>,
+}
+
+impl ServerInternal {
+    fn ignore_ip(&self, ip: IpAddr, reason: IgnoredAddrReason) {
+        self.temporary_ignored_ips.remove(&ip);
+        self.ignored_ips.insert(ip, reason);
+    }
+
+    fn ignore_ip_temporary(
+        &self,
+        ip: IpAddr,
+        reason: IgnoredAddrReason,
+        until_to: Instant,
+    ) {
+        self.ignored_ips.insert(ip, reason);
+        self.temporary_ignored_ips.insert(ip, until_to);
+    }
+
+    fn remove_ignore_ip(&self, ip: &IpAddr) {
+        self.ignored_ips.remove(ip);
+        self.temporary_ignored_ips.remove(ip);
+    }
+}
+
+pub struct Server {
+    internal: Arc<ServerInternal>
 }
 
 impl Server {
@@ -625,7 +651,7 @@ impl Server {
 
         let runtime_clone = Arc::clone(&runtime);
 
-        let server = Arc::new(Server {
+        let server = Arc::new(ServerInternal {
             tasks_keeper_sender,
             ignored_addrs_asking_reason_read_signal_sender,
             rejections_to_confirm_signal_sender,
@@ -637,7 +663,7 @@ impl Server {
             clients_to_auth_receiver,
             clients_to_disconnect_receiver,
 
-            tasks_keeper_handle: Server::create_async_tasks_keeper(
+            tasks_keeper_handle: ServerInternal::create_async_tasks_keeper(
                 runtime_clone,
                 tasks_keeper_receiver,
             ),
@@ -652,8 +678,8 @@ impl Server {
             server_properties,
 
             connected_clients: DashMap::new(),
-            ignored_addrs: DashMap::new(),
-            temporary_ignored_addrs: DashMap::new(),
+            ignored_ips: DashMap::new(),
+            temporary_ignored_ips: DashMap::new(),
             ignored_addrs_asking_reason: DashMap::new(),
             rejections_to_confirm: DashSet::new(),
             addrs_in_auth: DashSet::new(),
@@ -664,7 +690,7 @@ impl Server {
 
         let server_downgraded = Arc::downgrade(&server);
         server.create_async_task(async move {
-            Server::create_pending_auth_resend_handler(
+            ServerInternal::create_pending_auth_resend_handler(
                 server_downgraded,
                 pending_auth_resend_receiver,
             )
@@ -673,7 +699,7 @@ impl Server {
 
         let server_downgraded = Arc::downgrade(&server);
         server.create_async_task(async move {
-            Server::create_pending_rejection_confirm_resend_handler(
+            ServerInternal::create_pending_rejection_confirm_resend_handler(
                 server_downgraded,
                 pending_rejection_confirm_resend_receiver,
             )
@@ -682,7 +708,7 @@ impl Server {
 
         let server_downgraded = Arc::downgrade(&server);
         server.create_async_task(async move {
-            Server::create_ignored_addrs_asking_reason_handler(
+            ServerInternal::create_ignored_addrs_asking_reason_handler(
                 server_downgraded,
                 ignored_addrs_asking_reason_read_signal_receiver,
             )
@@ -691,14 +717,34 @@ impl Server {
 
         let server_downgraded = Arc::downgrade(&server);
         server.create_async_task(async move {
-            Server::create_rejections_to_confirm_handler(
+            ServerInternal::create_rejections_to_confirm_handler(
                 server_downgraded,
                 rejections_to_confirm_signal_receiver,
             )
             .await;
         });
 
-        Ok(BindResult { server })
+        Ok(BindResult { server:Server{internal:server} })
+    }
+
+    /// Packet Registry getter.
+    pub fn packet_registry(&self) -> &PacketRegistry {
+        &self.internal.packet_registry
+    }
+
+    /// Messaging Properties getter.
+    pub fn messaging_properties(&self) -> &MessagingProperties {
+        &self.internal.messaging_properties
+    }
+
+    /// Read Handler Properties getter.
+    pub fn read_handler_properties(&self) -> &ReadHandlerProperties {
+        &self.internal.read_handler_properties
+    }
+
+    /// Server Properties getter.
+    pub fn server_properties(&self) -> &ServerProperties {
+        &self.internal.server_properties
     }
 
     /// Server periodic tick start.
@@ -718,9 +764,10 @@ impl Server {
     /// - [`Server::tick_start`]
     /// - [`Server::tick_end`]
     /// - ...
-    pub fn tick_start(self: &Arc<Self>) -> ServerTickResult {
+    pub fn tick_start(&self) -> ServerTickResult {
+        let internal = &self.internal;
         {
-            let mut tick_state = self.tick_state.write().unwrap();
+            let mut tick_state = internal.tick_state.write().unwrap();
             if *tick_state != ServerTickState::TickStartPending {
                 panic!(
                     "Invalid server tick state, next pending is {:?}",
@@ -733,35 +780,35 @@ impl Server {
 
         let now = Instant::now();
 
-        let mut assigned_addrs_in_auth = self.assigned_addrs_in_auth.write().unwrap();
+        let mut assigned_addrs_in_auth = internal.assigned_addrs_in_auth.write().unwrap();
         let dispatched_assigned_addrs_in_auth = std::mem::take(&mut *assigned_addrs_in_auth);
         for addr in dispatched_assigned_addrs_in_auth {
-            self.addrs_in_auth.remove(&addr).unwrap();
+            internal.addrs_in_auth.remove(&addr).unwrap();
         }
 
-        self.pending_auth.retain(|_, pending_auth_send| {
-            now - pending_auth_send.received_time < self.messaging_properties.timeout_interpretation
+        internal.pending_auth.retain(|_, pending_auth_send| {
+            now - pending_auth_send.received_time < internal.messaging_properties.timeout_interpretation
         });
-        for context in self.pending_auth.iter() {
+        for context in internal.pending_auth.iter() {
             if let Some(last_sent_time) = context.last_sent_time {
                 if now - last_sent_time
-                    < self
+                    < internal
                         .server_properties
                         .pending_auth_packet_loss_interpretation
                 {
                     continue;
                 }
             }
-            self.pending_auth_resend_sender
+            internal.pending_auth_resend_sender
                 .send(context.key().clone())
                 .unwrap();
         }
 
-        self.temporary_ignored_addrs.retain(|addr, until_to| {
+        internal.temporary_ignored_ips.retain(|addr, until_to| {
             if now < *until_to {
                 true
             } else {
-                self.ignored_addrs.remove(addr);
+                internal.ignored_ips.remove(addr);
                 false
             }
         });
@@ -775,17 +822,17 @@ impl Server {
             (ClientDisconnectReason, Option<JustifiedRejectionContext>),
         > = HashMap::new();
 
-        while let Ok((addr, addr_to_auth)) = self.clients_to_auth_receiver.try_recv() {
+        while let Ok((addr, addr_to_auth)) = internal.clients_to_auth_receiver.try_recv() {
             to_auth.insert(addr, addr_to_auth);
         }
 
-        while let Ok((addr, reason)) = self.clients_to_disconnect_receiver.try_recv() {
+        while let Ok((addr, reason)) = internal.clients_to_disconnect_receiver.try_recv() {
             if !addrs_to_disconnect.contains_key(&addr) {
                 addrs_to_disconnect.insert(addr, reason);
             }
         }
 
-        'l1: for client in self.connected_clients.iter() {
+        'l1: for client in internal.connected_clients.iter() {
             if addrs_to_disconnect.contains_key(client.key()) {
                 continue 'l1;
             }
@@ -800,7 +847,7 @@ impl Server {
                 for (sent_instant, pending_part_id_map) in
                     messaging.pending_confirmation.values_mut()
                 {
-                    if now - *sent_instant > self.messaging_properties.timeout_interpretation {
+                    if now - *sent_instant > internal.messaging_properties.timeout_interpretation {
                         addrs_to_disconnect.insert(
                             client.key().clone(),
                             (
@@ -830,7 +877,7 @@ impl Server {
                     messaging.tick_bytes_len = 0;
                     received_messages.insert(client.key().clone(), messages);
                 } else if now - messaging.last_received_message_instant
-                    >= self.messaging_properties.timeout_interpretation
+                    >= internal.messaging_properties.timeout_interpretation
                 {
                     addrs_to_disconnect.insert(
                         client.key().clone(),
@@ -839,7 +886,7 @@ impl Server {
                     continue 'l1;
                 }
             } else if now - *client.last_messaging_write.read().unwrap()
-                >= self.messaging_properties.timeout_interpretation
+                >= internal.messaging_properties.timeout_interpretation
             {
                 addrs_to_disconnect.insert(
                     client.key().clone(),
@@ -849,25 +896,25 @@ impl Server {
             }
         }
 
-        self.pending_rejection_confirm.retain(|_, context| {
+        internal.pending_rejection_confirm.retain(|_, context| {
             now - context.rejection_instant
-                < self.messaging_properties.disconnect_reason_resend_cancel
+                < internal.messaging_properties.disconnect_reason_resend_cancel
         });
-        for context in self.pending_rejection_confirm.iter() {
+        for context in internal.pending_rejection_confirm.iter() {
             if let Some(last_sent_time) = context.last_sent_time {
-                if now - last_sent_time < self.messaging_properties.disconnect_reason_resend_delay {
+                if now - last_sent_time < internal.messaging_properties.disconnect_reason_resend_delay {
                     continue;
                 }
             }
-            self.pending_rejection_confirm_resend_sender
+            internal.pending_rejection_confirm_resend_sender
                 .send(context.key().clone())
                 .unwrap();
         }
 
         for (addr, (reason, context)) in addrs_to_disconnect {
-            self.connected_clients.remove(&addr).unwrap();
+            internal.connected_clients.remove(&addr).unwrap();
             if let Some(context) = context {
-                self.pending_rejection_confirm.insert(addr.clone(), context);
+                internal.pending_rejection_confirm.insert(addr.clone(), context);
             }
             disconnected.insert(addr, reason);
         }
@@ -876,14 +923,14 @@ impl Server {
             assigned_addrs_in_auth.insert(addr.clone());
         }
 
-        self.ignored_addrs_asking_reason_read_signal_sender
+        internal.ignored_addrs_asking_reason_read_signal_sender
             .send(())
             .unwrap();
-        self.rejections_to_confirm_signal_sender
+        internal.rejections_to_confirm_signal_sender
             .send(())
             .unwrap();
 
-        self.try_check_read_handler();
+        internal.try_check_read_handler();
 
         ServerTickResult {
             received_messages,
@@ -899,9 +946,10 @@ impl Server {
     ///
     /// # Panics
     /// If is not called after [`Server::tick_start`]
-    pub fn tick_end(self: &Arc<Self>) {
+    pub fn tick_end(&self) {
+        let internal = &self.internal;
         {
-            let mut tick_state = self.tick_state.write().unwrap();
+            let mut tick_state = internal.tick_state.write().unwrap();
             if *tick_state != ServerTickState::TickEndPending {
                 panic!(
                     "Invalid server tick state, next pending is {:?}",
@@ -912,12 +960,12 @@ impl Server {
             }
         }
 
-        let tick_packet_serialized = self
+        let tick_packet_serialized = internal
             .packet_registry
             .serialize(&ServerTickEndPacket)
             .unwrap();
 
-        for client in self.connected_clients.iter() {
+        for client in internal.connected_clients.iter() {
             self.send_packet_serialized(&client, tick_packet_serialized.clone());
             client.packets_to_send_sender.send(None).unwrap();
         }
@@ -931,13 +979,14 @@ impl Server {
     /// # Panics
     /// - if addr is already connected.
     /// - if addr was not marked in the last tick to be possibly authenticated.
-    pub fn authenticate(self: &Arc<Self>, addr: SocketAddr, addr_to_auth: AddrToAuth) {
-        if self.connected_clients.contains_key(&addr) {
+    pub fn authenticate(&self, addr: SocketAddr, addr_to_auth: AddrToAuth) {
+        let internal = &self.internal;
+        if internal.connected_clients.contains_key(&addr) {
             panic!("Addr is already connected.",)
-        } else if !self.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
+        } else if !internal.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
             panic!("Addr was not marked to be authenticated in the last server tick.",)
         } else {
-            self.addrs_in_auth.remove(&addr).unwrap();
+            internal.addrs_in_auth.remove(&addr).unwrap();
 
             let (receiving_bytes_sender, receiving_bytes_receiver) = crossbeam_channel::unbounded();
             let (packets_to_send_sender, packets_to_send_receiver) = crossbeam_channel::unbounded();
@@ -952,17 +1001,17 @@ impl Server {
                 cipher: ChaChaPoly1305::new(Key::from_slice(addr_to_auth.shared_key.as_bytes())),
                 pending_confirmation: BTreeMap::new(),
                 incoming_message: MessagePartMap::new(
-                    self.messaging_properties.initial_next_message_part_id,
+                    internal.messaging_properties.initial_next_message_part_id,
                 ),
                 tick_bytes_len: 0,
                 received_messages: Vec::new(),
                 last_received_message_instant: now,
                 packet_loss_rtt_calculator: RttCalculator::new(
-                    self.messaging_properties.initial_latency,
+                    internal.messaging_properties.initial_latency,
                 ),
-                average_packet_loss_rtt: self.messaging_properties.initial_latency,
+                average_packet_loss_rtt: internal.messaging_properties.initial_latency,
                 latency_monitor: DurationMonitor::filled_with(
-                    self.messaging_properties.initial_latency,
+                    internal.messaging_properties.initial_latency,
                     16,
                 ),
                 message_part_confirmation_sender,
@@ -973,14 +1022,14 @@ impl Server {
                 addr,
                 messaging: Arc::clone(&messaging),
                 last_messaging_write: RwLock::new(now),
-                average_latency: RwLock::new(self.messaging_properties.initial_latency),
+                average_latency: RwLock::new(internal.messaging_properties.initial_latency),
                 receiving_bytes_sender,
                 packets_to_send_sender,
             };
 
-            let server_downgraded = Arc::downgrade(&self);
+            let server_downgraded = Arc::downgrade(&internal);
             let messaging_clone = Arc::clone(&messaging);
-            self.create_async_task(async move {
+            internal.create_async_task(async move {
                 ConnectedClient::create_receiving_bytes_handler(
                     server_downgraded,
                     addr,
@@ -990,11 +1039,11 @@ impl Server {
                 .await;
             });
 
-            let server_downgraded = Arc::downgrade(&self);
+            let server_downgraded = Arc::downgrade(&internal);
             let messaging_downgraded = Arc::downgrade(&messaging);
             let initial_next_message_part_id =
-                self.messaging_properties.initial_next_message_part_id;
-            self.create_async_task(async move {
+                internal.messaging_properties.initial_next_message_part_id;
+            internal.create_async_task(async move {
                 ConnectedClient::create_packets_to_send_handler(
                     server_downgraded,
                     messaging_downgraded,
@@ -1004,8 +1053,8 @@ impl Server {
                 .await;
             });
 
-            let server_downgraded = Arc::downgrade(&self);
-            self.create_async_task(async move {
+            let server_downgraded = Arc::downgrade(&internal);
+            internal.create_async_task(async move {
                 ConnectedClient::create_message_part_confirmation_handler(
                     server_downgraded,
                     addr,
@@ -1014,8 +1063,8 @@ impl Server {
                 .await;
             });
 
-            let server_downgraded = Arc::downgrade(&self);
-            self.create_async_task(async move {
+            let server_downgraded = Arc::downgrade(&internal);
+            internal.create_async_task(async move {
                 ConnectedClient::create_shared_socket_bytes_send_handler(
                     server_downgraded,
                     addr,
@@ -1024,7 +1073,7 @@ impl Server {
                 .await;
             });
 
-            self.connected_clients.insert(addr, connected_client);
+            internal.connected_clients.insert(addr, connected_client);
         }
     }
 
@@ -1041,17 +1090,18 @@ impl Server {
     /// - if addr is already connected.
     /// - if addr was not marked in the last tick to be possibly authenticated.
     pub fn refuse(
-        self: &Arc<Self>,
+        &self,
         addr: SocketAddr,
         _addr_to_auth: AddrToAuth,
         message: SerializedPacketList,
     ) {
-        if self.connected_clients.contains_key(&addr) {
+        let internal = &self.internal;
+        if internal.connected_clients.contains_key(&addr) {
             panic!("Addr is already connected.",)
-        } else if !self.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
+        } else if !internal.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
             panic!("Addr was not marked to be authenticated in the last server tick.",)
         } else {
-            self.pending_rejection_confirm.insert(
+            internal.pending_rejection_confirm.insert(
                 addr,
                 JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
             );
@@ -1067,12 +1117,12 @@ impl Server {
     ///
     /// * `message` - `ConnectedClient` message to send to the client, packet loss will be handled.
     /// If is None, no message will be sent to the client. That message has limited size.
-    ///
     pub fn disconnect_from(
-        self: &Arc<Self>,
+        &self,
         client: &ConnectedClient,
         message: Option<SerializedPacketList>,
     ) {
+        let internal = &self.internal;
         let context = {
             if let Some(list) = message {
                 Some(JustifiedRejectionContext::from_serialized_list(
@@ -1083,7 +1133,7 @@ impl Server {
                 None
             }
         };
-        self.clients_to_disconnect_sender
+        internal.clients_to_disconnect_sender
             .send((
                 client.addr.clone(),
                 (ClientDisconnectReason::ManualDisconnect, context),
@@ -1096,29 +1146,29 @@ impl Server {
     /// If that client is already ignored, the reason will be replaced.
     ///
     /// If that client is temporary ignored, it will be permanently ignored.
-    pub fn ignore_addr(&self, addr: IpAddr, reason: IgnoredAddrReason) {
-        self.temporary_ignored_addrs.remove(&addr);
-        self.ignored_addrs.insert(addr, reason);
+    pub fn ignore_ip(&self, ip: IpAddr, reason: IgnoredAddrReason) {
+        let internal = &self.internal;
+        internal.ignore_ip(ip, reason);
     }
 
     /// The messages of this addr will be ignored, for the expected time, then,
     /// it will be cleared and the addr will be able to send messages for the server.
     ///
     /// If that client is already ignored, the reason will be replaced.
-    pub fn ignore_addr_temporary(
+    pub fn ignore_ip_temporary(
         &self,
-        addr: IpAddr,
+        ip: IpAddr,
         reason: IgnoredAddrReason,
         until_to: Instant,
     ) {
-        self.ignored_addrs.insert(addr, reason);
-        self.temporary_ignored_addrs.insert(addr, until_to);
+        let internal = &self.internal;
+        internal.ignore_ip_temporary(ip, reason, until_to);
     }
 
     /// Removes the specified addr from the ignored list, even if it is temporary ignored.
-    pub fn remove_ignore_addr(&self, addr: &IpAddr) {
-        self.ignored_addrs.remove(addr);
-        self.temporary_ignored_addrs.remove(addr);
+    pub fn remove_ignore_ip(&self, ip: &IpAddr) {
+        let internal = &self.internal;
+        internal.remove_ignore_ip(ip);
     }
 
     /// # Returns
@@ -1127,7 +1177,8 @@ impl Server {
         &self,
         addr: &SocketAddr,
     ) -> Option<dashmap::mapref::one::Ref<SocketAddr, ConnectedClient>> {
-        self.connected_clients.get(addr)
+        let internal = &self.internal;
+        internal.connected_clients.get(addr)
     }
 
     /// # Returns
@@ -1140,7 +1191,8 @@ impl Server {
         std::hash::RandomState,
         DashMap<SocketAddr, ConnectedClient>,
     > {
-        self.connected_clients.iter()
+        let internal = &self.internal;
+        internal.connected_clients.iter()
     }
 
     /// Serializes, then store the packet to be sent to the client after the next server tick.
@@ -1168,7 +1220,8 @@ impl Server {
     /// server.send_packet(&client, &packet);
     /// ```
     pub fn send_packet<P: Packet>(&self, client: &ConnectedClient, packet: &P) {
-        let serialized = self
+        let internal = &self.internal;
+        let serialized = internal
             .packet_registry
             .serialize(packet)
             .expect("Failed to serialize packet.");
@@ -1207,12 +1260,12 @@ impl Server {
     }
 
     /// TODO:
-    pub fn disconnect_detached(self: Arc<Self>) {
-        Arc::clone(&self).create_async_task(async move {
-            todo!();
-        });
+    pub fn disconnect_detached(&self) {
+        todo!();
     }
+}
 
+impl ServerInternal {
     fn create_async_task<F>(self: &Arc<Self>, future: F)
     where
         F: Future<Output = ()> + Send + 'static,
@@ -1234,7 +1287,7 @@ impl Server {
     }
 
     async fn create_pending_auth_resend_handler(
-        server: Weak<Server>,
+        server: Weak<ServerInternal>,
         pending_auth_resend_receiver: crossbeam_channel::Receiver<SocketAddr>,
     ) {
         while let Ok(addr) = pending_auth_resend_receiver.recv() {
@@ -1248,7 +1301,7 @@ impl Server {
     }
 
     async fn create_pending_rejection_confirm_resend_handler(
-        server: Weak<Server>,
+        server: Weak<ServerInternal>,
         pending_rejection_confirm_resend_receiver: crossbeam_channel::Receiver<SocketAddr>,
     ) {
         while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv() {
@@ -1262,14 +1315,14 @@ impl Server {
     }
 
     async fn create_ignored_addrs_asking_reason_handler(
-        server: Weak<Server>,
+        server: Weak<ServerInternal>,
         ignored_addrs_asking_reason_read_signal_receiver: crossbeam_channel::Receiver<()>,
     ) {
         while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv() {
             if let Some(server) = server.upgrade() {
                 for addr in server.ignored_addrs_asking_reason.iter() {
                     let ip = addr.key();
-                    if let Some(reason) = server.ignored_addrs.get(&ip) {
+                    if let Some(reason) = server.ignored_ips.get(&ip) {
                         if let Some(finished_bytes) = &reason.finished_bytes {
                             let _ = server.socket.send_to(&finished_bytes, addr.clone()).await;
                         }
@@ -1281,7 +1334,7 @@ impl Server {
     }
 
     async fn create_rejections_to_confirm_handler(
-        server: Weak<Server>,
+        server: Weak<ServerInternal>,
         rejections_to_confirm_read_signal_receiver: crossbeam_channel::Receiver<()>,
     ) {
         let bytes = &vec![MessageChannel::REJECTION_CONFIRM];
@@ -1301,13 +1354,13 @@ impl Server {
                 *active_count += 1;
                 let downgraded_server = Arc::downgrade(&self);
                 self.create_async_task(async move {
-                    Server::create_read_handler(downgraded_server).await;
+                    ServerInternal::create_read_handler(downgraded_server).await;
                 });
             }
         }
     }
 
-    async fn create_read_handler(weak_server: Weak<Server>) {
+    async fn create_read_handler(weak_server: Weak<ServerInternal>) {
         let mut was_used = false;
         loop {
             if let Some(server) = weak_server.upgrade() {
@@ -1326,7 +1379,7 @@ impl Server {
                     drop(server);
 
                     let pre_read_next_bytes_result =
-                        Server::pre_read_next_bytes(&socket, read_timeout).await;
+                        ServerInternal::pre_read_next_bytes(&socket, read_timeout).await;
 
                     if let Some(server) = weak_server.upgrade() {
                         match pre_read_next_bytes_result {
@@ -1408,7 +1461,7 @@ impl Server {
             } else {
                 ReadClientBytesResult::PendingDisconnectConfirm
             }
-        } else if let Some(reason) = self.ignored_addrs.get(&ip) {
+        } else if let Some(reason) = self.ignored_ips.get(&ip) {
             if reason.finished_bytes.is_some()
                 && self.ignored_addrs_asking_reason.len()
                     < self.server_properties.max_ignored_addrs_asking_reason
@@ -1457,7 +1510,7 @@ impl Server {
                             ReadClientBytesResult::DonePendingAuth
                         }
                     } else {
-                        self.ignore_addr_temporary(
+                        self.ignore_ip_temporary(
                             ip,
                             IgnoredAddrReason::without_reason(),
                             Instant::now() + Duration::from_secs(5),
