@@ -99,7 +99,6 @@ pub enum ConnectError {
     Timeout,
     InvalidProtocolCommunication,
     Ignored(Vec<DeserializedPacket>),
-    Rejected(Vec<DeserializedPacket>),
     IoError(io::Error),
     Disconnected(ServerDisconnectReason),
 }
@@ -114,11 +113,6 @@ impl fmt::Display for ConnectError {
             ConnectError::Ignored(message) => write!(
                 f,
                 "Client addr is ignored by the server, reason size: {}",
-                message.len()
-            ),
-            ConnectError::Rejected(message) => write!(
-                f,
-                "Connection was refused by the server, reason size: {}",
                 message.len()
             ),
             ConnectError::IoError(ref err) => write!(f, "IO error: {}", err),
