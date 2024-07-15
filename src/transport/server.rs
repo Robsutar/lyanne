@@ -281,10 +281,10 @@ impl ConnectedClient {
                                 }
                             } else {
                                 drop(messaging);
-                                let _ = server.clients_to_disconnect_sender.send((
+                                let _ = server.clients_to_disconnect_sender.try_send((
                                     addr,
                                     (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                )).await;
+                                ));
                                 break 'l1;
                             }
                         }
@@ -292,10 +292,10 @@ impl ConnectedClient {
                             // 12 for nonce
                             if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + 12 {
                                 drop(messaging);
-                                let _ = server.clients_to_disconnect_sender.send((
+                                let _ = server.clients_to_disconnect_sender.try_send((
                                     addr,
                                     (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                )).await;
+                                ));
                                 break 'l1;
                             }
 
@@ -313,17 +313,17 @@ impl ConnectedClient {
                                         MessagePartMapTryInsertResult::PastMessageId => {
                                             let _ = messaging
                                             .message_part_confirmation_sender
-                                            .send((message_id, None)).await;
+                                            .try_send((message_id, None));
                                         },
                                         MessagePartMapTryInsertResult::Stored => {
                                             'l2: loop {
                                                 match messaging.incoming_message.try_read(&server.packet_registry){
                                                     MessagePartMapTryReadResult::PendingParts => break 'l2,
                                                     MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
-                                                        let _ = server.clients_to_disconnect_sender.send((
+                                                        let _ = server.clients_to_disconnect_sender.try_send((
                                                             addr,
                                                             (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                                        )).await;
+                                                        ));
                                                         break 'l1;
                                                     },
                                                     MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
@@ -338,36 +338,36 @@ impl ConnectedClient {
                                             if send_fully_message_confirmation {
                                                 let _ = messaging
                                                     .message_part_confirmation_sender
-                                                    .send((message_id, None)).await;
+                                                    .try_send((message_id, None));
                                             } else {
                                                 let _ = messaging
                                                     .message_part_confirmation_sender
-                                                    .send((message_id, Some(part_id))).await;
+                                                    .try_send((message_id, Some(part_id)));
                                             }
                                         },
                                     }
                                 } else {
-                                    let _ = server.clients_to_disconnect_sender.send((
+                                    let _ = server.clients_to_disconnect_sender.try_send((
                                         addr,
                                         (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                    )).await;
+                                    ));
                                     break 'l1;
                                 }
                             } else {
-                                let _ = server.clients_to_disconnect_sender.send((
+                                let _ = server.clients_to_disconnect_sender.try_send((
                                     addr,
                                     (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                )).await;
+                                ));
                                 break 'l1;
                             }
                         }
                         MessageChannel::REJECTION_JUSTIFICATION => {
                             // 4 for the minimal SerializedPacket
                             if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
-                                let _ = server.clients_to_disconnect_sender.send((
+                                let _ = server.clients_to_disconnect_sender.try_send((
                                     addr,
                                     (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                )).await;
+                                ));
                                 break 'l1;
                             } else if let Ok(message) =
                                 DeserializedPacket::deserialize_list(&bytes[1..], &server.packet_registry)
@@ -375,13 +375,13 @@ impl ConnectedClient {
                                 server.rejections_to_confirm.insert(addr.clone());
                                 let _ = server
                                     .clients_to_disconnect_sender
-                                    .send((addr, (ClientDisconnectReason::DisconnectRequest(message), None))).await;
+                                    .try_send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
                                 break 'l1;
                             } else {
-                                let _ = server.clients_to_disconnect_sender.send((
+                                let _ = server.clients_to_disconnect_sender.try_send((
                                     addr,
                                     (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                )).await;
+                                ));
                                 break 'l1;
                             }
                         }
@@ -389,10 +389,10 @@ impl ConnectedClient {
                             // Client probably multiple authentication packets before being authenticated
                         }
                         _ => {
-                            let _ = server.clients_to_disconnect_sender.send((
+                            let _ = server.clients_to_disconnect_sender.try_send((
                                 addr,
                                 (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                            )).await;
+                            ));
                             break 'l1;
                         }
                     }
@@ -445,7 +445,7 @@ impl ConnectedClient {
 
                             let _ = messaging
                                 .shared_socket_bytes_send_sender
-                                .send(finished_bytes).await;
+                                .try_send(finished_bytes);
                         }
 
                         next_message_id = next_message_id.wrapping_add(1);
@@ -490,10 +490,10 @@ impl ConnectedClient {
                     }
                 };
                 if server.socket.send_to(&bytes, addr).await.is_err() {
-                    let _ = server.clients_to_disconnect_sender.send((
+                    let _ = server.clients_to_disconnect_sender.try_send((
                         addr,
                         (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                    )).await;
+                    ));
                     break;
                 }
             }
@@ -508,10 +508,10 @@ impl ConnectedClient {
         while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 if server.socket.send_to(&bytes, addr).await.is_err() {
-                    let _ = server.clients_to_disconnect_sender.send((
+                    let _ = server.clients_to_disconnect_sender.try_send((
                         addr,
                         (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                    )).await;
+                    ));
                     break;
                 }
             }
@@ -823,7 +823,7 @@ impl ServerInternal {
             if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
                 ReadClientBytesResult::ClientMaxTickByteLenOverflow
             } else {
-                let _ = client.receiving_bytes_sender.send(bytes).await;
+                let _ = client.receiving_bytes_sender.try_send(bytes);
                 ReadClientBytesResult::ClientReceivedBytes
             }
         } else if self.addrs_in_auth.contains(&addr) {
@@ -845,7 +845,7 @@ impl ServerInternal {
                             ReadClientBytesResult::InvalidPendingAuth
                         } else {
                             self.addrs_in_auth.insert(addr.clone());
-                            let _ = self.clients_to_auth_sender.send((
+                            let _ = self.clients_to_auth_sender.try_send((
                                 addr,
                                 AddrToAuth {
                                     shared_key: pending_auth_send
@@ -853,7 +853,7 @@ impl ServerInternal {
                                         .diffie_hellman(&pending_auth_send.addr_public_key),
                                     message,
                                 },
-                            )).await;
+                            ));
                             ReadClientBytesResult::DonePendingAuth
                         }
                     } else {
