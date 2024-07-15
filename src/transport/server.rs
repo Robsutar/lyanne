@@ -525,7 +525,7 @@ impl ConnectedClient {
 /// Intended to be used inside [`Server`].
 struct ServerInternal {
     /// Sender for make the spawned tasks keep alive.
-    tasks_keeper_sender: crossbeam_channel::Sender<JoinHandle<()>>,
+    tasks_keeper_sender: async_channel::Sender<JoinHandle<()>>,
     /// Sender for signaling the reading of [`Server::ignored_addrs_asking_reason`]
     ignored_addrs_asking_reason_read_signal_sender: async_channel::Sender<()>,
     /// Sender for addresses to be authenticated.
@@ -616,17 +616,17 @@ impl ServerInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let _ = self
+        block_on(async {let _ = self
         .tasks_keeper_sender
-        .send(Arc::clone(&self.runtime).spawn(future));
+        .send(Arc::clone(&self.runtime).spawn(future)).await;});
     }
 
     fn create_async_tasks_keeper(
         runtime: Arc<Runtime>,
-        tasks_keeper_receiver: crossbeam_channel::Receiver<tokio::task::JoinHandle<()>>,
+        tasks_keeper_receiver: async_channel::Receiver<tokio::task::JoinHandle<()>>,
     ) -> JoinHandle<()> {
         runtime.spawn(async move {
-            while let Ok(handle) = tasks_keeper_receiver.recv() {
+            while let Ok(handle) = tasks_keeper_receiver.recv().await {
                 handle.await.unwrap();
             }
         })
@@ -916,7 +916,7 @@ impl Server {
     ) -> io::Result<BindResult> {
         let socket = Arc::new(UdpSocket::bind(addr).await?);
 
-        let (tasks_keeper_sender, tasks_keeper_receiver) = crossbeam_channel::unbounded();
+        let (tasks_keeper_sender, tasks_keeper_receiver) = async_channel::unbounded();
         let (pending_auth_resend_sender, pending_auth_resend_receiver) =
             async_channel::unbounded();
         let (pending_rejection_confirm_resend_sender, pending_rejection_confirm_resend_receiver) =
