@@ -498,7 +498,7 @@ impl ConnectedClient {
                         addr,
                         (ClientDisconnectReason::InvalidProtocolCommunication, None),
                     ));
-                    break;
+                    break 'l1;
                 }
             } else {
                 break 'l1;
@@ -518,7 +518,7 @@ impl ConnectedClient {
                         addr,
                         (ClientDisconnectReason::InvalidProtocolCommunication, None),
                     ));
-                    break;
+                    break 'l1;
                 }
             } else {
                 break 'l1;
@@ -735,7 +735,7 @@ impl ServerInternal {
                     if !was_used {
                         *surplus_count -= 1;
                     }
-                    break;
+                    break 'l1;
                 } else {
                     let read_timeout = server.read_handler_properties.timeout;
                     let socket = Arc::clone(&server.socket);

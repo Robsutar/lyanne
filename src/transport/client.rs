@@ -477,7 +477,7 @@ impl ConnectedServer {
                     let _ = client
                         .reason_to_disconnect_sender
                         .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
-                    break;
+                    break 'l1;
                 }
             } else {
                 break 'l1;
@@ -495,7 +495,7 @@ impl ConnectedServer {
                     let _ = client
                         .reason_to_disconnect_sender
                         .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
-                    break;
+                    break 'l1;
                 }
             } else {
                 break 'l1;
@@ -591,7 +591,7 @@ impl ClientInternal {
                     if !was_used {
                         *surplus_count -= 1;
                     }
-                    break;
+                    break 'l1;
                 } else {
                     let read_timeout = client.read_handler_properties.timeout;
                     let socket = Arc::clone(&client.socket);
