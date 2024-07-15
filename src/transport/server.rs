@@ -616,6 +616,7 @@ impl ServerInternal {
     }
 }
 
+/// Connected server.
 pub struct Server {
     internal: Arc<ServerInternal>
 }
