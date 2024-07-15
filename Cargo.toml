@@ -26,7 +26,6 @@ tokio-util = "^0.7.0"
 serde = { version = "^1.0.0", features = ["derive"] }
 bincode = "^1.0.0"
 bevy = { version = "^0.13.0", optional = true }
-crossbeam-channel = { version = "^0.5" }
 rand = "^0.8.0"
 dashmap = "^6.0.0"
 x25519-dalek = "^2.0.0"
