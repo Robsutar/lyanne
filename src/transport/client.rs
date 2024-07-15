@@ -380,6 +380,8 @@ impl ConnectedServer {
                         break 'l1;
                     }
                 }
+            } else {
+                break 'l1;
             }
         }
     }
@@ -392,7 +394,7 @@ impl ConnectedServer {
     ) {
         let mut packets_to_send: Vec<SerializedPacket> = Vec::new();
 
-        while let Ok(serialized_packet) = packets_to_send_receiver.recv().await {
+        'l1: while let Ok(serialized_packet) = packets_to_send_receiver.recv().await {
             if let Some(serialized_packet) = serialized_packet {
                 packets_to_send.push(serialized_packet);
             } else {
@@ -433,10 +435,10 @@ impl ConnectedServer {
 
                         next_message_id = next_message_id.wrapping_add(1);
                     } else {
-                        break;
+                        break 'l1;
                     }
                 } else {
-                    break;
+                    break 'l1;
                 }
             }
         }
@@ -449,7 +451,7 @@ impl ConnectedServer {
             Option<MessagePartId>,
         )>,
     ) {
-        while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
+        'l1: while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
             if let Some(client) = client.upgrade() {
                 let message_id_bytes = message_id.to_be_bytes();
 
@@ -477,6 +479,8 @@ impl ConnectedServer {
                         .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                     break;
                 }
+            } else {
+                break 'l1;
             }
         }
     }
@@ -485,7 +489,7 @@ impl ConnectedServer {
         client: Weak<ClientInternal>,
         shared_socket_bytes_send_receiver: async_channel::Receiver<Arc<Vec<u8>>>,
     ) {
-        while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
+        'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
             if let Some(client) = client.upgrade() {
                 if client.socket.send(&bytes).await.is_err() {
                     let _ = client
@@ -493,6 +497,8 @@ impl ConnectedServer {
                         .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                     break;
                 }
+            } else {
+                break 'l1;
             }
         }
     }
@@ -575,7 +581,7 @@ impl ClientInternal {
 
     async fn create_read_handler(weak_client: Weak<ClientInternal>) {
         let mut was_used = false;
-        loop {
+        'l1: loop {
             if let Some(client) = weak_client.upgrade() {
                 if *client.read_handler_properties.active_count.write().unwrap()
                     > client.read_handler_properties.target_surplus_size + 1
@@ -620,10 +626,12 @@ impl ClientInternal {
                                 }
                             }
                         }
+                    } else {
+                        break 'l1;
                     }
                 }
             } else {
-                break;
+                break 'l1;
             }
         }
     }

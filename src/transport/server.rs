@@ -396,9 +396,13 @@ impl ConnectedClient {
                             break 'l1;
                         }
                     }
+                } else {
+                    break 'l1;
                 }
+            } else {
+                break 'l1;
             }
-        }
+        } 
     }
 
     async fn create_packets_to_send_handler(
@@ -409,7 +413,7 @@ impl ConnectedClient {
     ) {
         let mut packets_to_send: Vec<SerializedPacket> = Vec::new();
 
-        while let Ok(serialized_packet) = packets_to_send_receiver.recv().await {
+        'l1: while let Ok(serialized_packet) = packets_to_send_receiver.recv().await {
             if let Some(serialized_packet) = serialized_packet {
                 packets_to_send.push(serialized_packet);
             } else {
@@ -450,10 +454,10 @@ impl ConnectedClient {
 
                         next_message_id = next_message_id.wrapping_add(1);
                     } else {
-                        break;
+                        break 'l1;
                     }
                 } else {
-                    break;
+                    break 'l1;
                 }
             }
         }
@@ -467,7 +471,7 @@ impl ConnectedClient {
             Option<MessagePartId>,
         )>,
     ) {
-        while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
+        'l1: while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 let message_id_bytes = message_id.to_be_bytes();
 
@@ -496,6 +500,8 @@ impl ConnectedClient {
                     ));
                     break;
                 }
+            } else {
+                break 'l1;
             }
         }
     }
@@ -505,7 +511,7 @@ impl ConnectedClient {
         addr: SocketAddr,
         shared_socket_bytes_send_receiver: async_channel::Receiver<Arc<Vec<u8>>>,
     ) {
-        while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
+        'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 if server.socket.send_to(&bytes, addr).await.is_err() {
                     let _ = server.clients_to_disconnect_sender.try_send((
@@ -514,6 +520,8 @@ impl ConnectedClient {
                     ));
                     break;
                 }
+            } else {
+                break 'l1;
             }
         }
     }
@@ -637,12 +645,14 @@ impl ServerInternal {
         server: Weak<ServerInternal>,
         pending_auth_resend_receiver: async_channel::Receiver<SocketAddr>,
     ) {
-        while let Ok(addr) = pending_auth_resend_receiver.recv().await {
+        'l1: while let Ok(addr) = pending_auth_resend_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 if let Some(mut context) = server.pending_auth.get_mut(&addr) {
                     context.last_sent_time = Some(Instant::now());
                     let _ = server.socket.send_to(&context.finished_bytes, addr).await;
                 }
+            } else {
+                break 'l1;
             }
         }
     }
@@ -651,12 +661,14 @@ impl ServerInternal {
         server: Weak<ServerInternal>,
         pending_rejection_confirm_resend_receiver: async_channel::Receiver<SocketAddr>,
     ) {
-        while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv().await {
+        'l1: while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 if let Some(mut context) = server.pending_rejection_confirm.get_mut(&addr) {
                     context.last_sent_time = Some(Instant::now());
                     let _ = server.socket.send_to(&context.finished_bytes, addr).await;
                 }
+            } else {
+                break 'l1;
             }
         }
     }
@@ -665,7 +677,7 @@ impl ServerInternal {
         server: Weak<ServerInternal>,
         ignored_addrs_asking_reason_read_signal_receiver: async_channel::Receiver<()>,
     ) {
-        while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv().await {
+        'l1: while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 for addr in server.ignored_addrs_asking_reason.iter() {
                     let ip = addr.key();
@@ -676,6 +688,8 @@ impl ServerInternal {
                     }
                 }
                 server.ignored_addrs_asking_reason.clear();
+            } else {
+                break 'l1;
             }
         }
     }
@@ -685,12 +699,14 @@ impl ServerInternal {
         rejections_to_confirm_read_signal_receiver: async_channel::Receiver<()>,
     ) {
         let bytes = &vec![MessageChannel::REJECTION_CONFIRM];
-        while let Ok(_) = rejections_to_confirm_read_signal_receiver.recv().await {
+        'l1: while let Ok(_) = rejections_to_confirm_read_signal_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 for addr in server.rejections_to_confirm.iter() {
                     let _ = server.socket.send_to(bytes, addr.clone()).await;
                 }
                 server.rejections_to_confirm.clear();
+            } else {
+                break 'l1;
             }
         }
     }
@@ -709,7 +725,7 @@ impl ServerInternal {
 
     async fn create_read_handler(weak_server: Weak<ServerInternal>) {
         let mut was_used = false;
-        loop {
+        'l1: loop {
             if let Some(server) = weak_server.upgrade() {
                 if *server.read_handler_properties.active_count.write().unwrap()
                     > server.read_handler_properties.target_surplus_size + 1
@@ -756,10 +772,12 @@ impl ServerInternal {
                                 }
                             }
                         }
+                    } else {
+                        break 'l1;
                     }
                 }
             } else {
-                break;
+                break 'l1;
             }
         }
     }
