@@ -13,7 +13,7 @@ use chacha20poly1305::{
     ChaCha20Poly1305, ChaChaPoly1305, Key, Nonce,
 };
 use rand::rngs::OsRng;
-use tokio::{net::UdpSocket, runtime::Runtime, task::JoinHandle, time::timeout};
+use tokio::{net::UdpSocket, runtime::Runtime, sync::Mutex, task::JoinHandle, time::timeout};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
@@ -156,7 +156,7 @@ pub enum ClientTickResult {
 
 /// Messaging fields of [`ConnectedServer`]
 ///
-/// Intended to be used with [`Arc`] and [`RwLock`]
+/// Intended to be used with [`Mutex`].
 pub struct ConnectedServerMessaging {
     /// Sender for message part confirmations.
     message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
@@ -188,9 +188,9 @@ pub struct ConnectedServerMessaging {
     latency_monitor: DurationMonitor,
 }
 
-/// Properties of a server that is connected to the server.
+/// Properties of the server that is connected to the client.
 ///
-/// Intended to be used inside `ServerAsync`.
+/// Intended to be used inside [`ServerInternal`] with [`Arc`].
 pub struct ConnectedServer {
     /// Sender for receiving bytes.
     receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
@@ -202,7 +202,7 @@ pub struct ConnectedServer {
     addr: SocketAddr,
 
     /// Messaging-related properties wrapped in an `Arc` and `RwLock`.
-    messaging: Arc<RwLock<ConnectedServerMessaging>>,
+    messaging: Mutex<ConnectedServerMessaging>,
     /// The last instant when a messaging write operation occurred.
     last_messaging_write: RwLock<Instant>,
     /// The average latency duration.
@@ -217,12 +217,6 @@ impl ConnectedServer {
     }
 
     /// # Returns
-    /// The total size of the incoming message map.
-    pub fn stored_incoming_message_size(&self) -> usize {
-        self.messaging.read().unwrap().incoming_message.total_size()
-    }
-
-    /// # Returns
     /// The remove server address.
     pub fn addr(&self) -> &SocketAddr {
         &self.addr
@@ -230,38 +224,20 @@ impl ConnectedServer {
 
     async fn create_receiving_bytes_handler(
         client: Weak<ClientInternal>,
-        messaging: Arc<RwLock<ConnectedServerMessaging>>,
+        server: Weak<ConnectedServer>,
         receiving_bytes_receiver: async_channel::Receiver<Vec<u8>>,
     ) {
         'l1: while let Ok(bytes) = receiving_bytes_receiver.recv().await {
             if let Some(client) = client.upgrade() {
-                let mut messaging = messaging.write().unwrap();
-                match bytes[0] {
-                    MessageChannel::MESSAGE_PART_CONFIRM => {
-                        if bytes.len() == 3 {
-                            let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
-                            if let Some((sent_instant, _)) =
-                                messaging.pending_confirmation.remove(&message_id)
-                            {
-                                let delay = Instant::now() - sent_instant;
-                                messaging.latency_monitor.push(delay);
-                                messaging.average_packet_loss_rtt = messaging.packet_loss_rtt_calculator.update_rtt(
-                                    &client.messaging_properties.packet_loss_rtt_properties,
-                                    delay,
-                                );
-                            }
-                        } else if bytes.len() == 5 {
-                            let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
-                            let part_id = MessagePartId::from_be_bytes([bytes[3], bytes[4]]);
-                            if let Some((sent_instant, map)) =
-                                messaging.pending_confirmation.get_mut(&message_id)
-                            {
-                                let sent_instant = *sent_instant;
-                                if let Some(_) = map.remove(&part_id) {
-                                    if map.is_empty() {
-                                        messaging.pending_confirmation.remove(&message_id).unwrap();
-                                    }
-
+                if let Some(server) = server.upgrade() {
+                    let mut messaging = server.messaging.lock().await;
+                    match bytes[0] {
+                        MessageChannel::MESSAGE_PART_CONFIRM => {
+                            if bytes.len() == 3 {
+                                let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
+                                if let Some((sent_instant, _)) =
+                                    messaging.pending_confirmation.remove(&message_id)
+                                {
                                     let delay = Instant::now() - sent_instant;
                                     messaging.latency_monitor.push(delay);
                                     messaging.average_packet_loss_rtt = messaging.packet_loss_rtt_calculator.update_rtt(
@@ -269,116 +245,138 @@ impl ConnectedServer {
                                         delay,
                                     );
                                 }
-                            }
-                        } else {
-                            let _ = client
-                                .reason_to_disconnect_sender
-                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
-                            break 'l1;
-                        }
-                    }
-                    MessageChannel::MESSAGE_PART_SEND => {
-                        // 12 for nonce
-                        if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + 12 {
-                            let _ = client
-                                .reason_to_disconnect_sender
-                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
-                            break 'l1;
-                        }
-
-                        let nonce = Nonce::from_slice(&bytes[1..13]);
-                        let cipher_text = &bytes[13..];
-
-                        if let Ok(decrypted_message) = messaging.cipher.decrypt(nonce, cipher_text)
-                        {
-                            if let Ok(part) = MessagePart::deserialize(decrypted_message) {
-                                let mut send_fully_message_confirmation = false;
-                                let message_id = part.message_id();
-                                let part_id = part.id();
-
-                                match messaging.incoming_message.try_insert(part) {
-                                    MessagePartMapTryInsertResult::PastMessageId => {
-                                        let _ = messaging
-                                        .message_part_confirmation_sender
-                                        .try_send((message_id, None));
-                                    },
-                                    MessagePartMapTryInsertResult::Stored => {
-                                        'l2: loop {
-                                            match messaging.incoming_message.try_read(&client.packet_registry){
-                                                MessagePartMapTryReadResult::PendingParts => break 'l2,
-                                                MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
-                                                    let _ = client.reason_to_disconnect_sender.try_send((
-                                                        ServerDisconnectReason::InvalidProtocolCommunication,
-                                                        None,
-                                                    ));
-                                                    break 'l1;
-                                                },
-                                                MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
-                                                    send_fully_message_confirmation = true;
-        
-                                                    messaging.received_messages.push(message);
-                                                    messaging.last_received_message_instant = Instant::now();
-                                                },
-                                            }
+                            } else if bytes.len() == 5 {
+                                let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
+                                let part_id = MessagePartId::from_be_bytes([bytes[3], bytes[4]]);
+                                if let Some((sent_instant, map)) =
+                                    messaging.pending_confirmation.get_mut(&message_id)
+                                {
+                                    let sent_instant = *sent_instant;
+                                    if let Some(_) = map.remove(&part_id) {
+                                        if map.is_empty() {
+                                            messaging.pending_confirmation.remove(&message_id).unwrap();
                                         }
-        
-                                        if send_fully_message_confirmation {
-                                            let _ = messaging
-                                                .message_part_confirmation_sender
-                                                .try_send((message_id, None));
-                                        } else {
-                                            let _ = messaging
-                                                .message_part_confirmation_sender
-                                                .try_send((message_id, Some(part_id)));
-                                        }
-                                    },
+
+                                        let delay = Instant::now() - sent_instant;
+                                        messaging.latency_monitor.push(delay);
+                                        messaging.average_packet_loss_rtt = messaging.packet_loss_rtt_calculator.update_rtt(
+                                            &client.messaging_properties.packet_loss_rtt_properties,
+                                            delay,
+                                        );
+                                    }
                                 }
                             } else {
-                                let _ = client.reason_to_disconnect_sender.try_send((
-                                    ServerDisconnectReason::InvalidProtocolCommunication,
-                                    None,
-                                ));
+                                let _ = client
+                                    .reason_to_disconnect_sender
+                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                                 break 'l1;
                             }
-                        } else {
+                        }
+                        MessageChannel::MESSAGE_PART_SEND => {
+                            // 12 for nonce
+                            if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + 12 {
+                                let _ = client
+                                    .reason_to_disconnect_sender
+                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                break 'l1;
+                            }
+
+                            let nonce = Nonce::from_slice(&bytes[1..13]);
+                            let cipher_text = &bytes[13..];
+
+                            if let Ok(decrypted_message) = messaging.cipher.decrypt(nonce, cipher_text)
+                            {
+                                if let Ok(part) = MessagePart::deserialize(decrypted_message) {
+                                    let mut send_fully_message_confirmation = false;
+                                    let message_id = part.message_id();
+                                    let part_id = part.id();
+
+                                    match messaging.incoming_message.try_insert(part) {
+                                        MessagePartMapTryInsertResult::PastMessageId => {
+                                            let _ = messaging
+                                            .message_part_confirmation_sender
+                                            .try_send((message_id, None));
+                                        },
+                                        MessagePartMapTryInsertResult::Stored => {
+                                            'l2: loop {
+                                                match messaging.incoming_message.try_read(&client.packet_registry){
+                                                    MessagePartMapTryReadResult::PendingParts => break 'l2,
+                                                    MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
+                                                        let _ = client.reason_to_disconnect_sender.try_send((
+                                                            ServerDisconnectReason::InvalidProtocolCommunication,
+                                                            None,
+                                                        ));
+                                                        break 'l1;
+                                                    },
+                                                    MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
+                                                        send_fully_message_confirmation = true;
+            
+                                                        messaging.received_messages.push(message);
+                                                        messaging.last_received_message_instant = Instant::now();
+                                                    },
+                                                }
+                                            }
+            
+                                            if send_fully_message_confirmation {
+                                                let _ = messaging
+                                                    .message_part_confirmation_sender
+                                                    .try_send((message_id, None));
+                                            } else {
+                                                let _ = messaging
+                                                    .message_part_confirmation_sender
+                                                    .try_send((message_id, Some(part_id)));
+                                            }
+                                        },
+                                    }
+                                } else {
+                                    let _ = client.reason_to_disconnect_sender.try_send((
+                                        ServerDisconnectReason::InvalidProtocolCommunication,
+                                        None,
+                                    ));
+                                    break 'l1;
+                                }
+                            } else {
+                                let _ = client
+                                    .reason_to_disconnect_sender
+                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                break 'l1;
+                            }
+                        }
+                        MessageChannel::REJECTION_JUSTIFICATION => {
+                            // 4 for the minimal SerializedPacket
+                            if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
+                                let _ = client
+                                    .reason_to_disconnect_sender
+                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                break 'l1;
+                            } else if let Ok(message) =
+                                DeserializedPacket::deserialize_list(&bytes[1..], &client.packet_registry)
+                            {
+                                todo!();
+                                // client.rejections_to_confirm.insert(addr.clone());
+                                // let _ = client
+                                //     .clients_to_disconnect_sender
+                                //     .try_send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
+                                // break 'l1;
+                            } else {
+                                let _ = client
+                                .reason_to_disconnect_sender
+                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                            break 'l1;
+                            }
+                        }
+                        MessageChannel::AUTH_MESSAGE => {
+                            // Client probably multiple authentication packets before being authenticated
+                        }
+                        _ => {
                             let _ = client
                                 .reason_to_disconnect_sender
                                 .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                             break 'l1;
                         }
                     }
-                    MessageChannel::REJECTION_JUSTIFICATION => {
-                        // 4 for the minimal SerializedPacket
-                        if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
-                            let _ = client
-                                .reason_to_disconnect_sender
-                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
-                            break 'l1;
-                        } else if let Ok(message) =
-                            DeserializedPacket::deserialize_list(&bytes[1..], &client.packet_registry)
-                        {
-                            todo!();
-                            // client.rejections_to_confirm.insert(addr.clone());
-                            // let _ = client
-                            //     .clients_to_disconnect_sender
-                            //     .try_send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
-                            // break 'l1;
-                        } else {
-                            let _ = client
-                            .reason_to_disconnect_sender
-                            .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
-                        break 'l1;
-                        }
-                    }
-                    MessageChannel::AUTH_MESSAGE => {
-                        // Client probably multiple authentication packets before being authenticated
-                    }
-                    _ => {
-                        let _ = client
-                            .reason_to_disconnect_sender
-                            .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
-                        break 'l1;
-                    }
+                } else {
+                    break 'l1;
                 }
             } else {
                 break 'l1;
@@ -388,7 +386,7 @@ impl ConnectedServer {
 
     async fn create_packets_to_send_handler(
         client: Weak<ClientInternal>,
-        messaging: Weak<RwLock<ConnectedServerMessaging>>,
+        server: Weak<ConnectedServer>,
         packets_to_send_receiver: async_channel::Receiver<Option<SerializedPacket>>,
         mut next_message_id: MessagePartId,
     ) {
@@ -398,14 +396,14 @@ impl ConnectedServer {
             if let Some(serialized_packet) = serialized_packet {
                 packets_to_send.push(serialized_packet);
             } else {
-                if let Some(server) = client.upgrade() {
-                    if let Some(messaging) = messaging.upgrade() {
-                        let mut messaging = messaging.write().unwrap();
+                if let Some(client) = client.upgrade() {
+                    if let Some(server) = server.upgrade() {
+                        let mut messaging = server.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
 
                         let bytes = SerializedPacketList::create(packets_to_send).bytes;
                         let message_parts = MessagePart::create_list(
-                            &server.messaging_properties,
+                            &client.messaging_properties,
                             next_message_id,
                             bytes,
                         )
@@ -537,7 +535,7 @@ struct ClientInternal {
     client_properties: Arc<ClientProperties>,
 
     /// Connected server.
-    connected_server: ConnectedServer,
+    connected_server: Arc<ConnectedServer>,
 
     /// Reason that caused the connection finish.
     ///
@@ -661,7 +659,7 @@ impl ClientInternal {
     }
 
     async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
-        let mut messaging = self.connected_server.messaging.write().unwrap();
+        let mut messaging = self.connected_server.messaging.lock().await;
         // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
         messaging.tick_bytes_len += bytes.len() + 8 + 20;
         if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
@@ -805,7 +803,7 @@ impl Client {
         let (shared_socket_bytes_send_sender, shared_socket_bytes_send_receiver) =
             async_channel::unbounded();
 
-        let messaging = Arc::new(RwLock::new(ConnectedServerMessaging {
+        let messaging = Mutex::new(ConnectedServerMessaging {
             cipher,
             pending_confirmation: BTreeMap::new(),
             incoming_message: MessagePartMap::new(
@@ -819,16 +817,16 @@ impl Client {
             latency_monitor: DurationMonitor::filled_with(messaging_properties.initial_latency, 16),
             message_part_confirmation_sender,
             shared_socket_bytes_send_sender,
-        }));
+        });
 
-        let connected_server = ConnectedServer {
+        let server = Arc::new(ConnectedServer {
             receiving_bytes_sender,
             packets_to_send_sender,
             addr: remote_addr,
-            messaging: Arc::clone(&messaging),
+            messaging,
             last_messaging_write: RwLock::new(Instant::now()),
             average_latency: RwLock::new(messaging_properties.initial_latency),
-        };
+        });
 
         let runtime_clone = Arc::clone(&runtime);
 
@@ -848,7 +846,7 @@ impl Client {
                 messaging_properties: Arc::clone(&messaging_properties),
                 read_handler_properties: Arc::clone(&read_handler_properties),
                 client_properties: Arc::clone(&client_properties),
-                connected_server,
+                connected_server: Arc::clone(&server),
                 disconnect_reason: RwLock::new(None),
             })
         };
@@ -862,23 +860,23 @@ impl Client {
         connected_server.packets_to_send_sender.try_send(None).unwrap();
 
         let client_downgraded = Arc::downgrade(&internal);
-        let messaging_clone = Arc::clone(&messaging);
+        let server_downgraded = Arc::downgrade(&server);
         internal.create_async_task(async move {
             ConnectedServer::create_receiving_bytes_handler(
                 client_downgraded,
-                messaging_clone,
+                server_downgraded,
                 receiving_bytes_receiver,
             )
             .await;
         });
 
         let client_downgraded = Arc::downgrade(&internal);
-        let messaging_downgraded = Arc::downgrade(&messaging);
+        let server_downgraded = Arc::downgrade(&server);
         let initial_next_message_part_id = internal.messaging_properties.initial_next_message_part_id;
         internal.create_async_task(async move {
             ConnectedServer::create_packets_to_send_handler(
                 client_downgraded,
-                messaging_downgraded,
+                server_downgraded,
                 packets_to_send_receiver,
                 initial_next_message_part_id,
             )
@@ -996,7 +994,7 @@ impl Client {
         let now = Instant::now();
 
         let connected_server = &internal.connected_server;
-        if let Ok(mut messaging) = connected_server.messaging.try_write() {
+        if let Ok(mut messaging) = connected_server.messaging.try_lock() {
             *connected_server.last_messaging_write.write().unwrap() = now;
             *connected_server.average_latency.write().unwrap() =
                 messaging.latency_monitor.average_value();
