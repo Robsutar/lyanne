@@ -528,6 +528,8 @@ struct ServerInternal {
     tasks_keeper_sender: async_channel::Sender<JoinHandle<()>>,
     /// Sender for signaling the reading of [`Server::ignored_addrs_asking_reason`]
     ignored_addrs_asking_reason_read_signal_sender: async_channel::Sender<()>,
+    /// Sender for signaling the reading of [`Server::rejections_to_confirm`]
+    rejections_to_confirm_signal_sender: async_channel::Sender<()>,
     /// Sender for addresses to be authenticated.
     clients_to_auth_sender: async_channel::Sender<(SocketAddr, AddrToAuth)>,
     /// Sender for addresses to be disconnected.
@@ -921,10 +923,15 @@ impl Server {
             async_channel::unbounded();
         let (pending_rejection_confirm_resend_sender, pending_rejection_confirm_resend_receiver) =
             async_channel::unbounded();
-        let (
-            ignored_addrs_asking_reason_read_signal_sender,
-            ignored_addrs_asking_reason_read_signal_receiver,
-        ) = async_channel::unbounded();
+            let (
+                ignored_addrs_asking_reason_read_signal_sender,
+                ignored_addrs_asking_reason_read_signal_receiver,
+            ) = async_channel::unbounded();
+            let (
+                rejections_to_confirm_signal_sender,
+                rejections_to_confirm_signal_receiver,
+            ) = async_channel::unbounded();
+                
         let (clients_to_auth_sender, clients_to_auth_receiver) = async_channel::unbounded();
         let (clients_to_disconnect_sender, clients_to_disconnect_receiver) =
             async_channel::unbounded();
@@ -934,6 +941,7 @@ impl Server {
         let server = Arc::new(ServerInternal {
             tasks_keeper_sender,
             ignored_addrs_asking_reason_read_signal_sender,
+            rejections_to_confirm_signal_sender,
             clients_to_auth_sender,
             clients_to_disconnect_sender,
             pending_rejection_confirm_resend_sender,
@@ -990,6 +998,15 @@ impl Server {
             ServerInternal::create_ignored_addrs_asking_reason_handler(
                 server_downgraded,
                 ignored_addrs_asking_reason_read_signal_receiver,
+            )
+            .await;
+        });
+
+        let server_downgraded = Arc::downgrade(&server);
+        server.create_async_task(async move {
+            ServerInternal::create_rejections_to_confirm_handler(
+                server_downgraded,
+                rejections_to_confirm_signal_receiver,
             )
             .await;
         });
@@ -1194,6 +1211,8 @@ impl Server {
         }
 
         block_on(async {internal.ignored_addrs_asking_reason_read_signal_sender
+            .send(()).            await.unwrap()});
+        block_on(async {internal.rejections_to_confirm_signal_sender
             .send(()).            await.unwrap()});
 
         internal.try_check_read_handler();
