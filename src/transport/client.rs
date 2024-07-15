@@ -159,9 +159,9 @@ pub enum ClientTickResult {
 /// Intended to be used with [`Arc`] and [`RwLock`]
 pub struct ConnectedServerMessaging {
     /// Sender for message part confirmations.
-    message_part_confirmation_sender: crossbeam_channel::Sender<(MessageId, Option<MessagePartId>)>,
+    message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
     /// Sender for shared socket bytes.
-    shared_socket_bytes_send_sender: crossbeam_channel::Sender<Arc<Vec<u8>>>,
+    shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
 
     /// The cipher used for encrypting and decrypting messages.
     cipher: ChaCha20Poly1305,
@@ -193,10 +193,10 @@ pub struct ConnectedServerMessaging {
 /// Intended to be used inside `ServerAsync`.
 pub struct ConnectedServer {
     /// Sender for receiving bytes.
-    receiving_bytes_sender: crossbeam_channel::Sender<Vec<u8>>,
+    receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
 
     /// Sender for packets to be sent.
-    packets_to_send_sender: crossbeam_channel::Sender<Option<SerializedPacket>>,
+    packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
 
     /// The socket address of the connected server.
     addr: SocketAddr,
@@ -231,9 +231,9 @@ impl ConnectedServer {
     async fn create_receiving_bytes_handler(
         client: Weak<ClientInternal>,
         messaging: Arc<RwLock<ConnectedServerMessaging>>,
-        receiving_bytes_receiver: crossbeam_channel::Receiver<Vec<u8>>,
+        receiving_bytes_receiver: async_channel::Receiver<Vec<u8>>,
     ) {
-        'l1: while let Ok(bytes) = receiving_bytes_receiver.recv() {
+        'l1: while let Ok(bytes) = receiving_bytes_receiver.recv().await {
             if let Some(client) = client.upgrade() {
                 let mut messaging = messaging.write().unwrap();
                 match bytes[0] {
@@ -273,7 +273,7 @@ impl ConnectedServer {
                         } else {
                             let _ = client
                                 .reason_to_disconnect_sender
-                                .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                             break 'l1;
                         }
                     }
@@ -282,7 +282,7 @@ impl ConnectedServer {
                         if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + 12 {
                             let _ = client
                                 .reason_to_disconnect_sender
-                                .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                             break 'l1;
                         }
 
@@ -300,14 +300,14 @@ impl ConnectedServer {
                                     MessagePartMapTryInsertResult::PastMessageId => {
                                         let _ = messaging
                                         .message_part_confirmation_sender
-                                        .send((message_id, None));
+                                        .try_send((message_id, None));
                                     },
                                     MessagePartMapTryInsertResult::Stored => {
                                         'l2: loop {
                                             match messaging.incoming_message.try_read(&client.packet_registry){
                                                 MessagePartMapTryReadResult::PendingParts => break 'l2,
                                                 MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
-                                                    let _ = client.reason_to_disconnect_sender.send((
+                                                    let _ = client.reason_to_disconnect_sender.try_send((
                                                         ServerDisconnectReason::InvalidProtocolCommunication,
                                                         None,
                                                     ));
@@ -325,16 +325,16 @@ impl ConnectedServer {
                                         if send_fully_message_confirmation {
                                             let _ = messaging
                                                 .message_part_confirmation_sender
-                                                .send((message_id, None));
+                                                .try_send((message_id, None));
                                         } else {
                                             let _ = messaging
                                                 .message_part_confirmation_sender
-                                                .send((message_id, Some(part_id)));
+                                                .try_send((message_id, Some(part_id)));
                                         }
                                     },
                                 }
                             } else {
-                                let _ = client.reason_to_disconnect_sender.send((
+                                let _ = client.reason_to_disconnect_sender.try_send((
                                     ServerDisconnectReason::InvalidProtocolCommunication,
                                     None,
                                 ));
@@ -343,7 +343,7 @@ impl ConnectedServer {
                         } else {
                             let _ = client
                                 .reason_to_disconnect_sender
-                                .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                             break 'l1;
                         }
                     }
@@ -352,7 +352,7 @@ impl ConnectedServer {
                         if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
                             let _ = client
                                 .reason_to_disconnect_sender
-                                .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                             break 'l1;
                         } else if let Ok(message) =
                             DeserializedPacket::deserialize_list(&bytes[1..], &client.packet_registry)
@@ -361,12 +361,12 @@ impl ConnectedServer {
                             // client.rejections_to_confirm.insert(addr.clone());
                             // let _ = client
                             //     .clients_to_disconnect_sender
-                            //     .send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
+                            //     .try_send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
                             // break 'l1;
                         } else {
                             let _ = client
                             .reason_to_disconnect_sender
-                            .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                            .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                         break 'l1;
                         }
                     }
@@ -376,7 +376,7 @@ impl ConnectedServer {
                     _ => {
                         let _ = client
                             .reason_to_disconnect_sender
-                            .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                            .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                         break 'l1;
                     }
                 }
@@ -387,12 +387,12 @@ impl ConnectedServer {
     async fn create_packets_to_send_handler(
         client: Weak<ClientInternal>,
         messaging: Weak<RwLock<ConnectedServerMessaging>>,
-        packets_to_send_receiver: crossbeam_channel::Receiver<Option<SerializedPacket>>,
+        packets_to_send_receiver: async_channel::Receiver<Option<SerializedPacket>>,
         mut next_message_id: MessagePartId,
     ) {
         let mut packets_to_send: Vec<SerializedPacket> = Vec::new();
 
-        while let Ok(serialized_packet) = packets_to_send_receiver.recv() {
+        while let Ok(serialized_packet) = packets_to_send_receiver.recv().await {
             if let Some(serialized_packet) = serialized_packet {
                 packets_to_send.push(serialized_packet);
             } else {
@@ -428,7 +428,7 @@ impl ConnectedServer {
 
                             let _ = messaging
                                 .shared_socket_bytes_send_sender
-                                .send(finished_bytes);
+                                .try_send(finished_bytes);
                         }
 
                         next_message_id = next_message_id.wrapping_add(1);
@@ -444,12 +444,12 @@ impl ConnectedServer {
 
     async fn create_message_part_confirmation_handler(
         client: Weak<ClientInternal>,
-        message_part_confirmation_receiver: crossbeam_channel::Receiver<(
+        message_part_confirmation_receiver: async_channel::Receiver<(
             MessageId,
             Option<MessagePartId>,
         )>,
     ) {
-        while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv() {
+        while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
             if let Some(client) = client.upgrade() {
                 let message_id_bytes = message_id.to_be_bytes();
 
@@ -474,7 +474,7 @@ impl ConnectedServer {
                 if client.socket.send(&bytes).await.is_err() {
                     let _ = client
                         .reason_to_disconnect_sender
-                        .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                        .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                     break;
                 }
             }
@@ -483,14 +483,14 @@ impl ConnectedServer {
 
     async fn create_shared_socket_bytes_send_handler(
         client: Weak<ClientInternal>,
-        shared_socket_bytes_send_receiver: crossbeam_channel::Receiver<Arc<Vec<u8>>>,
+        shared_socket_bytes_send_receiver: async_channel::Receiver<Arc<Vec<u8>>>,
     ) {
-        while let Ok(bytes) = shared_socket_bytes_send_receiver.recv() {
+        while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
             if let Some(client) = client.upgrade() {
                 if client.socket.send(&bytes).await.is_err() {
                     let _ = client
                         .reason_to_disconnect_sender
-                        .send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                        .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
                     break;
                 }
             }
@@ -503,13 +503,13 @@ impl ConnectedServer {
 /// Intended to be used inside [`Client`].
 struct ClientInternal {
     /// Sender for make the spawned tasks keep alive.
-    tasks_keeper_sender: crossbeam_channel::Sender<JoinHandle<()>>,
+    tasks_keeper_sender: async_channel::Sender<JoinHandle<()>>,
     /// Sender for addresses to be disconnected.
     reason_to_disconnect_sender:
-        crossbeam_channel::Sender<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
+        async_channel::Sender<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
     /// Receiver for addresses to be disconnected.
     reason_to_disconnect_receiver:
-        crossbeam_channel::Receiver<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
+        async_channel::Receiver<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
 
     /// Task handle of the receiver.
     tasks_keeper_handle: JoinHandle<()>,
@@ -547,15 +547,15 @@ impl ClientInternal {
     {
         let _ = self
             .tasks_keeper_sender
-            .send(Arc::clone(&self.runtime).spawn(future));
+            .try_send(Arc::clone(&self.runtime).spawn(future));
     }
 
     fn create_async_tasks_keeper(
         runtime: Arc<Runtime>,
-        tasks_keeper_receiver: crossbeam_channel::Receiver<tokio::task::JoinHandle<()>>,
+        tasks_keeper_receiver: async_channel::Receiver<tokio::task::JoinHandle<()>>,
     ) -> JoinHandle<()> {
         runtime.spawn(async move {
-            while let Ok(handle) = tasks_keeper_receiver.recv() {
+            while let Ok(handle) = tasks_keeper_receiver.recv().await {
                 handle.await.unwrap();
             }
         })
@@ -659,7 +659,7 @@ impl ClientInternal {
         if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
             ReadServerBytesResult::ServerMaxTickByteLenOverflow
         } else {
-            let _ = self.connected_server.receiving_bytes_sender.send(bytes);
+            let _ = self.connected_server.receiving_bytes_sender.try_send(bytes);
             ReadServerBytesResult::ServerReceivedBytes
         }
     }
@@ -786,16 +786,16 @@ impl Client {
         let shared_key = client_private_key.diffie_hellman(&server_public_key);
         let cipher = ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
 
-        let (tasks_keeper_sender, tasks_keeper_receiver) = crossbeam_channel::unbounded();
+        let (tasks_keeper_sender, tasks_keeper_receiver) = async_channel::unbounded();
         let (reason_to_disconnect_sender, reason_to_disconnect_receiver) =
-            crossbeam_channel::bounded(1);
+            async_channel::bounded(1);
 
-        let (receiving_bytes_sender, receiving_bytes_receiver) = crossbeam_channel::unbounded();
-        let (packets_to_send_sender, packets_to_send_receiver) = crossbeam_channel::unbounded();
+        let (receiving_bytes_sender, receiving_bytes_receiver) = async_channel::unbounded();
+        let (packets_to_send_sender, packets_to_send_receiver) = async_channel::unbounded();
         let (message_part_confirmation_sender, message_part_confirmation_receiver) =
-            crossbeam_channel::unbounded();
+            async_channel::unbounded();
         let (shared_socket_bytes_send_sender, shared_socket_bytes_send_receiver) =
-            crossbeam_channel::unbounded();
+            async_channel::unbounded();
 
         let messaging = Arc::new(RwLock::new(ConnectedServerMessaging {
             cipher,
@@ -851,7 +851,7 @@ impl Client {
 
         let connected_server = &internal.connected_server;
         client.send_packet_serialized(tick_packet_serialized.clone());
-        connected_server.packets_to_send_sender.send(None).unwrap();
+        connected_server.packets_to_send_sender.try_send(None).unwrap();
 
         let client_downgraded = Arc::downgrade(&internal);
         let messaging_clone = Arc::clone(&messaging);
@@ -1014,7 +1014,7 @@ impl Client {
             for finished_bytes in messages_to_resend {
                 messaging
                     .shared_socket_bytes_send_sender
-                    .send(finished_bytes)
+                    .try_send(finished_bytes)
                     .unwrap();
             }
 
@@ -1078,7 +1078,7 @@ impl Client {
 
         let connected_server = &internal.connected_server;
         self.send_packet_serialized(tick_packet_serialized.clone());
-        connected_server.packets_to_send_sender.send(None).unwrap();
+        connected_server.packets_to_send_sender.try_send(None).unwrap();
     }
 
     /// Serializes, then store the packet to be sent to the server after the next received server tick.
@@ -1129,7 +1129,7 @@ impl Client {
         let internal = &self.internal;
         internal.connected_server
             .packets_to_send_sender
-            .send(Some(packet_serialized))
+            .try_send(Some(packet_serialized))
             .unwrap();
     }
 
