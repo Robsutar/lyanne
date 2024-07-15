@@ -1528,7 +1528,7 @@ impl Server {
     }
 
     /// TODO:
-    pub fn disconnect_detached(&self) {
+    pub fn disconnect_detached(self) {
         todo!();
     }
 }
