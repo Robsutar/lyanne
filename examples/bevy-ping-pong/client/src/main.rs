@@ -25,7 +25,7 @@ struct ClientConnecting {
 
 #[derive(Component)]
 struct ClientConnected {
-    client: Arc<Client>,
+    client: Client,
 }
 
 fn main() {
@@ -124,8 +124,8 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
 
 fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
     for client_connected in query.iter_mut() {
-        let client = Arc::clone(&client_connected.client);
-        let tick = client_connected.client.tick_start();
+        let client = &client_connected.client;
+        let tick = client.tick_start();
         match tick {
             ClientTickResult::ReceivedMessage(message) => {
                 if true {
@@ -144,7 +144,7 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                 for deserialized_packet in message.packets {
                     client_connected
                         .client
-                        .packet_registry
+                        .packet_registry()
                         .bevy_client_call(&mut commands, deserialized_packet);
                 }
 
