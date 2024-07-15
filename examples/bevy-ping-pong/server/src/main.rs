@@ -192,12 +192,29 @@ fn server_tick(
                 }
 
                 for (addr, message) in clients_to_auth {
-                    info!(
-                        "authenticating client {:?}, message count: {:?}",
-                        addr,
-                        message.message.len()
-                    );
-                    server.authenticate(addr, message);
+                    if false {
+                        info!(
+                            "authenticating client {:?}, message count: {:?}",
+                            addr,
+                            message.message.len()
+                        );
+                        server.authenticate(addr, message);
+                    } else {
+                        info!(
+                            "refusing client {:?}, message count: {:?}",
+                            addr,
+                            message.message.len()
+                        );
+                        server.refuse(
+                            addr,
+                            SerializedPacketList::create(vec![server
+                                .packet_registry()
+                                .serialize(&BarPacket {
+                                    message: "No, you not".to_owned(),
+                                })
+                                .unwrap()]),
+                        );
+                    }
                 }
 
                 for (addr, reason) in tick_result.disconnected {
