@@ -24,7 +24,7 @@ struct ServerConnecting {
 
 #[derive(Component)]
 struct ServerConnected {
-    server: Server,
+    server: Option<Server>,
     tick_timer: Timer,
 }
 
@@ -116,7 +116,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
                     }
 
                     commands.spawn(ServerConnected {
-                        server: bind_result.server,
+                        server: Some(bind_result.server),
                         tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
                     });
                 }
@@ -139,9 +139,9 @@ fn server_tick(
             .tick(time.delta())
             .just_finished()
         {
-            let server = &server_connected.server;
+            let server = server_connected.server.as_ref().unwrap();
             if true {
-                for entry in server_connected.server.connected_clients_iter() {
+                for entry in server.connected_clients_iter() {
                     let connected_client = entry.value();
                     let mut rng = thread_rng();
                     for _ in 0..rng.gen_range(500..501) {
