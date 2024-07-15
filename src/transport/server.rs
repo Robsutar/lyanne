@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bevy::tasks::block_on;
 use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit},
     ChaCha20Poly1305, ChaChaPoly1305, Key, Nonce,
@@ -618,9 +617,9 @@ impl ServerInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        block_on(async {let _ = self
-        .tasks_keeper_sender
-        .send(Arc::clone(&self.runtime).spawn(future)).await;});
+        let _ = self
+            .tasks_keeper_sender
+            .try_send(Arc::clone(&self.runtime).spawn(future));
     }
 
     fn create_async_tasks_keeper(
@@ -1086,9 +1085,9 @@ impl Server {
                     continue;
                 }
             }
-            block_on(async {internal.pending_auth_resend_sender
-                .send(context.key().clone())
-                .await        .unwrap()});
+            internal.pending_auth_resend_sender
+                .try_send(context.key().clone())
+                .unwrap();
         }
 
         internal.temporary_ignored_ips.retain(|addr, until_to| {
@@ -1153,10 +1152,10 @@ impl Server {
                 }
 
                 for finished_bytes in messages_to_resend {
-                    block_on(async {messaging
+                    messaging
                         .shared_socket_bytes_send_sender
-                        .send(finished_bytes)
-                        .await.unwrap()});
+                        .try_send(finished_bytes)
+                        .unwrap();
                 }
 
                 if !messaging.received_messages.is_empty() {
@@ -1193,9 +1192,9 @@ impl Server {
                     continue;
                 }
             }
-            block_on(async {internal.pending_rejection_confirm_resend_sender
-                .send(context.key().clone())
-                .await.unwrap()});
+            internal.pending_rejection_confirm_resend_sender
+                .try_send(context.key().clone())
+                .unwrap();
         }
 
         for (addr, (reason, context)) in addrs_to_disconnect {
@@ -1210,10 +1209,10 @@ impl Server {
             assigned_addrs_in_auth.insert(addr.clone());
         }
 
-        block_on(async {internal.ignored_addrs_asking_reason_read_signal_sender
-            .send(()).            await.unwrap()});
-        block_on(async {internal.rejections_to_confirm_signal_sender
-            .send(()).            await.unwrap()});
+        internal.ignored_addrs_asking_reason_read_signal_sender
+            .try_send(()).unwrap();
+        internal.rejections_to_confirm_signal_sender
+            .try_send(()).unwrap();
 
         internal.try_check_read_handler();
 
@@ -1252,7 +1251,7 @@ impl Server {
 
         for client in internal.connected_clients.iter() {
             self.send_packet_serialized(&client, tick_packet_serialized.clone());
-            block_on(async {client.packets_to_send_sender.send(None).await.unwrap()});
+            client.packets_to_send_sender.try_send(None).unwrap();
         }
     }
 
@@ -1418,12 +1417,12 @@ impl Server {
                 None
             }
         };
-        block_on(async {internal.clients_to_disconnect_sender
-            .send((
+        internal.clients_to_disconnect_sender
+            .try_send((
                 client.addr.clone(),
                 (ClientDisconnectReason::ManualDisconnect, context),
             ))
-            .await.unwrap()});
+            .unwrap();
     }
 
     /// The messages of this addr will be ignored.
@@ -1533,11 +1532,10 @@ impl Server {
         client: &ConnectedClient,
         packet_serialized: SerializedPacket,
     ) {
-        block_on(async {
         client
             .packets_to_send_sender
-            .send(Some(packet_serialized))
-            .await.unwrap()});
+            .try_send(Some(packet_serialized))
+            .unwrap();
     }
 
     /// TODO:
