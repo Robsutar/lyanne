@@ -209,7 +209,7 @@ struct ConnectedClientMessaging {
 
 /// Properties of a client that is connected to the server.
 ///
-/// Intended to be used inside `ServerAsync` with [`Arc`].
+/// Intended to be used inside [`ServerInternal`] with [`Arc`].
 pub struct ConnectedClient {
     /// Sender for receiving bytes.
     receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
