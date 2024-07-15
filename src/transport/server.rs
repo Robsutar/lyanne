@@ -1394,7 +1394,6 @@ impl Server {
     pub fn refuse(
         &self,
         addr: SocketAddr,
-        _addr_to_auth: AddrToAuth,
         message: SerializedPacketList,
     ) {
         let internal = &self.internal;
