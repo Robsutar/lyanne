@@ -25,7 +25,7 @@ struct ClientConnecting {
 
 #[derive(Component)]
 struct ClientConnected {
-    client: Client,
+    client: Option<Client>,
 }
 
 fn main() {
@@ -105,7 +105,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
             match connect {
                 Ok(connect_result) => {
                     let client_connected = ClientConnected {
-                        client: connect_result.client,
+                        client: Some(connect_result.client),
                     };
                     info!(
                         "Client connected, first message size: {:?}",
@@ -124,7 +124,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
 
 fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
     for client_connected in query.iter_mut() {
-        let client = &client_connected.client;
+        let client = &client_connected.client.as_ref().unwrap();
         let tick = client.tick_start();
         match tick {
             ClientTickResult::ReceivedMessage(message) => {
@@ -134,16 +134,15 @@ fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
                         let message = format!("Random str: {:?}", rng.gen::<i32>());
                         if rng.gen_bool(0.5) {
                             let packet = FooPacket { message };
-                            client_connected.client.send_packet(&packet);
+                            client.send_packet(&packet);
                         } else {
                             let packet = BarPacket { message };
-                            client_connected.client.send_packet(&packet);
+                            client.send_packet(&packet);
                         }
                     }
                 }
                 for deserialized_packet in message.packets {
-                    client_connected
-                        .client
+                    client
                         .packet_registry()
                         .bevy_client_call(&mut commands, deserialized_packet);
                 }
