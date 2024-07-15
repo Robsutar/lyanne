@@ -81,7 +81,7 @@ impl Default for ClientProperties {
 
 /// Result when calling [`Client::connect`]
 pub struct ConnectResult {
-    pub client: Arc<Client>,
+    pub client: Client,
     pub message: DeserializedMessage,
 }
 
@@ -229,7 +229,7 @@ impl ConnectedServer {
     }
 
     async fn create_receiving_bytes_handler(
-        client: Weak<Client>,
+        client: Weak<ClientInternal>,
         messaging: Arc<RwLock<ConnectedServerMessaging>>,
         receiving_bytes_receiver: crossbeam_channel::Receiver<Vec<u8>>,
     ) {
@@ -385,7 +385,7 @@ impl ConnectedServer {
     }
 
     async fn create_packets_to_send_handler(
-        client: Weak<Client>,
+        client: Weak<ClientInternal>,
         messaging: Weak<RwLock<ConnectedServerMessaging>>,
         packets_to_send_receiver: crossbeam_channel::Receiver<Option<SerializedPacket>>,
         mut next_message_id: MessagePartId,
@@ -443,7 +443,7 @@ impl ConnectedServer {
     }
 
     async fn create_message_part_confirmation_handler(
-        client: Weak<Client>,
+        client: Weak<ClientInternal>,
         message_part_confirmation_receiver: crossbeam_channel::Receiver<(
             MessageId,
             Option<MessagePartId>,
@@ -482,7 +482,7 @@ impl ConnectedServer {
     }
 
     async fn create_shared_socket_bytes_send_handler(
-        client: Weak<Client>,
+        client: Weak<ClientInternal>,
         shared_socket_bytes_send_receiver: crossbeam_channel::Receiver<Arc<Vec<u8>>>,
     ) {
         while let Ok(bytes) = shared_socket_bytes_send_receiver.recv() {
@@ -500,8 +500,8 @@ impl ConnectedServer {
 
 /// Properties of the client.
 ///
-/// Intended to be used with `Arc`.
-pub struct Client {
+/// Intended to be used inside [`Client`].
+struct ClientInternal {
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
     /// The runtime for asynchronous operations.
@@ -514,13 +514,13 @@ pub struct Client {
     tick_state: RwLock<ClientTickState>,
 
     /// The registry for packets.
-    pub packet_registry: Arc<PacketRegistry>,
+    packet_registry: Arc<PacketRegistry>,
     /// Properties related to messaging.
-    pub messaging_properties: Arc<MessagingProperties>,
+    messaging_properties: Arc<MessagingProperties>,
     /// Properties related to read handlers.
-    pub read_handler_properties: Arc<ReadHandlerProperties>,
+    read_handler_properties: Arc<ReadHandlerProperties>,
     /// Properties for the internal client management.
-    pub client_properties: Arc<ClientProperties>,
+    client_properties: Arc<ClientProperties>,
 
     /// Connected server.
     connected_server: ConnectedServer,
@@ -537,6 +537,136 @@ pub struct Client {
     /// If equals to [`Option::None`], the client was disconnected.
     /// If inner [`Option::Some`] equals to [`Option::None`], the disconnect reason was taken.
     disconnect_reason: RwLock<Option<Option<ServerDisconnectReason>>>,
+}
+
+impl ClientInternal {
+    fn create_async_task<F>(self: &Arc<Self>, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let _ = self
+            .tasks_keeper_sender
+            .send(Arc::clone(&self.runtime).spawn(future));
+    }
+
+    fn create_async_tasks_keeper(
+        runtime: Arc<Runtime>,
+        tasks_keeper_receiver: crossbeam_channel::Receiver<tokio::task::JoinHandle<()>>,
+    ) -> JoinHandle<()> {
+        runtime.spawn(async move {
+            while let Ok(handle) = tasks_keeper_receiver.recv() {
+                handle.await.unwrap();
+            }
+        })
+    }
+
+    fn try_check_read_handler(self: &Arc<Self>) {
+        if let Ok(mut active_count) = self.read_handler_properties.active_count.try_write() {
+            if *active_count < self.read_handler_properties.target_surplus_size - 1 {
+                *active_count += 1;
+                let downgraded_server = Arc::downgrade(&self);
+                self.create_async_task(async move {
+                    ClientInternal::create_read_handler(downgraded_server).await;
+                });
+            }
+        }
+    }
+
+    async fn create_read_handler(weak_client: Weak<ClientInternal>) {
+        let mut was_used = false;
+        loop {
+            if let Some(client) = weak_client.upgrade() {
+                if *client.read_handler_properties.active_count.write().unwrap()
+                    > client.read_handler_properties.target_surplus_size + 1
+                {
+                    let mut surplus_count =
+                        client.read_handler_properties.active_count.write().unwrap();
+                    if !was_used {
+                        *surplus_count -= 1;
+                    }
+                    break;
+                } else {
+                    let read_timeout = client.read_handler_properties.timeout;
+                    let socket = Arc::clone(&client.socket);
+                    drop(client);
+                    let pre_read_next_bytes_result =
+                        ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
+                    if let Some(client) = weak_client.upgrade() {
+                        match pre_read_next_bytes_result {
+                            Ok(result) => {
+                                if !was_used {
+                                    was_used = true;
+                                    let mut surplus_count = client
+                                        .read_handler_properties
+                                        .active_count
+                                        .write()
+                                        .unwrap();
+                                    *surplus_count -= 1;
+                                }
+
+                                //TODO: use this
+                                let read_result = client.read_next_bytes(result).await;
+                            }
+                            Err(_) => {
+                                if was_used {
+                                    was_used = false;
+                                    let mut surplus_count = client
+                                        .read_handler_properties
+                                        .active_count
+                                        .write()
+                                        .unwrap();
+                                    *surplus_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    async fn pre_read_next_bytes(
+        socket: &Arc<UdpSocket>,
+        read_timeout: Duration,
+    ) -> io::Result<Vec<u8>> {
+        let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, tokio::time::error::Elapsed> =
+            timeout(read_timeout, async move {
+                let mut buf = [0u8; 1024];
+                let len = socket.recv(&mut buf).await?;
+                Ok(buf[..len].to_vec())
+            })
+            .await;
+
+        match pre_read_next_bytes_result {
+            Ok(result) => match result {
+                Ok(result) => Ok(result),
+                Err(e) => Err(e),
+            },
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("Timeout of {:?}", read_timeout),
+            )),
+        }
+    }
+
+    async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
+        let mut messaging = self.connected_server.messaging.write().unwrap();
+        // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
+        messaging.tick_bytes_len += bytes.len() + 8 + 20;
+        if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
+            ReadServerBytesResult::ServerMaxTickByteLenOverflow
+        } else {
+            let _ = self.connected_server.receiving_bytes_sender.send(bytes);
+            ReadServerBytesResult::ServerReceivedBytes
+        }
+    }
+}
+
+/// Connected client.
+pub struct Client {
+    internal: Arc<ClientInternal>
 }
 
 impl Client {
@@ -629,229 +759,6 @@ impl Client {
         }
     }
 
-    /// Client periodic tick start.
-    ///
-    /// This function call rate should be at least a little bit higher than server tick ratio.
-    ///
-    /// It handles:
-    /// - Server sent packets
-    /// - General client cyclic management
-    ///
-    /// # Panics
-    /// If [`Client::tick_after_message`] call is pending.
-    pub fn tick_start(self: &Arc<Self>) -> ClientTickResult {
-        {
-            let tick_state = self.tick_state.read().unwrap();
-            if *tick_state != ClientTickState::TickStartPending {
-                panic!(
-                    "Invalid client tick state, next pending is {:?}",
-                    tick_state
-                );
-            }
-        }
-
-        if Client::is_disconnected(&self) {
-            return ClientTickResult::Disconnected;
-        }
-
-        if let Ok((reason, context)) = self.reason_to_disconnect_receiver.try_recv() {
-            //TODO: use context
-            *self.disconnect_reason.write().unwrap() = Some(Some(reason));
-            return ClientTickResult::Disconnected;
-        }
-
-        let now = Instant::now();
-
-        let connected_server = &self.connected_server;
-        if let Ok(mut messaging) = connected_server.messaging.try_write() {
-            *connected_server.last_messaging_write.write().unwrap() = now;
-            *connected_server.average_latency.write().unwrap() =
-                messaging.latency_monitor.average_value();
-
-            let average_packet_loss_rtt = messaging.average_packet_loss_rtt;
-            let mut messages_to_resend: Vec<Arc<Vec<u8>>> = Vec::new();
-
-            for (sent_instant, pending_part_id_map) in messaging.pending_confirmation.values_mut() {
-                if now - *sent_instant > self.messaging_properties.timeout_interpretation {
-                    *self.disconnect_reason.write().unwrap() = Some(Some(
-                        ServerDisconnectReason::PendingMessageConfirmationTimeout,
-                    ));
-                    return ClientTickResult::Disconnected;
-                }
-                for sent_part in pending_part_id_map.values_mut() {
-                    if now - sent_part.last_sent_time > average_packet_loss_rtt {
-                        sent_part.last_sent_time = now;
-                        messages_to_resend.push(Arc::clone(&sent_part.finished_bytes));
-                    }
-                }
-            }
-
-            for finished_bytes in messages_to_resend {
-                messaging
-                    .shared_socket_bytes_send_sender
-                    .send(finished_bytes)
-                    .unwrap();
-            }
-
-            if !messaging.received_messages.is_empty() {
-                let message = messaging.received_messages.remove(0);
-                {
-                    let mut tick_state = self.tick_state.write().unwrap();
-                    *tick_state = ClientTickState::TickAfterMessagePending;
-                }
-
-                messaging.tick_bytes_len = 0;
-
-                self.try_check_read_handler();
-
-                return ClientTickResult::ReceivedMessage(message);
-            } else if now - messaging.last_received_message_instant
-                >= self.messaging_properties.timeout_interpretation
-            {
-                *self.disconnect_reason.write().unwrap() =
-                    Some(Some(ServerDisconnectReason::MessageReceiveTimeout));
-                return ClientTickResult::Disconnected;
-            } else {
-                return ClientTickResult::PendingMessage;
-            }
-        } else if now - *connected_server.last_messaging_write.read().unwrap()
-            >= self.messaging_properties.timeout_interpretation
-        {
-            *self.disconnect_reason.write().unwrap() =
-                Some(Some(ServerDisconnectReason::WriteUnlockTimeout));
-            return ClientTickResult::Disconnected;
-        } else {
-            return ClientTickResult::WriteLocked;
-        }
-    }
-
-    /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::tick`]
-    ///
-    /// It handles:
-    /// - Unification of packages to be sent to server.
-    ///
-    /// # Panics
-    /// If is not called after [`Client::tick_start`]
-    pub fn tick_after_message(self: &Arc<Self>) {
-        {
-            let mut tick_state = self.tick_state.write().unwrap();
-            if *tick_state != ClientTickState::TickAfterMessagePending {
-                panic!(
-                    "Invalid server tick state, next pending is {:?}",
-                    tick_state
-                );
-            } else {
-                *tick_state = ClientTickState::TickStartPending;
-            }
-        }
-
-        let tick_packet_serialized = self
-            .packet_registry
-            .serialize(&ClientTickEndPacket)
-            .unwrap();
-
-        let connected_server = &self.connected_server;
-        self.send_packet_serialized(tick_packet_serialized.clone());
-        connected_server.packets_to_send_sender.send(None).unwrap();
-    }
-
-    /// Serializes, then store the packet to be sent to the server after the next received server tick.
-    ///
-    /// # Parameters
-    ///
-    /// * `packet` - packet to be serialized and sent.
-    ///
-    /// # Panics
-    ///
-    /// If the packet serialization fails
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// let client: Arc<Client> = ...;
-    /// let packet = FooPacket {
-    ///     message: "Hey ya!".to_owned(),
-    /// };
-    /// client.send_packet(&packet);
-    /// ```
-    pub fn send_packet<P: Packet>(&self, packet: &P) {
-        let serialized = self
-            .packet_registry
-            .serialize(packet)
-            .expect("Failed to serialize packet.");
-        self.send_packet_serialized(serialized);
-    }
-    /// Store the packet to be sent to the client after the next server tick.
-    ///
-    /// # Parameters
-    ///
-    /// * `client` - `ConnectedClient` to which the packet will be sent.
-    /// * `packet` - packet to be sent.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// let client: Arc<Client> = ...;
-    /// let packet = FooPacket {
-    ///     message: "Hey ya!".to_owned(),
-    /// };
-    /// let packet_serialized = client.packet_registry.serialize(&packet).expect("Failed to serialize packet.");
-    /// client.send_packet_serialized(&packet_serialized);
-    /// ```
-    pub fn send_packet_serialized(&self, packet_serialized: SerializedPacket) {
-        self.connected_server
-            .packets_to_send_sender
-            .send(Some(packet_serialized))
-            .unwrap();
-    }
-
-    /// # Returns
-    /// If the [`Client::tick_start`] returned [`ClientTickResult::Disconnected`] some time.
-    pub fn is_disconnected(&self) -> bool {
-        let disconnect_reason = self.disconnect_reason.read().unwrap();
-        disconnect_reason.is_some()
-    }
-
-    /// # Returns
-    /// - `None` if the client was not disconnected.
-    /// - `None` if the client was disconnected, but the reason was taken by another call of this function.
-    /// - `Some` if the client was disconnected, and take the reason.
-    pub fn take_disconnect_reason(&self) -> Option<ServerDisconnectReason> {
-        let mut disconnect_reason = self.disconnect_reason.write().unwrap();
-        if let Some(ref mut is_disconnected) = *disconnect_reason {
-            if let Some(reason_was_not_taken) = is_disconnected.take() {
-                // Disconnected, and the reason will be taken.
-                Some(reason_was_not_taken)
-            } else {
-                // Disconnected, but the reason was taken.
-                None
-            }
-        } else {
-            // Was not disconnected.
-            None
-        }
-    }
-
-    fn create_async_task<F>(self: &Arc<Self>, future: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        let _ = self
-            .tasks_keeper_sender
-            .send(Arc::clone(&self.runtime).spawn(future));
-    }
-
-    fn create_async_tasks_keeper(
-        runtime: Arc<Runtime>,
-        tasks_keeper_receiver: crossbeam_channel::Receiver<tokio::task::JoinHandle<()>>,
-    ) -> JoinHandle<()> {
-        runtime.spawn(async move {
-            while let Ok(handle) = tasks_keeper_receiver.recv() {
-                handle.await.unwrap();
-            }
-        })
-    }
-
     /// Just to reduce [`Client::connect`] nesting.
     async fn connect_public_key_send_match_arm(
         socket: Arc<UdpSocket>,
@@ -916,34 +823,38 @@ impl Client {
 
         let runtime_clone = Arc::clone(&runtime);
 
-        let client = Arc::new(Client {
-            socket: Arc::clone(&socket),
-            runtime,
-            tasks_keeper_handle: Client::create_async_tasks_keeper(
-                runtime_clone,
-                tasks_keeper_receiver,
-            ),
-            tasks_keeper_sender,
-            tick_state: RwLock::new(ClientTickState::TickStartPending),
-            packet_registry: packet_registry.clone(),
-            messaging_properties: Arc::clone(&messaging_properties),
-            read_handler_properties: Arc::clone(&read_handler_properties),
-            client_properties: Arc::clone(&client_properties),
-            connected_server,
-            reason_to_disconnect_sender,
-            reason_to_disconnect_receiver,
-            disconnect_reason: RwLock::new(None),
-        });
+        let client = Client {
+            internal: Arc::new(ClientInternal {
+                socket: Arc::clone(&socket),
+                runtime,
+                tasks_keeper_handle: ClientInternal::create_async_tasks_keeper(
+                    runtime_clone,
+                    tasks_keeper_receiver,
+                ),
+                tasks_keeper_sender,
+                tick_state: RwLock::new(ClientTickState::TickStartPending),
+                packet_registry: packet_registry.clone(),
+                messaging_properties: Arc::clone(&messaging_properties),
+                read_handler_properties: Arc::clone(&read_handler_properties),
+                client_properties: Arc::clone(&client_properties),
+                connected_server,
+                reason_to_disconnect_sender,
+                reason_to_disconnect_receiver,
+                disconnect_reason: RwLock::new(None),
+            })
+        };
+
+        let internal = &client.internal;
 
         let tick_packet_serialized = packet_registry.serialize(&ClientTickEndPacket).unwrap();
 
-        let connected_server = &client.connected_server;
+        let connected_server = &internal.connected_server;
         client.send_packet_serialized(tick_packet_serialized.clone());
         connected_server.packets_to_send_sender.send(None).unwrap();
 
-        let client_downgraded = Arc::downgrade(&client);
+        let client_downgraded = Arc::downgrade(&internal);
         let messaging_clone = Arc::clone(&messaging);
-        client.create_async_task(async move {
+        internal.create_async_task(async move {
             ConnectedServer::create_receiving_bytes_handler(
                 client_downgraded,
                 messaging_clone,
@@ -952,10 +863,10 @@ impl Client {
             .await;
         });
 
-        let client_downgraded = Arc::downgrade(&client);
+        let client_downgraded = Arc::downgrade(&internal);
         let messaging_downgraded = Arc::downgrade(&messaging);
-        let initial_next_message_part_id = client.messaging_properties.initial_next_message_part_id;
-        client.create_async_task(async move {
+        let initial_next_message_part_id = internal.messaging_properties.initial_next_message_part_id;
+        internal.create_async_task(async move {
             ConnectedServer::create_packets_to_send_handler(
                 client_downgraded,
                 messaging_downgraded,
@@ -965,8 +876,8 @@ impl Client {
             .await;
         });
 
-        let client_downgraded = Arc::downgrade(&client);
-        client.create_async_task(async move {
+        let client_downgraded = Arc::downgrade(&internal);
+        internal.create_async_task(async move {
             ConnectedServer::create_message_part_confirmation_handler(
                 client_downgraded,
                 message_part_confirmation_receiver,
@@ -974,8 +885,8 @@ impl Client {
             .await;
         });
 
-        let client_downgraded = Arc::downgrade(&client);
-        client.create_async_task(async move {
+        let client_downgraded = Arc::downgrade(&internal);
+        internal.create_async_task(async move {
             ConnectedServer::create_shared_socket_bytes_send_handler(
                 client_downgraded,
                 shared_socket_bytes_send_receiver,
@@ -989,16 +900,16 @@ impl Client {
 
             let read_timeout = client_properties.auth_packet_loss_interpretation;
             let pre_read_next_bytes_result =
-                Client::pre_read_next_bytes(&socket, read_timeout).await;
+                ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
 
             match pre_read_next_bytes_result {
                 Ok(result) => {
                     //TODO: use this
-                    let read_result = client.read_next_bytes(result).await;
+                    let read_result = internal.read_next_bytes(result).await;
 
                     match client.tick_start() {
                         ClientTickResult::ReceivedMessage(message) => {
-                            client.try_check_read_handler();
+                            internal.try_check_read_handler();
                             client.tick_after_message();
                             return Ok(ConnectResult { client, message });
                         }
@@ -1020,106 +931,233 @@ impl Client {
         }
     }
 
-    fn try_check_read_handler(self: &Arc<Self>) {
-        if let Ok(mut active_count) = self.read_handler_properties.active_count.try_write() {
-            if *active_count < self.read_handler_properties.target_surplus_size - 1 {
-                *active_count += 1;
-                let downgraded_server = Arc::downgrade(&self);
-                self.create_async_task(async move {
-                    Client::create_read_handler(downgraded_server).await;
-                });
-            }
-        }
+    /// Packet Registry getter.
+    pub fn packet_registry(&self) -> &PacketRegistry {
+        &self.internal.packet_registry
     }
 
-    async fn create_read_handler(weak_client: Weak<Client>) {
-        let mut was_used = false;
-        loop {
-            if let Some(client) = weak_client.upgrade() {
-                if *client.read_handler_properties.active_count.write().unwrap()
-                    > client.read_handler_properties.target_surplus_size + 1
-                {
-                    let mut surplus_count =
-                        client.read_handler_properties.active_count.write().unwrap();
-                    if !was_used {
-                        *surplus_count -= 1;
-                    }
-                    break;
-                } else {
-                    let read_timeout = client.read_handler_properties.timeout;
-                    let socket = Arc::clone(&client.socket);
-                    drop(client);
-                    let pre_read_next_bytes_result =
-                        Client::pre_read_next_bytes(&socket, read_timeout).await;
-                    if let Some(client) = weak_client.upgrade() {
-                        match pre_read_next_bytes_result {
-                            Ok(result) => {
-                                if !was_used {
-                                    was_used = true;
-                                    let mut surplus_count = client
-                                        .read_handler_properties
-                                        .active_count
-                                        .write()
-                                        .unwrap();
-                                    *surplus_count -= 1;
-                                }
+    /// Messaging Properties getter.
+    pub fn messaging_properties(&self) -> &MessagingProperties {
+        &self.internal.messaging_properties
+    }
 
-                                //TODO: use this
-                                let read_result = client.read_next_bytes(result).await;
-                            }
-                            Err(_) => {
-                                if was_used {
-                                    was_used = false;
-                                    let mut surplus_count = client
-                                        .read_handler_properties
-                                        .active_count
-                                        .write()
-                                        .unwrap();
-                                    *surplus_count += 1;
-                                }
-                            }
-                        }
+    /// Read Handler Properties getter.
+    pub fn read_handler_properties(&self) -> &ReadHandlerProperties {
+        &self.internal.read_handler_properties
+    }
+
+    /// Client Properties getter.
+    pub fn client_properties(&self) -> &ClientProperties {
+        &self.internal.client_properties
+    }
+
+
+    /// Client periodic tick start.
+    ///
+    /// This function call rate should be at least a little bit higher than server tick ratio.
+    ///
+    /// It handles:
+    /// - Server sent packets
+    /// - General client cyclic management
+    ///
+    /// # Panics
+    /// If [`Client::tick_after_message`] call is pending.
+    pub fn tick_start(&self) -> ClientTickResult {
+        let internal = &self.internal;
+        {
+            let tick_state = internal.tick_state.read().unwrap();
+            if *tick_state != ClientTickState::TickStartPending {
+                panic!(
+                    "Invalid client tick state, next pending is {:?}",
+                    tick_state
+                );
+            }
+        }
+
+        if self.is_disconnected() {
+            return ClientTickResult::Disconnected;
+        }
+
+        if let Ok((reason, context)) = internal.reason_to_disconnect_receiver.try_recv() {
+            //TODO: use context
+            *internal.disconnect_reason.write().unwrap() = Some(Some(reason));
+            return ClientTickResult::Disconnected;
+        }
+
+        let now = Instant::now();
+
+        let connected_server = &internal.connected_server;
+        if let Ok(mut messaging) = connected_server.messaging.try_write() {
+            *connected_server.last_messaging_write.write().unwrap() = now;
+            *connected_server.average_latency.write().unwrap() =
+                messaging.latency_monitor.average_value();
+
+            let average_packet_loss_rtt = messaging.average_packet_loss_rtt;
+            let mut messages_to_resend: Vec<Arc<Vec<u8>>> = Vec::new();
+
+            for (sent_instant, pending_part_id_map) in messaging.pending_confirmation.values_mut() {
+                if now - *sent_instant > internal.messaging_properties.timeout_interpretation {
+                    *internal.disconnect_reason.write().unwrap() = Some(Some(
+                        ServerDisconnectReason::PendingMessageConfirmationTimeout,
+                    ));
+                    return ClientTickResult::Disconnected;
+                }
+                for sent_part in pending_part_id_map.values_mut() {
+                    if now - sent_part.last_sent_time > average_packet_loss_rtt {
+                        sent_part.last_sent_time = now;
+                        messages_to_resend.push(Arc::clone(&sent_part.finished_bytes));
                     }
                 }
+            }
+
+            for finished_bytes in messages_to_resend {
+                messaging
+                    .shared_socket_bytes_send_sender
+                    .send(finished_bytes)
+                    .unwrap();
+            }
+
+            if !messaging.received_messages.is_empty() {
+                let message = messaging.received_messages.remove(0);
+                {
+                    let mut tick_state = internal.tick_state.write().unwrap();
+                    *tick_state = ClientTickState::TickAfterMessagePending;
+                }
+
+                messaging.tick_bytes_len = 0;
+
+                internal.try_check_read_handler();
+
+                return ClientTickResult::ReceivedMessage(message);
+            } else if now - messaging.last_received_message_instant
+                >= internal.messaging_properties.timeout_interpretation
+            {
+                *internal.disconnect_reason.write().unwrap() =
+                    Some(Some(ServerDisconnectReason::MessageReceiveTimeout));
+                return ClientTickResult::Disconnected;
             } else {
-                break;
+                return ClientTickResult::PendingMessage;
+            }
+        } else if now - *connected_server.last_messaging_write.read().unwrap()
+            >= internal.messaging_properties.timeout_interpretation
+        {
+            *internal.disconnect_reason.write().unwrap() =
+                Some(Some(ServerDisconnectReason::WriteUnlockTimeout));
+            return ClientTickResult::Disconnected;
+        } else {
+            return ClientTickResult::WriteLocked;
+        }
+    }
+
+    /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::tick`]
+    ///
+    /// It handles:
+    /// - Unification of packages to be sent to server.
+    ///
+    /// # Panics
+    /// If is not called after [`Client::tick_start`]
+    pub fn tick_after_message(&self) {
+        let internal = &self.internal;
+        {
+            let mut tick_state = internal.tick_state.write().unwrap();
+            if *tick_state != ClientTickState::TickAfterMessagePending {
+                panic!(
+                    "Invalid server tick state, next pending is {:?}",
+                    tick_state
+                );
+            } else {
+                *tick_state = ClientTickState::TickStartPending;
             }
         }
+
+        let tick_packet_serialized = internal
+            .packet_registry
+            .serialize(&ClientTickEndPacket)
+            .unwrap();
+
+        let connected_server = &internal.connected_server;
+        self.send_packet_serialized(tick_packet_serialized.clone());
+        connected_server.packets_to_send_sender.send(None).unwrap();
     }
 
-    async fn pre_read_next_bytes(
-        socket: &Arc<UdpSocket>,
-        read_timeout: Duration,
-    ) -> io::Result<Vec<u8>> {
-        let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, tokio::time::error::Elapsed> =
-            timeout(read_timeout, async move {
-                let mut buf = [0u8; 1024];
-                let len = socket.recv(&mut buf).await?;
-                Ok(buf[..len].to_vec())
-            })
-            .await;
-
-        match pre_read_next_bytes_result {
-            Ok(result) => match result {
-                Ok(result) => Ok(result),
-                Err(e) => Err(e),
-            },
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                format!("Timeout of {:?}", read_timeout),
-            )),
-        }
+    /// Serializes, then store the packet to be sent to the server after the next received server tick.
+    ///
+    /// # Parameters
+    ///
+    /// * `packet` - packet to be serialized and sent.
+    ///
+    /// # Panics
+    ///
+    /// If the packet serialization fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let client: Arc<Client> = ...;
+    /// let packet = FooPacket {
+    ///     message: "Hey ya!".to_owned(),
+    /// };
+    /// client.send_packet(&packet);
+    /// ```
+    pub fn send_packet<P: Packet>(&self, packet: &P) {
+        let internal = &self.internal;
+        let serialized = internal
+            .packet_registry
+            .serialize(packet)
+            .expect("Failed to serialize packet.");
+        self.send_packet_serialized(serialized);
+    }
+    /// Store the packet to be sent to the client after the next server tick.
+    ///
+    /// # Parameters
+    ///
+    /// * `client` - `ConnectedClient` to which the packet will be sent.
+    /// * `packet` - packet to be sent.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let client: Arc<Client> = ...;
+    /// let packet = FooPacket {
+    ///     message: "Hey ya!".to_owned(),
+    /// };
+    /// let packet_serialized = client.packet_registry.serialize(&packet).expect("Failed to serialize packet.");
+    /// client.send_packet_serialized(&packet_serialized);
+    /// ```
+    pub fn send_packet_serialized(&self, packet_serialized: SerializedPacket) {
+        let internal = &self.internal;
+        internal.connected_server
+            .packets_to_send_sender
+            .send(Some(packet_serialized))
+            .unwrap();
     }
 
-    async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
-        let mut messaging = self.connected_server.messaging.write().unwrap();
-        // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
-        messaging.tick_bytes_len += bytes.len() + 8 + 20;
-        if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
-            ReadServerBytesResult::ServerMaxTickByteLenOverflow
+    /// # Returns
+    /// If the [`Client::tick_start`] returned [`ClientTickResult::Disconnected`] some time.
+    pub fn is_disconnected(&self) -> bool {
+        let internal = &self.internal;
+        let disconnect_reason = internal.disconnect_reason.read().unwrap();
+        disconnect_reason.is_some()
+    }
+
+    /// # Returns
+    /// - `None` if the client was not disconnected.
+    /// - `None` if the client was disconnected, but the reason was taken by another call of this function.
+    /// - `Some` if the client was disconnected, and take the reason.
+    pub fn take_disconnect_reason(&self) -> Option<ServerDisconnectReason> {
+        let internal = &self.internal;
+        let mut disconnect_reason = internal.disconnect_reason.write().unwrap();
+        if let Some(ref mut is_disconnected) = *disconnect_reason {
+            if let Some(reason_was_not_taken) = is_disconnected.take() {
+                // Disconnected, and the reason will be taken.
+                Some(reason_was_not_taken)
+            } else {
+                // Disconnected, but the reason was taken.
+                None
+            }
         } else {
-            let _ = self.connected_server.receiving_bytes_sender.send(bytes);
-            ReadServerBytesResult::ServerReceivedBytes
+            // Was not disconnected.
+            None
         }
     }
 }
