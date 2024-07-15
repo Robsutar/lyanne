@@ -614,7 +614,293 @@ impl ServerInternal {
         self.ignored_ips.remove(ip);
         self.temporary_ignored_ips.remove(ip);
     }
+
+    fn create_async_task<F>(self: &Arc<Self>, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let _ = self
+            .tasks_keeper_sender
+            .send(Arc::clone(&self.runtime).spawn(future));
+    }
+
+    fn create_async_tasks_keeper(
+        runtime: Arc<Runtime>,
+        tasks_keeper_receiver: crossbeam_channel::Receiver<tokio::task::JoinHandle<()>>,
+    ) -> JoinHandle<()> {
+        runtime.spawn(async move {
+            while let Ok(handle) = tasks_keeper_receiver.recv() {
+                handle.await.unwrap();
+            }
+        })
+    }
+
+    async fn create_pending_auth_resend_handler(
+        server: Weak<ServerInternal>,
+        pending_auth_resend_receiver: crossbeam_channel::Receiver<SocketAddr>,
+    ) {
+        while let Ok(addr) = pending_auth_resend_receiver.recv() {
+            if let Some(server) = server.upgrade() {
+                if let Some(mut context) = server.pending_auth.get_mut(&addr) {
+                    context.last_sent_time = Some(Instant::now());
+                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
+                }
+            }
+        }
+    }
+
+    async fn create_pending_rejection_confirm_resend_handler(
+        server: Weak<ServerInternal>,
+        pending_rejection_confirm_resend_receiver: crossbeam_channel::Receiver<SocketAddr>,
+    ) {
+        while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv() {
+            if let Some(server) = server.upgrade() {
+                if let Some(mut context) = server.pending_rejection_confirm.get_mut(&addr) {
+                    context.last_sent_time = Some(Instant::now());
+                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
+                }
+            }
+        }
+    }
+
+    async fn create_ignored_addrs_asking_reason_handler(
+        server: Weak<ServerInternal>,
+        ignored_addrs_asking_reason_read_signal_receiver: crossbeam_channel::Receiver<()>,
+    ) {
+        while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv() {
+            if let Some(server) = server.upgrade() {
+                for addr in server.ignored_addrs_asking_reason.iter() {
+                    let ip = addr.key();
+                    if let Some(reason) = server.ignored_ips.get(&ip) {
+                        if let Some(finished_bytes) = &reason.finished_bytes {
+                            let _ = server.socket.send_to(&finished_bytes, addr.clone()).await;
+                        }
+                    }
+                }
+                server.ignored_addrs_asking_reason.clear();
+            }
+        }
+    }
+
+    async fn create_rejections_to_confirm_handler(
+        server: Weak<ServerInternal>,
+        rejections_to_confirm_read_signal_receiver: crossbeam_channel::Receiver<()>,
+    ) {
+        let bytes = &vec![MessageChannel::REJECTION_CONFIRM];
+        while let Ok(_) = rejections_to_confirm_read_signal_receiver.recv() {
+            if let Some(server) = server.upgrade() {
+                for addr in server.rejections_to_confirm.iter() {
+                    let _ = server.socket.send_to(bytes, addr.clone()).await;
+                }
+                server.rejections_to_confirm.clear();
+            }
+        }
+    }
+
+    fn try_check_read_handler(self: &Arc<Self>) {
+        if let Ok(mut active_count) = self.read_handler_properties.active_count.try_write() {
+            if *active_count < self.read_handler_properties.target_surplus_size - 1 {
+                *active_count += 1;
+                let downgraded_server = Arc::downgrade(&self);
+                self.create_async_task(async move {
+                    ServerInternal::create_read_handler(downgraded_server).await;
+                });
+            }
+        }
+    }
+
+    async fn create_read_handler(weak_server: Weak<ServerInternal>) {
+        let mut was_used = false;
+        loop {
+            if let Some(server) = weak_server.upgrade() {
+                if *server.read_handler_properties.active_count.write().unwrap()
+                    > server.read_handler_properties.target_surplus_size + 1
+                {
+                    let mut surplus_count =
+                        server.read_handler_properties.active_count.write().unwrap();
+                    if !was_used {
+                        *surplus_count -= 1;
+                    }
+                    break;
+                } else {
+                    let read_timeout = server.read_handler_properties.timeout;
+                    let socket = Arc::clone(&server.socket);
+                    drop(server);
+
+                    let pre_read_next_bytes_result =
+                        ServerInternal::pre_read_next_bytes(&socket, read_timeout).await;
+
+                    if let Some(server) = weak_server.upgrade() {
+                        match pre_read_next_bytes_result {
+                            Ok(result) => {
+                                if !was_used {
+                                    was_used = true;
+                                    let mut surplus_count = server
+                                        .read_handler_properties
+                                        .active_count
+                                        .write()
+                                        .unwrap();
+                                    *surplus_count -= 1;
+                                }
+
+                                //TODO: use this
+                                let read_result = server.read_next_bytes(result).await;
+                            }
+                            Err(_) => {
+                                if was_used {
+                                    was_used = false;
+                                    let mut surplus_count = server
+                                        .read_handler_properties
+                                        .active_count
+                                        .write()
+                                        .unwrap();
+                                    *surplus_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    async fn pre_read_next_bytes(
+        socket: &Arc<UdpSocket>,
+        read_timeout: Duration,
+    ) -> io::Result<(SocketAddr, Vec<u8>)> {
+        let pre_read_next_bytes_result: Result<
+            io::Result<(SocketAddr, Vec<u8>)>,
+            tokio::time::error::Elapsed,
+        > = timeout(read_timeout, async move {
+            let mut buf = [0u8; 1024];
+            let (len, addr) = socket.recv_from(&mut buf).await?;
+            Ok((addr, buf[..len].to_vec()))
+        })
+        .await;
+
+        match pre_read_next_bytes_result {
+            Ok(result) => match result {
+                Ok(result) => Ok(result),
+                Err(e) => Err(e),
+            },
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("Timeout of {:?}", read_timeout),
+            )),
+        }
+    }
+
+    async fn read_next_bytes(
+        self: &Arc<Self>,
+        tuple: (SocketAddr, Vec<u8>),
+    ) -> ReadClientBytesResult {
+        let (addr, bytes) = tuple;
+        let ip = match addr {
+            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+        };
+        if bytes.len() < MESSAGE_CHANNEL_SIZE {
+            ReadClientBytesResult::InsufficientBytesLen
+        } else if self.pending_rejection_confirm.contains_key(&addr) {
+            if bytes[0] == MessageChannel::REJECTION_CONFIRM {
+                self.pending_rejection_confirm.remove(&addr);
+                ReadClientBytesResult::DoneDisconnectConfirm
+            } else {
+                ReadClientBytesResult::PendingDisconnectConfirm
+            }
+        } else if let Some(reason) = self.ignored_ips.get(&ip) {
+            if reason.finished_bytes.is_some()
+                && self.ignored_addrs_asking_reason.len()
+                    < self.server_properties.max_ignored_addrs_asking_reason
+            {
+                self.ignored_addrs_asking_reason.insert(ip, addr);
+            }
+            ReadClientBytesResult::IgnoredClientHandle
+        } else if let Some(client) = self.connected_clients.get(&addr) {
+            let mut messaging = client.messaging.write().unwrap();
+            // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
+            messaging.tick_bytes_len += bytes.len() + 8 + 20;
+            if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
+                ReadClientBytesResult::ClientMaxTickByteLenOverflow
+            } else {
+                let _ = client.receiving_bytes_sender.send(bytes);
+                ReadClientBytesResult::ClientReceivedBytes
+            }
+        } else if self.addrs_in_auth.contains(&addr) {
+            ReadClientBytesResult::AddrInAuth
+        } else if let Some((_, pending_auth_send)) = self.pending_auth.remove(&addr) {
+            if bytes[0] == MessageChannel::AUTH_MESSAGE {
+                // 32 for public key, and 1 for the smallest possible serialized packet
+                if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
+                    ReadClientBytesResult::AuthInsufficientBytesLen
+                } else {
+                    let packets =
+                        DeserializedPacket::deserialize_list(&bytes[33..], &self.packet_registry);
+                    if let Ok(message) = packets {
+                        let mut sent_server_public_key: [u8; 32] = [0; 32];
+                        sent_server_public_key.copy_from_slice(&bytes[1..33]);
+                        let sent_server_public_key = PublicKey::from(sent_server_public_key);
+
+                        if sent_server_public_key != pending_auth_send.server_public_key {
+                            ReadClientBytesResult::InvalidPendingAuth
+                        } else {
+                            self.addrs_in_auth.insert(addr.clone());
+                            let _ = self.clients_to_auth_sender.send((
+                                addr,
+                                AddrToAuth {
+                                    shared_key: pending_auth_send
+                                        .server_private_key
+                                        .diffie_hellman(&pending_auth_send.addr_public_key),
+                                    message,
+                                },
+                            ));
+                            ReadClientBytesResult::DonePendingAuth
+                        }
+                    } else {
+                        self.ignore_ip_temporary(
+                            ip,
+                            IgnoredAddrReason::without_reason(),
+                            Instant::now() + Duration::from_secs(5),
+                        );
+                        ReadClientBytesResult::InvalidPendingAuth
+                    }
+                }
+            } else {
+                self.pending_auth.insert(addr, pending_auth_send);
+                ReadClientBytesResult::PendingPendingAuth
+            }
+        } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
+            let mut client_public_key: [u8; 32] = [0; 32];
+            client_public_key.copy_from_slice(&bytes[1..33]);
+            let client_public_key = PublicKey::from(client_public_key);
+            let server_private_key = EphemeralSecret::random_from_rng(OsRng);
+            let server_public_key = PublicKey::from(&server_private_key);
+            let server_public_key_bytes = server_public_key.as_bytes();
+
+            let mut finished_bytes = Vec::with_capacity(1 + server_public_key_bytes.len());
+            finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
+            finished_bytes.extend_from_slice(server_public_key_bytes);
+
+            self.pending_auth.insert(
+                addr,
+                AddrPendingAuthSend {
+                    received_time: Instant::now(),
+                    last_sent_time: None,
+                    server_private_key,
+                    server_public_key,
+                    addr_public_key: client_public_key,
+                    finished_bytes,
+                },
+            );
+            ReadClientBytesResult::PublicKeySend
+        } else {
+            ReadClientBytesResult::InvalidPublicKeySend
+        }
+    }
 }
+    
 
 /// Connected server.
 pub struct Server {
@@ -1263,292 +1549,5 @@ impl Server {
     /// TODO:
     pub fn disconnect_detached(&self) {
         todo!();
-    }
-}
-
-impl ServerInternal {
-    fn create_async_task<F>(self: &Arc<Self>, future: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        let _ = self
-            .tasks_keeper_sender
-            .send(Arc::clone(&self.runtime).spawn(future));
-    }
-
-    fn create_async_tasks_keeper(
-        runtime: Arc<Runtime>,
-        tasks_keeper_receiver: crossbeam_channel::Receiver<tokio::task::JoinHandle<()>>,
-    ) -> JoinHandle<()> {
-        runtime.spawn(async move {
-            while let Ok(handle) = tasks_keeper_receiver.recv() {
-                handle.await.unwrap();
-            }
-        })
-    }
-
-    async fn create_pending_auth_resend_handler(
-        server: Weak<ServerInternal>,
-        pending_auth_resend_receiver: crossbeam_channel::Receiver<SocketAddr>,
-    ) {
-        while let Ok(addr) = pending_auth_resend_receiver.recv() {
-            if let Some(server) = server.upgrade() {
-                if let Some(mut context) = server.pending_auth.get_mut(&addr) {
-                    context.last_sent_time = Some(Instant::now());
-                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
-                }
-            }
-        }
-    }
-
-    async fn create_pending_rejection_confirm_resend_handler(
-        server: Weak<ServerInternal>,
-        pending_rejection_confirm_resend_receiver: crossbeam_channel::Receiver<SocketAddr>,
-    ) {
-        while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv() {
-            if let Some(server) = server.upgrade() {
-                if let Some(mut context) = server.pending_rejection_confirm.get_mut(&addr) {
-                    context.last_sent_time = Some(Instant::now());
-                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
-                }
-            }
-        }
-    }
-
-    async fn create_ignored_addrs_asking_reason_handler(
-        server: Weak<ServerInternal>,
-        ignored_addrs_asking_reason_read_signal_receiver: crossbeam_channel::Receiver<()>,
-    ) {
-        while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv() {
-            if let Some(server) = server.upgrade() {
-                for addr in server.ignored_addrs_asking_reason.iter() {
-                    let ip = addr.key();
-                    if let Some(reason) = server.ignored_ips.get(&ip) {
-                        if let Some(finished_bytes) = &reason.finished_bytes {
-                            let _ = server.socket.send_to(&finished_bytes, addr.clone()).await;
-                        }
-                    }
-                }
-                server.ignored_addrs_asking_reason.clear();
-            }
-        }
-    }
-
-    async fn create_rejections_to_confirm_handler(
-        server: Weak<ServerInternal>,
-        rejections_to_confirm_read_signal_receiver: crossbeam_channel::Receiver<()>,
-    ) {
-        let bytes = &vec![MessageChannel::REJECTION_CONFIRM];
-        while let Ok(_) = rejections_to_confirm_read_signal_receiver.recv() {
-            if let Some(server) = server.upgrade() {
-                for addr in server.rejections_to_confirm.iter() {
-                    let _ = server.socket.send_to(bytes, addr.clone()).await;
-                }
-                server.rejections_to_confirm.clear();
-            }
-        }
-    }
-
-    fn try_check_read_handler(self: &Arc<Self>) {
-        if let Ok(mut active_count) = self.read_handler_properties.active_count.try_write() {
-            if *active_count < self.read_handler_properties.target_surplus_size - 1 {
-                *active_count += 1;
-                let downgraded_server = Arc::downgrade(&self);
-                self.create_async_task(async move {
-                    ServerInternal::create_read_handler(downgraded_server).await;
-                });
-            }
-        }
-    }
-
-    async fn create_read_handler(weak_server: Weak<ServerInternal>) {
-        let mut was_used = false;
-        loop {
-            if let Some(server) = weak_server.upgrade() {
-                if *server.read_handler_properties.active_count.write().unwrap()
-                    > server.read_handler_properties.target_surplus_size + 1
-                {
-                    let mut surplus_count =
-                        server.read_handler_properties.active_count.write().unwrap();
-                    if !was_used {
-                        *surplus_count -= 1;
-                    }
-                    break;
-                } else {
-                    let read_timeout = server.read_handler_properties.timeout;
-                    let socket = Arc::clone(&server.socket);
-                    drop(server);
-
-                    let pre_read_next_bytes_result =
-                        ServerInternal::pre_read_next_bytes(&socket, read_timeout).await;
-
-                    if let Some(server) = weak_server.upgrade() {
-                        match pre_read_next_bytes_result {
-                            Ok(result) => {
-                                if !was_used {
-                                    was_used = true;
-                                    let mut surplus_count = server
-                                        .read_handler_properties
-                                        .active_count
-                                        .write()
-                                        .unwrap();
-                                    *surplus_count -= 1;
-                                }
-
-                                //TODO: use this
-                                let read_result = server.read_next_bytes(result).await;
-                            }
-                            Err(_) => {
-                                if was_used {
-                                    was_used = false;
-                                    let mut surplus_count = server
-                                        .read_handler_properties
-                                        .active_count
-                                        .write()
-                                        .unwrap();
-                                    *surplus_count += 1;
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-    }
-
-    async fn pre_read_next_bytes(
-        socket: &Arc<UdpSocket>,
-        read_timeout: Duration,
-    ) -> io::Result<(SocketAddr, Vec<u8>)> {
-        let pre_read_next_bytes_result: Result<
-            io::Result<(SocketAddr, Vec<u8>)>,
-            tokio::time::error::Elapsed,
-        > = timeout(read_timeout, async move {
-            let mut buf = [0u8; 1024];
-            let (len, addr) = socket.recv_from(&mut buf).await?;
-            Ok((addr, buf[..len].to_vec()))
-        })
-        .await;
-
-        match pre_read_next_bytes_result {
-            Ok(result) => match result {
-                Ok(result) => Ok(result),
-                Err(e) => Err(e),
-            },
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                format!("Timeout of {:?}", read_timeout),
-            )),
-        }
-    }
-
-    async fn read_next_bytes(
-        self: &Arc<Self>,
-        tuple: (SocketAddr, Vec<u8>),
-    ) -> ReadClientBytesResult {
-        let (addr, bytes) = tuple;
-        let ip = match addr {
-            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-        };
-        if bytes.len() < MESSAGE_CHANNEL_SIZE {
-            ReadClientBytesResult::InsufficientBytesLen
-        } else if self.pending_rejection_confirm.contains_key(&addr) {
-            if bytes[0] == MessageChannel::REJECTION_CONFIRM {
-                self.pending_rejection_confirm.remove(&addr);
-                ReadClientBytesResult::DoneDisconnectConfirm
-            } else {
-                ReadClientBytesResult::PendingDisconnectConfirm
-            }
-        } else if let Some(reason) = self.ignored_ips.get(&ip) {
-            if reason.finished_bytes.is_some()
-                && self.ignored_addrs_asking_reason.len()
-                    < self.server_properties.max_ignored_addrs_asking_reason
-            {
-                self.ignored_addrs_asking_reason.insert(ip, addr);
-            }
-            ReadClientBytesResult::IgnoredClientHandle
-        } else if let Some(client) = self.connected_clients.get(&addr) {
-            let mut messaging = client.messaging.write().unwrap();
-            // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
-            messaging.tick_bytes_len += bytes.len() + 8 + 20;
-            if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
-                ReadClientBytesResult::ClientMaxTickByteLenOverflow
-            } else {
-                let _ = client.receiving_bytes_sender.send(bytes);
-                ReadClientBytesResult::ClientReceivedBytes
-            }
-        } else if self.addrs_in_auth.contains(&addr) {
-            ReadClientBytesResult::AddrInAuth
-        } else if let Some((_, pending_auth_send)) = self.pending_auth.remove(&addr) {
-            if bytes[0] == MessageChannel::AUTH_MESSAGE {
-                // 32 for public key, and 1 for the smallest possible serialized packet
-                if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
-                    ReadClientBytesResult::AuthInsufficientBytesLen
-                } else {
-                    let packets =
-                        DeserializedPacket::deserialize_list(&bytes[33..], &self.packet_registry);
-                    if let Ok(message) = packets {
-                        let mut sent_server_public_key: [u8; 32] = [0; 32];
-                        sent_server_public_key.copy_from_slice(&bytes[1..33]);
-                        let sent_server_public_key = PublicKey::from(sent_server_public_key);
-
-                        if sent_server_public_key != pending_auth_send.server_public_key {
-                            ReadClientBytesResult::InvalidPendingAuth
-                        } else {
-                            self.addrs_in_auth.insert(addr.clone());
-                            let _ = self.clients_to_auth_sender.send((
-                                addr,
-                                AddrToAuth {
-                                    shared_key: pending_auth_send
-                                        .server_private_key
-                                        .diffie_hellman(&pending_auth_send.addr_public_key),
-                                    message,
-                                },
-                            ));
-                            ReadClientBytesResult::DonePendingAuth
-                        }
-                    } else {
-                        self.ignore_ip_temporary(
-                            ip,
-                            IgnoredAddrReason::without_reason(),
-                            Instant::now() + Duration::from_secs(5),
-                        );
-                        ReadClientBytesResult::InvalidPendingAuth
-                    }
-                }
-            } else {
-                self.pending_auth.insert(addr, pending_auth_send);
-                ReadClientBytesResult::PendingPendingAuth
-            }
-        } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
-            let mut client_public_key: [u8; 32] = [0; 32];
-            client_public_key.copy_from_slice(&bytes[1..33]);
-            let client_public_key = PublicKey::from(client_public_key);
-            let server_private_key = EphemeralSecret::random_from_rng(OsRng);
-            let server_public_key = PublicKey::from(&server_private_key);
-            let server_public_key_bytes = server_public_key.as_bytes();
-
-            let mut finished_bytes = Vec::with_capacity(1 + server_public_key_bytes.len());
-            finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
-            finished_bytes.extend_from_slice(server_public_key_bytes);
-
-            self.pending_auth.insert(
-                addr,
-                AddrPendingAuthSend {
-                    received_time: Instant::now(),
-                    last_sent_time: None,
-                    server_private_key,
-                    server_public_key,
-                    addr_public_key: client_public_key,
-                    finished_bytes,
-                },
-            );
-            ReadClientBytesResult::PublicKeySend
-        } else {
-            ReadClientBytesResult::InvalidPublicKeySend
-        }
     }
 }
