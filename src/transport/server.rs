@@ -211,6 +211,12 @@ struct ConnectedClientMessaging {
 ///
 /// Intended to be used inside `ServerAsync` with [`Arc`].
 pub struct ConnectedClient {
+    /// Sender for receiving bytes.
+    receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
+    
+    /// Sender for packets to be sent.
+    packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
+
     /// The socket address of the connected client.
     addr: SocketAddr,
 
@@ -220,12 +226,6 @@ pub struct ConnectedClient {
     last_messaging_write: RwLock<Instant>,
     /// The average latency duration.
     average_latency: RwLock<Duration>,
-
-    /// Sender for receiving bytes.
-    receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
-
-    /// Sender for packets to be sent.
-    packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
 }
 
 impl ConnectedClient {
@@ -1282,14 +1282,16 @@ impl Server {
             let now = Instant::now();
 
             let messaging = Mutex::new(ConnectedClientMessaging {
+                message_part_confirmation_sender,
+                shared_socket_bytes_send_sender,
                 cipher: ChaChaPoly1305::new(Key::from_slice(addr_to_auth.shared_key.as_bytes())),
                 pending_confirmation: BTreeMap::new(),
                 incoming_message: MessagePartMap::new(
                     internal.messaging_properties.initial_next_message_part_id,
                 ),
                 tick_bytes_len: 0,
-                received_messages: Vec::new(),
                 last_received_message_instant: now,
+                received_messages: Vec::new(),
                 packet_loss_rtt_calculator: RttCalculator::new(
                     internal.messaging_properties.initial_latency,
                 ),
@@ -1298,8 +1300,6 @@ impl Server {
                     internal.messaging_properties.initial_latency,
                     16,
                 ),
-                message_part_confirmation_sender,
-                shared_socket_bytes_send_sender,
             });
 
             let client = Arc::new(ConnectedClient {

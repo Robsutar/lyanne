@@ -158,6 +158,11 @@ pub enum ClientTickResult {
 ///
 /// Intended to be used with [`Arc`] and [`RwLock`]
 pub struct ConnectedServerMessaging {
+    /// Sender for message part confirmations.
+    message_part_confirmation_sender: crossbeam_channel::Sender<(MessageId, Option<MessagePartId>)>,
+    /// Sender for shared socket bytes.
+    shared_socket_bytes_send_sender: crossbeam_channel::Sender<Arc<Vec<u8>>>,
+
     /// The cipher used for encrypting and decrypting messages.
     cipher: ChaCha20Poly1305,
 
@@ -181,17 +186,18 @@ pub struct ConnectedServerMessaging {
     average_packet_loss_rtt: Duration,
     /// Monitor for latency duration.
     latency_monitor: DurationMonitor,
-
-    /// Sender for message part confirmations.
-    message_part_confirmation_sender: crossbeam_channel::Sender<(MessageId, Option<MessagePartId>)>,
-    /// Sender for shared socket bytes.
-    shared_socket_bytes_send_sender: crossbeam_channel::Sender<Arc<Vec<u8>>>,
 }
 
 /// Properties of a server that is connected to the server.
 ///
 /// Intended to be used inside `ServerAsync`.
 pub struct ConnectedServer {
+    /// Sender for receiving bytes.
+    receiving_bytes_sender: crossbeam_channel::Sender<Vec<u8>>,
+
+    /// Sender for packets to be sent.
+    packets_to_send_sender: crossbeam_channel::Sender<Option<SerializedPacket>>,
+
     /// The socket address of the connected server.
     addr: SocketAddr,
 
@@ -201,12 +207,6 @@ pub struct ConnectedServer {
     last_messaging_write: RwLock<Instant>,
     /// The average latency duration.
     average_latency: RwLock<Duration>,
-
-    /// Sender for receiving bytes.
-    receiving_bytes_sender: crossbeam_channel::Sender<Vec<u8>>,
-
-    /// Sender for packets to be sent.
-    packets_to_send_sender: crossbeam_channel::Sender<Option<SerializedPacket>>,
 }
 
 impl ConnectedServer {
@@ -502,14 +502,22 @@ impl ConnectedServer {
 ///
 /// Intended to be used inside [`Client`].
 struct ClientInternal {
+    /// Sender for make the spawned tasks keep alive.
+    tasks_keeper_sender: crossbeam_channel::Sender<JoinHandle<()>>,
+    /// Sender for addresses to be disconnected.
+    reason_to_disconnect_sender:
+        crossbeam_channel::Sender<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
+    /// Receiver for addresses to be disconnected.
+    reason_to_disconnect_receiver:
+        crossbeam_channel::Receiver<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
+
+    /// Task handle of the receiver.
+    tasks_keeper_handle: JoinHandle<()>,
+    
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
     /// The runtime for asynchronous operations.
     runtime: Arc<Runtime>,
-    /// Task handle of the receiver.
-    tasks_keeper_handle: JoinHandle<()>,
-    /// Sender for make the spawned tasks keep alive.
-    tasks_keeper_sender: crossbeam_channel::Sender<JoinHandle<()>>,
     /// Actual state of client periodic tick flow.
     tick_state: RwLock<ClientTickState>,
 
@@ -524,13 +532,6 @@ struct ClientInternal {
 
     /// Connected server.
     connected_server: ConnectedServer,
-
-    /// Sender for addresses to be disconnected.
-    reason_to_disconnect_sender:
-        crossbeam_channel::Sender<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
-    /// Receiver for addresses to be disconnected.
-    reason_to_disconnect_receiver:
-        crossbeam_channel::Receiver<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
 
     /// Reason that caused the connection finish.
     ///
@@ -813,33 +814,33 @@ impl Client {
         }));
 
         let connected_server = ConnectedServer {
+            receiving_bytes_sender,
+            packets_to_send_sender,
             addr: remote_addr,
             messaging: Arc::clone(&messaging),
             last_messaging_write: RwLock::new(Instant::now()),
             average_latency: RwLock::new(messaging_properties.initial_latency),
-            receiving_bytes_sender,
-            packets_to_send_sender,
         };
 
         let runtime_clone = Arc::clone(&runtime);
 
         let client = Client {
             internal: Arc::new(ClientInternal {
-                socket: Arc::clone(&socket),
-                runtime,
+                tasks_keeper_sender,
+                reason_to_disconnect_sender,
+                reason_to_disconnect_receiver,
                 tasks_keeper_handle: ClientInternal::create_async_tasks_keeper(
                     runtime_clone,
                     tasks_keeper_receiver,
                 ),
-                tasks_keeper_sender,
+                socket: Arc::clone(&socket),
+                runtime,
                 tick_state: RwLock::new(ClientTickState::TickStartPending),
                 packet_registry: packet_registry.clone(),
                 messaging_properties: Arc::clone(&messaging_properties),
                 read_handler_properties: Arc::clone(&read_handler_properties),
                 client_properties: Arc::clone(&client_properties),
                 connected_server,
-                reason_to_disconnect_sender,
-                reason_to_disconnect_receiver,
                 disconnect_reason: RwLock::new(None),
             })
         };
