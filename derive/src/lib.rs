@@ -9,6 +9,16 @@ fn impl_packet_trait(ast: DeriveInput) -> TokenStream {
 
     quote::quote! {
         impl Packet for #ident {
+            fn serialize_packet(&self) -> io::Result<Vec<u8>> {
+                bincode::serialize(self)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+            }
+
+            fn deserialize_packet(bytes: &[u8]) -> io::Result<Self> {
+                bincode::deserialize(bytes)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+            }
+
             #[cfg(all(feature = "bevy", feature = "client"))]
             fn run_client_schedule(world: &mut World) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>{
                 world.try_run_schedule(#client_schedule_ident)

@@ -21,6 +21,9 @@ pub type PacketToDowncast = dyn Any + Send + Sync;
 pub trait Packet:
     Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any + Send + Sync
 {
+    fn serialize_packet(&self) -> io::Result<Vec<u8>>;
+    fn deserialize_packet(bytes: &[u8]) -> io::Result<Self>;
+
     #[cfg(all(feature = "bevy", feature = "client"))]
     fn run_client_schedule(
         world: &mut World,
@@ -96,8 +99,7 @@ impl PacketRegistry {
                 return io::Error::new(io::ErrorKind::InvalidData, "Type mismatch");
             })?;
 
-            let bytes = bincode::serialize(packet)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let bytes = P::serialize_packet(packet)?;
 
             let packet_length = bytes.len() as PacketId;
             let packet_length_bytes = packet_length.to_le_bytes();
@@ -114,8 +116,7 @@ impl PacketRegistry {
         };
 
         let deserialize = |bytes: &[u8]| -> io::Result<Box<PacketToDowncast>> {
-            let packet: P = bincode::deserialize(&bytes)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let packet = P::deserialize_packet(&bytes)?;
             Ok(Box::new(packet))
         };
 
