@@ -122,40 +122,61 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
     }
 }
 
-fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
-    for client_connected in query.iter_mut() {
+fn client_tick(mut commands: Commands, mut query: Query<(Entity, &mut ClientConnected)>) {
+    for (entity, mut client_connected) in query.iter_mut() {
+        if true {
+            let mut rng = thread_rng();
+            if rng.gen_bool(0.01) {
+                info!("Disconnecting from the server");
+
+                let client = client_connected.client.take().unwrap();
+                commands.entity(entity).despawn();
+
+                let message = Some(SerializedPacketList::create(vec![client
+                    .packet_registry()
+                    .serialize(&BarPacket {
+                        message: "We finished here...".to_owned(),
+                    })
+                    .unwrap()]));
+                let handle = client.disconnect(message);
+
+                future::block_on(handle).unwrap();
+                panic!("Client disconnected itself");
+            }
+        } else {
             let client = client_connected.client.as_ref().unwrap();
-        let tick = client.tick_start();
-        match tick {
-            ClientTickResult::ReceivedMessage(message) => {
-                if true {
-                    let mut rng = thread_rng();
-                    for _ in 0..(rng.gen_range(500..501) / 2) {
-                        let message = format!("Random str: {:?}", rng.gen::<i32>());
-                        if rng.gen_bool(0.5) {
-                            let packet = FooPacket { message };
-                            client.send_packet(&packet);
-                        } else {
-                            let packet = BarPacket { message };
-                            client.send_packet(&packet);
+            let tick = client.tick_start();
+            match tick {
+                ClientTickResult::ReceivedMessage(message) => {
+                    if true {
+                        let mut rng = thread_rng();
+                        for _ in 0..(rng.gen_range(500..501) / 2) {
+                            let message = format!("Random str: {:?}", rng.gen::<i32>());
+                            if rng.gen_bool(0.5) {
+                                let packet = FooPacket { message };
+                                client.send_packet(&packet);
+                            } else {
+                                let packet = BarPacket { message };
+                                client.send_packet(&packet);
+                            }
                         }
                     }
-                }
-                for deserialized_packet in message.packets {
-                    client
-                        .packet_registry()
-                        .bevy_client_call(&mut commands, deserialized_packet);
-                }
+                    for deserialized_packet in message.packets {
+                        client
+                            .packet_registry()
+                            .bevy_client_call(&mut commands, deserialized_packet);
+                    }
 
-                client.tick_after_message();
+                    client.tick_after_message();
+                }
+                ClientTickResult::Disconnected => {
+                    panic!(
+                        "client disconnected: {:?}",
+                        client.take_disconnect_reason().unwrap()
+                    )
+                }
+                _ => (),
             }
-            ClientTickResult::Disconnected => {
-                panic!(
-                    "client disconnected: {:?}",
-                    client.take_disconnect_reason().unwrap()
-                )
-            }
-            _ => (),
         }
     }
 }
