@@ -148,6 +148,19 @@ pub enum ClientTickResult {
     WriteLocked,
 }
 
+#[derive(Debug)]
+pub enum ClientDisconnectState {
+    Confirmed,
+    ConfirmationTimeout,
+    WithoutReason,
+    Error(io::Error)
+}
+
+pub struct ClientDisconnectResult {
+    _runtime: Arc<Runtime>,
+    pub state: ClientDisconnectState
+}
+
 /// Messaging fields of [`ConnectedServer`]
 ///
 /// Intended to be used with [`Mutex`].
@@ -1079,7 +1092,7 @@ impl Client {
     pub fn disconnect(
         self,
         message: Option<SerializedPacketList>,
-    ) -> JoinHandle<Arc<Runtime>> {
+    ) -> JoinHandle<ClientDisconnectResult> {
         let runtime_keeper = Arc::clone(&self.internal.runtime);
         Arc::clone(&self.internal.runtime).spawn(async move {
             let sent_time = Instant::now();
@@ -1102,31 +1115,43 @@ impl Client {
 
                 let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
                 
-                'l1: loop {
+                loop {
                     let now = Instant::now();
-                    if let Err(_) = socket.send(&context.finished_bytes).await {
-                        break 'l1;
+                    if let Err(e) = socket.send(&context.finished_bytes).await {
+                        return ClientDisconnectResult {
+                            _runtime: runtime_keeper,
+                            state: ClientDisconnectState::Error(e),
+                        };
                     }
                     
                     let pre_read_next_bytes_result =
                         ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
 
-                        match pre_read_next_bytes_result {
-                            Ok(result) => {
-                                if &result == rejection_confirm_bytes {
-                                    break 'l1;
-                                }
+                    match pre_read_next_bytes_result {
+                        Ok(result) => {
+                            if &result == rejection_confirm_bytes {
+                                return ClientDisconnectResult {
+                                    _runtime: runtime_keeper,
+                                    state: ClientDisconnectState::Confirmed,
+                                };
                             }
-                            Err(_) => {
-                                if now - sent_time > timeout_interpretation {
-                                    break 'l1;
-                                }
+                        }
+                        Err(_) => {
+                            if now - sent_time > timeout_interpretation {
+                                return ClientDisconnectResult {
+                                    _runtime: runtime_keeper,
+                                    state: ClientDisconnectState::ConfirmationTimeout,
+                                };
                             }
+                        }
                     }
                 }
+            } else {
+                ClientDisconnectResult {
+                    _runtime: runtime_keeper,
+                    state: ClientDisconnectState::WithoutReason,
+                }
             }
-
-            runtime_keeper
         })
     }
     
