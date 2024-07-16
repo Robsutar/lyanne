@@ -140,8 +140,8 @@ fn client_tick(mut commands: Commands, mut query: Query<(Entity, &mut ClientConn
                     .unwrap()]));
                 let handle = client.disconnect(message);
 
-                future::block_on(handle).unwrap();
-                panic!("Client disconnected itself");
+                let result = future::block_on(handle).unwrap();
+                panic!("Client disconnected itself: {:?}", result.state);
             }
         } else {
             let client = client_connected.client.as_ref().unwrap();
