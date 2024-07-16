@@ -124,7 +124,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
 
 fn client_tick(mut commands: Commands, mut query: Query<(Entity, &mut ClientConnected)>) {
     for (entity, mut client_connected) in query.iter_mut() {
-        if true {
+        if false {
             let mut rng = thread_rng();
             if rng.gen_bool(0.01) {
                 info!("Disconnecting from the server");
