@@ -192,7 +192,7 @@ fn server_tick(
                 }
 
                 for (addr, message) in clients_to_auth {
-                    if false {
+                    if true {
                         info!(
                             "authenticating client {:?}, message count: {:?}",
                             addr,
