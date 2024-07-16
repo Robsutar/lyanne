@@ -3,6 +3,11 @@ name = "bevy-ping-pong"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["client", "server"]
+client = ["lyanne/client"]
+server = ["lyanne/server"]
+
 [dependencies]
 bevy = "^0.13.0"
 lyanne = { path = "../../", features = ["bevy"] }
