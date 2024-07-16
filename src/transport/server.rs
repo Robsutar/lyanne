@@ -60,6 +60,8 @@ enum ReadClientBytesResult {
     PendingPendingAuth,
     /// The public key has been successfully sent.
     PublicKeySend,
+    /// Some client that was disconnected itself recently is resending the disconnect justification.
+    RecentClientDisconnectConfirm,
     /// The public key send operation is invalid.
     InvalidPublicKeySend,
 }
@@ -370,6 +372,7 @@ impl ConnectedClient {
                             } else if let Ok(message) =
                                 DeserializedPacket::deserialize_list(&bytes[1..], &server.packet_registry)
                             {
+                                server.recently_disconnected.insert(addr.clone(), Instant::now());
                                 server.rejections_to_confirm.insert(addr.clone());
                                 let _ = server
                                     .clients_to_disconnect_sender
@@ -593,6 +596,8 @@ struct ServerInternal {
     assigned_addrs_in_auth: RwLock<HashSet<SocketAddr>>,
     /// Map of pending authentication addresses.
     pending_auth: DashMap<SocketAddr, AddrPendingAuthSend>,
+    /// Map of clients that were recently disconnected itself.
+    recently_disconnected: DashMap<SocketAddr, Instant>,
 
     /// Map of pending rejection confirmations.
     pending_rejection_confirm: DashMap<SocketAddr, JustifiedRejectionContext>,
@@ -885,6 +890,13 @@ impl ServerInternal {
                 self.pending_auth.insert(addr, pending_auth_send);
                 ReadClientBytesResult::PendingPendingAuth
             }
+        } else if bytes[0] == MessageChannel::REJECTION_JUSTIFICATION {
+            if self.recently_disconnected.contains_key(&addr) {
+                self.rejections_to_confirm.insert(addr);
+                ReadClientBytesResult::RecentClientDisconnectConfirm
+            } else {
+                ReadClientBytesResult::InvalidPublicKeySend
+            }
         } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
             let mut client_public_key: [u8; 32] = [0; 32];
             client_public_key.copy_from_slice(&bytes[1..33]);
@@ -987,6 +999,7 @@ impl Server {
             addrs_in_auth: DashSet::new(),
             assigned_addrs_in_auth: RwLock::new(HashSet::new()),
             pending_auth: DashMap::new(),
+            recently_disconnected: DashMap::new(),
             pending_rejection_confirm: DashMap::new(),
         });
 
@@ -1105,6 +1118,10 @@ impl Server {
                 .try_send(context.key().clone())
                 .unwrap();
         }
+
+        internal.recently_disconnected.retain(|_, received_time| {
+            now - *received_time < internal.messaging_properties.timeout_interpretation
+        });
 
         internal.temporary_ignored_ips.retain(|addr, until_to| {
             if now < *until_to {
