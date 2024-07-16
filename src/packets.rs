@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub use lyanne_derive::Packet;
 
 pub type PacketId = u16;
+pub type PacketToDowncast = dyn Any + Send + Sync;
 
 pub trait Packet:
     Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any + Send + Sync
@@ -30,8 +31,6 @@ pub trait Packet:
         world: &mut World,
     ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
 }
-
-pub type PacketToDowncast = dyn Any + Send + Sync;
 
 #[cfg(all(feature = "bevy", feature = "client"))]
 #[derive(Resource)]
