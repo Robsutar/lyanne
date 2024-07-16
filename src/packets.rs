@@ -14,6 +14,9 @@ use bevy::ecs::world::World;
 use serde::{Deserialize, Serialize};
 
 pub use lyanne_derive::Packet;
+
+pub type PacketId = u16;
+
 pub trait Packet:
     Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any + Send + Sync
 {
@@ -43,9 +46,9 @@ pub struct ServerPacketResource<P: Packet> {
 }
 
 pub struct PacketRegistry {
-    packet_type_ids: HashMap<TypeId, u16>,
+    packet_type_ids: HashMap<TypeId, PacketId>,
     serde_map: HashMap<
-        u16,
+        PacketId,
         (
             // Serialize, uses a `Packet`, and serialize it into a SerializedPacket
             Box<dyn Fn(&PacketToDowncast) -> io::Result<SerializedPacket> + Send + Sync>,
@@ -55,11 +58,11 @@ pub struct PacketRegistry {
     >,
     #[cfg(all(feature = "bevy", feature = "client"))]
     bevy_client_caller_map:
-        HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
+        HashMap<PacketId, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
     #[cfg(all(feature = "bevy", feature = "server"))]
     bevy_server_caller_map:
-        HashMap<u16, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
-    last_id: u16,
+        HashMap<PacketId, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
+    last_id: PacketId,
 }
 
 impl PacketRegistry {
@@ -97,7 +100,7 @@ impl PacketRegistry {
             let bytes = bincode::serialize(packet)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-            let packet_length = bytes.len() as u16;
+            let packet_length = bytes.len() as PacketId;
             let packet_length_bytes = packet_length.to_le_bytes();
 
             let mut full_bytes: Vec<u8> = Vec::with_capacity(bytes.len() + 4);
@@ -220,7 +223,7 @@ impl PacketRegistry {
 }
 
 pub struct SerializedPacket {
-    pub(crate) packet_id: u16,
+    pub(crate) packet_id: PacketId,
     pub(crate) bytes: Vec<u8>,
 }
 
@@ -240,9 +243,9 @@ impl SerializedPacket {
             ));
         }
 
-        let packet_id = u16::from_le_bytes([buf[packet_buf_index], buf[packet_buf_index + 1]]);
-        let packet_length: u16 =
-            u16::from_le_bytes([buf[packet_buf_index + 2], buf[packet_buf_index + 3]]);
+        let packet_id = PacketId::from_le_bytes([buf[packet_buf_index], buf[packet_buf_index + 1]]);
+        let packet_length: PacketId =
+            PacketId::from_le_bytes([buf[packet_buf_index + 2], buf[packet_buf_index + 3]]);
 
         let packet_size: usize = packet_length.into();
         if buf.len() < 4 + packet_buf_index + packet_size {
@@ -265,7 +268,7 @@ impl SerializedPacket {
 
 #[derive(Debug)]
 pub struct DeserializedPacket {
-    packet_id: u16,
+    packet_id: PacketId,
     packet: Box<PacketToDowncast>,
 }
 
