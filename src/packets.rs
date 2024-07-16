@@ -36,6 +36,14 @@ pub trait Packet:
     ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
 }
 
+#[macro_export]
+macro_rules! add_essential_packets {
+    ($exit:expr) => {
+        $exit.add::<ClientTickEndPacket>();
+        $exit.add::<ServerTickEndPacket>();
+    };
+}
+
 #[cfg(all(feature = "bevy", feature = "client"))]
 #[derive(Resource)]
 pub struct ClientPacketResource<P: Packet> {
@@ -77,8 +85,7 @@ impl PacketRegistry {
             serde_map: HashMap::new(),
             last_id: 0,
         };
-        exit.add::<ClientTickEndPacket>();
-        exit.add::<ServerTickEndPacket>();
+        add_essential_packets!(exit);
         exit
     }
 

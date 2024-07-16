@@ -1,11 +1,14 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bevy::prelude::{Commands, World};
-use lyanne::packets::{
-    BarPacket, ClientPacketResource, ClientTickEndPacket, DeserializedPacket, FooPacket, Packet,
-    PacketId, PacketRegistry, PacketToDowncast, ServerPacketResource, ServerTickEndPacket,
+use lyanne::{
+    add_essential_packets,
+    packets::{
+        BarPacket, ClientPacketResource, ClientTickEndPacket, DeserializedPacket, FooPacket,
+        Packet, PacketId, PacketRegistry, PacketToDowncast, ServerPacketResource,
+        ServerTickEndPacket,
+    },
 };
-use serde::{Deserialize, Serialize};
 
 pub struct BevyPacketCaller {
     #[cfg(feature = "client")]
@@ -99,11 +102,7 @@ impl Default for PacketManagers {
             bevy_caller: BevyPacketCaller::new(),
         };
 
-        // Essentials
-        exit.add::<ClientTickEndPacket>();
-        exit.add::<ServerTickEndPacket>();
-
-        // Crate used
+        add_essential_packets!(exit);
         exit.add::<FooPacket>();
         exit.add::<BarPacket>();
 
