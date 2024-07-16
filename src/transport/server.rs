@@ -1521,7 +1521,7 @@ impl Server {
     /// # Examples
     ///
     /// ```no_run
-    /// let server: Arc<Server> = ...;
+    /// let server: &Server = ...;
     /// let addr: SocketAddr = ...;
     /// let client = server.get_connected_client(&addr).unwrap();
     /// let packet = FooPacket {
@@ -1548,7 +1548,7 @@ impl Server {
     /// # Examples
     ///
     /// ```no_run
-    /// let server: Arc<Server> = ...;
+    /// let server: &Server = ...;
     /// let addr: SocketAddr = ...;
     /// let client = server.get_connected_client(&addr).unwrap();
     /// let packet = FooPacket {

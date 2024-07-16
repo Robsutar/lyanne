@@ -1189,7 +1189,7 @@ impl Client {
     /// # Examples
     ///
     /// ```no_run
-    /// let client: Arc<Client> = ...;
+    /// let client: &Client = ...;
     /// let packet = FooPacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
@@ -1212,7 +1212,7 @@ impl Client {
     /// # Examples
     ///
     /// ```no_run
-    /// let client: Arc<Client> = ...;
+    /// let client: &Client = ...;
     /// let packet = FooPacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
