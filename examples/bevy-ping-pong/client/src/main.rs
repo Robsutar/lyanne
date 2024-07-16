@@ -6,6 +6,7 @@ use bevy::{
     prelude::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
+use bevy_ping_pong::{BevyPacketCaller, PacketManagers};
 use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
 use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectResult};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
@@ -20,12 +21,13 @@ use tokio::runtime::Runtime;
 
 #[derive(Component)]
 struct ClientConnecting {
-    task: Task<Result<ConnectResult, ConnectError>>,
+    task: Task<Result<(ConnectResult, BevyPacketCaller), ConnectError>>,
 }
 
 #[derive(Component)]
 struct ClientConnected {
     client: Option<Client>,
+    bevy_caller: BevyPacketCaller,
 }
 
 fn main() {
@@ -50,21 +52,21 @@ fn init(mut commands: Commands) {
     let runtime = Arc::new(Runtime::new().expect("Failed to create Tokio runtime"));
 
     let remote_addr = "127.0.0.1:8822".parse().unwrap();
-    let packet_registry = Arc::new(PacketRegistry::new());
+    let packet_managers = PacketManagers::default();
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
 
-    let authentication_packets = vec![packet_registry.serialize(&FooPacket {
+    let authentication_packets = vec![packet_managers.packet_registry.serialize(&FooPacket {
         message: "Auth me!!!".to_string(),
     })];
 
     let task = task_pool.spawn(async move {
         Arc::clone(&runtime)
             .spawn(async move {
-                Client::connect(
+                match Client::connect(
                     remote_addr,
-                    packet_registry,
+                    Arc::new(packet_managers.packet_registry),
                     messaging_properties,
                     read_handler_properties,
                     client_properties,
@@ -72,6 +74,10 @@ fn init(mut commands: Commands) {
                     SerializedPacketList::create(authentication_packets),
                 )
                 .await
+                {
+                    Ok(connect_result) => Ok((connect_result, packet_managers.bevy_caller)),
+                    Err(e) => Err(e),
+                }
             })
             .await
             .unwrap()
@@ -101,9 +107,10 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
             commands.entity(entity).despawn();
 
             match connect {
-                Ok(connect_result) => {
+                Ok((connect_result, bevy_caller)) => {
                     let client_connected = ClientConnected {
                         client: Some(connect_result.client),
+                        bevy_caller,
                     };
                     info!(
                         "Client connected, first message size: {:?}",
@@ -159,9 +166,9 @@ fn client_tick(mut commands: Commands, mut query: Query<(Entity, &mut ClientConn
                         }
                     }
                     for deserialized_packet in message.packets {
-                        client
-                            .packet_registry()
-                            .bevy_client_call(&mut commands, deserialized_packet);
+                        client_connected
+                            .bevy_caller
+                            .client_call(&mut commands, deserialized_packet);
                     }
 
                     client.tick_after_message();

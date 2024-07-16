@@ -7,6 +7,7 @@ use bevy::{
     prelude::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
+use bevy_ping_pong::{BevyPacketCaller, PacketManagers};
 use lyanne::packets::{BarPacketServerSchedule, SerializedPacketList, ServerPacketResource};
 use lyanne::transport::server::{BindResult, IgnoredAddrReason, ServerProperties};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
@@ -19,12 +20,13 @@ use tokio::runtime::Runtime;
 
 #[derive(Component)]
 struct ServerConnecting {
-    task: Task<Result<BindResult, io::Error>>,
+    task: Task<io::Result<(BindResult, BevyPacketCaller)>>,
 }
 
 #[derive(Component)]
 struct ServerConnected {
     server: Option<Server>,
+    bevy_caller: BevyPacketCaller,
     tick_timer: Timer,
 }
 
@@ -51,7 +53,7 @@ fn init(mut commands: Commands) {
     let runtime = Arc::new(Runtime::new().expect("Failed to create Tokio runtime"));
 
     let addr = "127.0.0.1:8822".parse().unwrap();
-    let packet_registry = Arc::new(PacketRegistry::new());
+    let packet_managers = PacketManagers::default();
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let server_properties = Arc::new(ServerProperties::default());
@@ -59,15 +61,16 @@ fn init(mut commands: Commands) {
     let task = task_pool.spawn(async move {
         Arc::clone(&runtime)
             .spawn(async move {
-                Server::bind(
+                let bind_result = Server::bind(
                     addr,
-                    packet_registry,
+                    Arc::new(packet_managers.packet_registry),
                     messaging_properties,
                     read_handler_properties,
                     server_properties,
                     runtime,
                 )
-                .await
+                .await?;
+                Ok((bind_result, packet_managers.bevy_caller))
             })
             .await
             .unwrap()
@@ -97,7 +100,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
             commands.entity(entity).despawn();
 
             match bind {
-                Ok(bind_result) => {
+                Ok((bind_result, bevy_caller)) => {
                     info!("Server bind");
 
                     if false {
@@ -114,6 +117,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
                     commands.spawn(ServerConnected {
                         server: Some(bind_result.server),
                         tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
+                        bevy_caller,
                     });
                 }
                 Err(err) => {
@@ -179,9 +183,9 @@ fn server_tick(
                 for (_, message_list) in clients_packets_to_process {
                     for message in message_list {
                         for deserialized_packet in message.packets {
-                            server
-                                .packet_registry()
-                                .bevy_server_call(&mut commands, deserialized_packet);
+                            server_connected
+                                .bevy_caller
+                                .server_call(&mut commands, deserialized_packet);
                         }
                     }
                 }
