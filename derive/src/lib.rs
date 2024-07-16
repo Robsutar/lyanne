@@ -9,14 +9,14 @@ fn impl_packet_trait(ast: DeriveInput) -> TokenStream {
 
     quote::quote! {
         impl Packet for #ident {
-            fn serialize_packet(&self) -> io::Result<Vec<u8>> {
+            fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
                 bincode::serialize(self)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
             }
 
-            fn deserialize_packet(bytes: &[u8]) -> io::Result<Self> {
+            fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
                 bincode::deserialize(bytes)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
             }
 
             #[cfg(all(feature = "bevy", feature = "client"))]
