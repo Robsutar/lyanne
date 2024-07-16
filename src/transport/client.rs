@@ -148,16 +148,23 @@ pub enum ClientTickResult {
     WriteLocked,
 }
 
+/// The disconnection state.
 #[derive(Debug)]
 pub enum ClientDisconnectState {
+    /// The server received the message, and confirmed the client disconnection.
     Confirmed,
+    /// The server did not respond in time.
     ConfirmationTimeout,
+    /// No disconnection message was sent to the server.
     WithoutReason,
+    /// Error sending/receiving the bytes of the server.
     Error(io::Error)
 }
 
+/// Result when calling [`Client::disconnect`].
 pub struct ClientDisconnectResult {
     _runtime: Arc<Runtime>,
+    /// The state of the disconnection.
     pub state: ClientDisconnectState
 }
 
@@ -1088,6 +1095,21 @@ impl Client {
         connected_server.packets_to_send_sender.try_send(None).unwrap();
     }
 
+    /// Disconnect the client from the server gracefully if there is some message.
+    /// 
+    /// # Examples
+    /// ```no_run
+    /// let client: Client = ...;
+    /// 
+    /// let message = Some(SerializedPacketList::create(vec![client
+    ///     .packet_registry()
+    ///     .serialize(&BarPacket {
+    ///         message: "We finished here...".to_owned(),
+    ///     })]));
+    /// 
+    /// let result = client.disconnect(message).await.unwrap();
+    /// println!("Client disconnected itself: {:?}", result.state);
+    /// ```
     pub fn disconnect(
         self,
         message: Option<SerializedPacketList>,
