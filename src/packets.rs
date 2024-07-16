@@ -13,6 +13,7 @@ use bevy::ecs::system::Resource;
 use bevy::ecs::world::World;
 use serde::{Deserialize, Serialize};
 
+pub extern crate lyanne_derive;
 pub use lyanne_derive::Packet;
 
 pub type PacketId = u16;
@@ -58,36 +59,30 @@ pub struct PacketRegistry {
             Box<dyn Fn(&[u8]) -> io::Result<Box<PacketToDowncast>> + Send + Sync>,
         ),
     >,
-    #[cfg(all(feature = "bevy", feature = "client"))]
-    bevy_client_caller_map:
-        HashMap<PacketId, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
-    #[cfg(all(feature = "bevy", feature = "server"))]
-    bevy_server_caller_map:
-        HashMap<PacketId, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
     last_id: PacketId,
 }
 
 impl PacketRegistry {
-    pub fn new() -> Self {
+    pub fn empty() -> Self {
+        Self {
+            packet_type_ids: HashMap::new(),
+            serde_map: HashMap::new(),
+            last_id: 0,
+        }
+    }
+
+    pub fn with_essential() -> Self {
         let mut exit = Self {
             packet_type_ids: HashMap::new(),
             serde_map: HashMap::new(),
             last_id: 0,
-            #[cfg(all(feature = "bevy", feature = "client"))]
-            bevy_client_caller_map: HashMap::new(),
-            #[cfg(all(feature = "bevy", feature = "server"))]
-            bevy_server_caller_map: HashMap::new(),
         };
-        exit.add::<ConfirmAuthenticationPacket>();
         exit.add::<ClientTickEndPacket>();
         exit.add::<ServerTickEndPacket>();
-        //TODO: remove these two
-        exit.add::<FooPacket>();
-        exit.add::<BarPacket>();
         exit
     }
 
-    pub fn add<P: Packet>(&mut self) {
+    pub fn add<P: Packet>(&mut self) -> PacketId {
         self.last_id += 1;
         let packet_id = self.last_id;
         let type_id = TypeId::of::<P>();
@@ -124,45 +119,7 @@ impl PacketRegistry {
         self.serde_map
             .insert(packet_id, (Box::new(serialize), Box::new(deserialize)));
 
-        #[cfg(all(feature = "bevy", feature = "client"))]
-        self.bevy_client_caller_map.insert(
-            packet_id,
-            Box::new(
-                |commands: &mut Commands, as_any: Box<PacketToDowncast>| -> () {
-                    let packet = *as_any.downcast::<P>().unwrap();
-                    commands.add(move |world: &mut World| {
-                        world.insert_resource(ClientPacketResource::<P> {
-                            packet: Some(packet),
-                        });
-                        if let Err(e) = P::run_client_schedule(world) {
-                            // TODO: remove this
-                            //println!("failed to run client schedule, but that should be ok {}", e);
-                        }
-                        world.remove_resource::<ClientPacketResource<P>>().unwrap();
-                    });
-                },
-            ),
-        );
-
-        #[cfg(all(feature = "bevy", feature = "server"))]
-        self.bevy_server_caller_map.insert(
-            packet_id,
-            Box::new(
-                |commands: &mut Commands, as_any: Box<PacketToDowncast>| -> () {
-                    let packet = *as_any.downcast::<P>().unwrap();
-                    commands.add(move |world: &mut World| {
-                        world.insert_resource(ServerPacketResource::<P> {
-                            packet: Some(packet),
-                        });
-                        if let Err(e) = P::run_server_schedule(world) {
-                            // TODO: remove this
-                            //println!("Failed to run server schedule, but that should be ok {}", e);
-                        }
-                        world.remove_resource::<ServerPacketResource<P>>().unwrap();
-                    });
-                },
-            ),
-        );
+        packet_id
     }
 
     pub fn try_serialize<P: Packet>(&self, packet: &P) -> io::Result<SerializedPacket> {
@@ -202,32 +159,6 @@ impl PacketRegistry {
                 "Packet id not found",
             ));
         }
-    }
-
-    #[cfg(all(feature = "bevy", feature = "server"))]
-    pub fn bevy_server_call(
-        &self,
-        commands: &mut Commands,
-        deserialized_packet: DeserializedPacket,
-    ) {
-        let call = self
-            .bevy_server_caller_map
-            .get(&deserialized_packet.packet_id)
-            .unwrap();
-        call(commands, deserialized_packet.packet);
-    }
-
-    #[cfg(all(feature = "bevy", feature = "client"))]
-    pub fn bevy_client_call(
-        &self,
-        commands: &mut Commands,
-        deserialized_packet: DeserializedPacket,
-    ) {
-        let call = self
-            .bevy_client_caller_map
-            .get(&deserialized_packet.packet_id)
-            .unwrap();
-        call(commands, deserialized_packet.packet);
     }
 }
 
@@ -277,8 +208,8 @@ impl SerializedPacket {
 
 #[derive(Debug)]
 pub struct DeserializedPacket {
-    packet_id: PacketId,
-    packet: Box<PacketToDowncast>,
+    pub packet_id: PacketId,
+    pub packet: Box<PacketToDowncast>,
 }
 
 impl DeserializedPacket {
@@ -345,8 +276,6 @@ impl SerializedPacketList {
         SerializedPacketList { bytes }
     }
 }
-#[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct ConfirmAuthenticationPacket;
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct ClientTickEndPacket;
