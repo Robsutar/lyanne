@@ -63,7 +63,7 @@ pub enum ServerDisconnectReason {
     /// Server was manually disconnected.
     ManualDisconnect,
     /// Server disconnected itself.
-    DisconnectRequest,
+    DisconnectRequest(Vec<DeserializedPacket>),
 }
 
 /// General properties for the client management.
@@ -346,17 +346,19 @@ impl ConnectedServer {
                             } else if let Ok(message) =
                                 DeserializedPacket::deserialize_list(&bytes[1..], &client.packet_registry)
                             {
-                                todo!();
-                                // client.rejections_to_confirm.insert(addr.clone());
-                                // let _ = client
-                                //     .clients_to_disconnect_sender
-                                //     .try_send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
-                                // break 'l1;
+                                {
+                                    let _ = client.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;
+                                }
+
+                                let _ = client
+                                    .reason_to_disconnect_sender
+                                    .try_send((ServerDisconnectReason::DisconnectRequest(message), None));
+                                break 'l1;
                             } else {
                                 let _ = client
-                                .reason_to_disconnect_sender
-                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
-                            break 'l1;
+                                    .reason_to_disconnect_sender
+                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                break 'l1;
                             }
                         }
                         MessageChannel::AUTH_MESSAGE => {
@@ -902,27 +904,27 @@ impl Client {
                 Ok(result) => {
                     //TODO: use this
                     let read_result = internal.read_next_bytes(result).await;
-
-                    match client.tick_start() {
-                        ClientTickResult::ReceivedMessage(message) => {
-                            internal.try_check_read_handler();
-                            client.tick_after_message();
-                            return Ok(ConnectResult { client, message });
-                        }
-                        ClientTickResult::PendingMessage => (),
-                        ClientTickResult::Disconnected => {
-                            return Err(ConnectError::Disconnected(
-                                client.take_disconnect_reason().unwrap(),
-                            ))
-                        }
-                        ClientTickResult::WriteLocked => (),
-                    }
                 }
                 Err(_) => {
                     if now - sent_time > messaging_properties.timeout_interpretation {
                         return Err(ConnectError::Timeout);
                     }
                 }
+            }
+
+            match client.tick_start() {
+                ClientTickResult::ReceivedMessage(message) => {
+                    internal.try_check_read_handler();
+                    client.tick_after_message();
+                    return Ok(ConnectResult { client, message });
+                }
+                ClientTickResult::PendingMessage => (),
+                ClientTickResult::Disconnected => {
+                    return Err(ConnectError::Disconnected(
+                        client.take_disconnect_reason().unwrap(),
+                    ))
+                }
+                ClientTickResult::WriteLocked => (),
             }
         }
     }
