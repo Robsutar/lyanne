@@ -180,6 +180,15 @@ impl PacketRegistry {
         }
     }
 
+    /// Serializes a packet.
+    ///
+    /// # Panics
+    /// If the packet is not in the registry, or the bytes serialization fails.
+    pub fn serialize<P: Packet>(&self, packet: &P) -> SerializedPacket {
+        self.try_serialize(packet)
+            .expect("Failed to serialize packet.")
+    }
+
     pub fn try_deserialize(
         &self,
         serialized_packet: &SerializedPacket,

@@ -855,7 +855,7 @@ impl Client {
 
         let internal = &client.internal;
 
-        let tick_packet_serialized = packet_registry.serialize(&ClientTickEndPacket).unwrap();
+        let tick_packet_serialized = packet_registry.serialize(&ClientTickEndPacket);
 
         let connected_server = &internal.connected_server;
         client.send_packet_serialized(tick_packet_serialized.clone());
@@ -1081,8 +1081,7 @@ impl Client {
 
         let tick_packet_serialized = internal
             .packet_registry
-            .serialize(&ClientTickEndPacket)
-            .unwrap();
+            .serialize(&ClientTickEndPacket);
 
         let connected_server = &internal.connected_server;
         self.send_packet_serialized(tick_packet_serialized.clone());
@@ -1178,8 +1177,7 @@ impl Client {
         let internal = &self.internal;
         let serialized = internal
             .packet_registry
-            .serialize(packet)
-            .expect("Failed to serialize packet.");
+            .serialize(packet);
         self.send_packet_serialized(serialized);
     }
     /// Store the packet to be sent to the client after the next server tick.
@@ -1196,7 +1194,7 @@ impl Client {
     /// let packet = FooPacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
-    /// let packet_serialized = client.packet_registry.serialize(&packet).expect("Failed to serialize packet.");
+    /// let packet_serialized = client.packet_registry().serialize(&packet);
     /// client.send_packet_serialized(&packet_serialized);
     /// ```
     pub fn send_packet_serialized(&self, packet_serialized: SerializedPacket) {

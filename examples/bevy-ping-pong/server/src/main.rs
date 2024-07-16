@@ -104,13 +104,9 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
                         bind_result.server.ignore_ip(
                             "127.0.0.1".parse().unwrap(),
                             IgnoredAddrReason::from_serialized_list(SerializedPacketList::create(
-                                vec![bind_result
-                                    .server
-                                    .packet_registry()
-                                    .serialize(&FooPacket {
-                                        message: "Oh no!".to_owned(),
-                                    })
-                                    .unwrap()],
+                                vec![bind_result.server.packet_registry().serialize(&FooPacket {
+                                    message: "Oh no!".to_owned(),
+                                })],
                             )),
                         );
                     }
@@ -168,8 +164,7 @@ fn server_tick(
                                 .packet_registry()
                                 .serialize(&BarPacket {
                                     message: "Bye bye".to_owned(),
-                                })
-                                .unwrap()])),
+                                })])),
                         )
                     }
                 }
@@ -207,12 +202,11 @@ fn server_tick(
                         );
                         server.refuse(
                             addr,
-                            SerializedPacketList::create(vec![server
-                                .packet_registry()
-                                .serialize(&BarPacket {
+                            SerializedPacketList::create(vec![server.packet_registry().serialize(
+                                &BarPacket {
                                     message: "No, you not".to_owned(),
-                                })
-                                .unwrap()]),
+                                },
+                            )]),
                         );
                     }
                 }

@@ -55,11 +55,9 @@ fn init(mut commands: Commands) {
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
 
-    let authentication_packets = vec![packet_registry
-        .serialize(&FooPacket {
-            message: "Auth me!!!".to_string(),
-        })
-        .unwrap()];
+    let authentication_packets = vec![packet_registry.serialize(&FooPacket {
+        message: "Auth me!!!".to_string(),
+    })];
 
     let task = task_pool.spawn(async move {
         Arc::clone(&runtime)
@@ -136,8 +134,7 @@ fn client_tick(mut commands: Commands, mut query: Query<(Entity, &mut ClientConn
                     .packet_registry()
                     .serialize(&BarPacket {
                         message: "We finished here...".to_owned(),
-                    })
-                    .unwrap()]));
+                    })]));
                 let handle = client.disconnect(message);
 
                 let result = future::block_on(handle).unwrap();
