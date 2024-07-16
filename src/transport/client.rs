@@ -510,7 +510,7 @@ struct ClientInternal {
         async_channel::Receiver<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
 
     /// Task handle of the receiver.
-    tasks_keeper_handle: JoinHandle<()>,
+    tasks_keeper_handle: Mutex<Option<JoinHandle<()>>>,
     
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
@@ -824,10 +824,10 @@ impl Client {
                 tasks_keeper_sender,
                 reason_to_disconnect_sender,
                 reason_to_disconnect_receiver,
-                tasks_keeper_handle: ClientInternal::create_async_tasks_keeper(
+                tasks_keeper_handle: Mutex::new(Some(ClientInternal::create_async_tasks_keeper(
                     runtime_clone,
                     tasks_keeper_receiver,
-                ),
+                ))),
                 socket: Arc::clone(&socket),
                 runtime,
                 tick_state: RwLock::new(ClientTickState::TickStartPending),
@@ -1076,6 +1076,60 @@ impl Client {
         connected_server.packets_to_send_sender.try_send(None).unwrap();
     }
 
+    pub fn disconnect(
+        self,
+        message: Option<SerializedPacketList>,
+    ) -> JoinHandle<Arc<Runtime>> {
+        let runtime_keeper = Arc::clone(&self.internal.runtime);
+        Arc::clone(&self.internal.runtime).spawn(async move {
+            let sent_time = Instant::now();
+            
+            let tasks_keeper_handle = self.internal.tasks_keeper_handle.lock().await.take().unwrap();
+            tasks_keeper_handle.abort();
+            let _ = tasks_keeper_handle.await;
+
+            let socket = Arc::clone(&self.internal.socket);
+            let read_timeout = self.internal.client_properties.auth_packet_loss_interpretation;
+            let timeout_interpretation = self.internal.messaging_properties.timeout_interpretation;
+            
+            drop(self);
+            
+            if let Some(list) = message {
+                let context = JustifiedRejectionContext::from_serialized_list(
+                    Instant::now(),
+                    list,
+                );
+
+                let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
+                
+                'l1: loop {
+                    let now = Instant::now();
+                    if let Err(_) = socket.send(&context.finished_bytes).await {
+                        break 'l1;
+                    }
+                    
+                    let pre_read_next_bytes_result =
+                        ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
+
+                        match pre_read_next_bytes_result {
+                            Ok(result) => {
+                                if &result == rejection_confirm_bytes {
+                                    break 'l1;
+                                }
+                            }
+                            Err(_) => {
+                                if now - sent_time > timeout_interpretation {
+                                    break 'l1;
+                                }
+                            }
+                    }
+                }
+            }
+
+            runtime_keeper
+        })
+    }
+    
     /// Serializes, then store the packet to be sent to the server after the next received server tick.
     ///
     /// # Parameters
