@@ -124,7 +124,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
 
 fn client_tick(mut commands: Commands, mut query: Query<&mut ClientConnected>) {
     for client_connected in query.iter_mut() {
-        let client = &client_connected.client.as_ref().unwrap();
+            let client = client_connected.client.as_ref().unwrap();
         let tick = client.tick_start();
         match tick {
             ClientTickResult::ReceivedMessage(message) => {
