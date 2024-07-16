@@ -165,7 +165,7 @@ impl PacketRegistry {
         );
     }
 
-    pub fn serialize<P: Packet>(&self, packet: &P) -> io::Result<SerializedPacket> {
+    pub fn try_serialize<P: Packet>(&self, packet: &P) -> io::Result<SerializedPacket> {
         let packet_id = self.packet_type_ids.get(&TypeId::of::<P>());
         if let Some(packet_id) = packet_id {
             let (serialize, _) = self.serde_map.get(packet_id).unwrap();
@@ -180,7 +180,7 @@ impl PacketRegistry {
         }
     }
 
-    pub fn deserialize(
+    pub fn try_deserialize(
         &self,
         serialized_packet: &SerializedPacket,
     ) -> io::Result<Box<PacketToDowncast>> {
