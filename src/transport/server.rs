@@ -696,11 +696,11 @@ impl ServerInternal {
         server: Weak<ServerInternal>,
         rejections_to_confirm_read_signal_receiver: async_channel::Receiver<()>,
     ) {
-        let bytes = &vec![MessageChannel::REJECTION_CONFIRM];
+        let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
         'l1: while let Ok(_) = rejections_to_confirm_read_signal_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 for addr in server.rejections_to_confirm.iter() {
-                    let _ = server.socket.send_to(bytes, addr.clone()).await;
+                    let _ = server.socket.send_to(rejection_confirm_bytes, addr.clone()).await;
                 }
                 server.rejections_to_confirm.clear();
             } else {
