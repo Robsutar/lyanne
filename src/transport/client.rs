@@ -152,11 +152,6 @@ pub enum ClientTickResult {
 ///
 /// Intended to be used with [`Mutex`].
 pub struct ConnectedServerMessaging {
-    /// Sender for message part confirmations.
-    message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
-    /// Sender for shared socket bytes.
-    shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
-
     /// The cipher used for encrypting and decrypting messages.
     cipher: ChaCha20Poly1305,
 
@@ -188,9 +183,12 @@ pub struct ConnectedServerMessaging {
 pub struct ConnectedServer {
     /// Sender for receiving bytes.
     receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
-
     /// Sender for packets to be sent.
     packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
+    /// Sender for message part confirmations.
+    message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
+    /// Sender for shared socket bytes.
+    shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
 
     /// The socket address of the connected server.
     addr: SocketAddr,
@@ -287,9 +285,9 @@ impl ConnectedServer {
 
                                     match messaging.incoming_message.try_insert(part) {
                                         MessagePartMapTryInsertResult::PastMessageId => {
-                                            let _ = messaging
-                                            .message_part_confirmation_sender
-                                            .try_send((message_id, None));
+                                            let _ = server
+                                                .message_part_confirmation_sender
+                                                .try_send((message_id, None));
                                         },
                                         MessagePartMapTryInsertResult::Stored => {
                                             'l2: loop {
@@ -312,11 +310,11 @@ impl ConnectedServer {
                                             }
             
                                             if send_fully_message_confirmation {
-                                                let _ = messaging
+                                                let _ = server
                                                     .message_part_confirmation_sender
                                                     .try_send((message_id, None));
                                             } else {
-                                                let _ = messaging
+                                                let _ = server
                                                     .message_part_confirmation_sender
                                                     .try_send((message_id, Some(part_id)));
                                             }
@@ -422,7 +420,7 @@ impl ConnectedServer {
                                 .or_insert_with(|| (sent_instant, BTreeMap::new()));
                             pending_part_id_map.insert(part_id, sent_part);
 
-                            let _ = messaging
+                            let _ = server
                                 .shared_socket_bytes_send_sender
                                 .try_send(finished_bytes);
                         }
@@ -806,13 +804,13 @@ impl Client {
             packet_loss_rtt_calculator: RttCalculator::new(messaging_properties.initial_latency),
             average_packet_loss_rtt: messaging_properties.initial_latency,
             latency_monitor: DurationMonitor::filled_with(messaging_properties.initial_latency, 16),
-            message_part_confirmation_sender,
-            shared_socket_bytes_send_sender,
         });
 
         let server = Arc::new(ConnectedServer {
             receiving_bytes_sender,
             packets_to_send_sender,
+            message_part_confirmation_sender,
+            shared_socket_bytes_send_sender,
             addr: remote_addr,
             messaging,
             last_messaging_write: RwLock::new(Instant::now()),
@@ -984,10 +982,10 @@ impl Client {
 
         let now = Instant::now();
 
-        let connected_server = &internal.connected_server;
-        if let Ok(mut messaging) = connected_server.messaging.try_lock() {
-            *connected_server.last_messaging_write.write().unwrap() = now;
-            *connected_server.average_latency.write().unwrap() =
+        let server = &internal.connected_server;
+        if let Ok(mut messaging) = server.messaging.try_lock() {
+            *server.last_messaging_write.write().unwrap() = now;
+            *server.average_latency.write().unwrap() =
                 messaging.latency_monitor.average_value();
 
             let average_packet_loss_rtt = messaging.average_packet_loss_rtt;
@@ -1009,7 +1007,7 @@ impl Client {
             }
 
             for finished_bytes in messages_to_resend {
-                messaging
+                server
                     .shared_socket_bytes_send_sender
                     .try_send(finished_bytes)
                     .unwrap();
@@ -1036,7 +1034,7 @@ impl Client {
             } else {
                 return ClientTickResult::PendingMessage;
             }
-        } else if now - *connected_server.last_messaging_write.read().unwrap()
+        } else if now - *server.last_messaging_write.read().unwrap()
             >= internal.messaging_properties.timeout_interpretation
         {
             *internal.disconnect_reason.write().unwrap() =

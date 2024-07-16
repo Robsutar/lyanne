@@ -177,11 +177,6 @@ impl IgnoredAddrReason {
 ///
 /// Intended to be used with [`Mutex`].
 struct ConnectedClientMessaging {
-    /// Sender for message part confirmations.
-    message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
-    /// Sender for shared socket bytes.
-    shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
-
     /// The cipher used for encrypting and decrypting messages.
     cipher: ChaCha20Poly1305,
 
@@ -213,9 +208,12 @@ struct ConnectedClientMessaging {
 pub struct ConnectedClient {
     /// Sender for receiving bytes.
     receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
-    
     /// Sender for packets to be sent.
     packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
+    /// Sender for message part confirmations.
+    message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
+    /// Sender for shared socket bytes.
+    shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
 
     /// The socket address of the connected client.
     addr: SocketAddr,
@@ -311,9 +309,9 @@ impl ConnectedClient {
 
                                     match messaging.incoming_message.try_insert(part) {
                                         MessagePartMapTryInsertResult::PastMessageId => {
-                                            let _ = messaging
-                                            .message_part_confirmation_sender
-                                            .try_send((message_id, None));
+                                            let _ = client
+                                                .message_part_confirmation_sender
+                                                .try_send((message_id, None));
                                         },
                                         MessagePartMapTryInsertResult::Stored => {
                                             'l2: loop {
@@ -336,11 +334,11 @@ impl ConnectedClient {
                                             }
             
                                             if send_fully_message_confirmation {
-                                                let _ = messaging
+                                                let _ = client
                                                     .message_part_confirmation_sender
                                                     .try_send((message_id, None));
                                             } else {
-                                                let _ = messaging
+                                                let _ = client
                                                     .message_part_confirmation_sender
                                                     .try_send((message_id, Some(part_id)));
                                             }
@@ -447,7 +445,7 @@ impl ConnectedClient {
                                 .or_insert_with(|| (sent_instant, BTreeMap::new()));
                             pending_part_id_map.insert(part_id, sent_part);
 
-                            let _ = messaging
+                            let _ = client
                                 .shared_socket_bytes_send_sender
                                 .try_send(finished_bytes);
                         }
@@ -1170,7 +1168,7 @@ impl Server {
                 }
 
                 for finished_bytes in messages_to_resend {
-                    messaging
+                    client
                         .shared_socket_bytes_send_sender
                         .try_send(finished_bytes)
                         .unwrap();
@@ -1300,8 +1298,6 @@ impl Server {
             let now = Instant::now();
 
             let messaging = Mutex::new(ConnectedClientMessaging {
-                message_part_confirmation_sender,
-                shared_socket_bytes_send_sender,
                 cipher: ChaChaPoly1305::new(Key::from_slice(addr_to_auth.shared_key.as_bytes())),
                 pending_confirmation: BTreeMap::new(),
                 incoming_message: MessagePartMap::new(
@@ -1321,12 +1317,14 @@ impl Server {
             });
 
             let client = Arc::new(ConnectedClient {
+                receiving_bytes_sender,
+                packets_to_send_sender,
+                message_part_confirmation_sender,
+                shared_socket_bytes_send_sender,
                 addr,
                 messaging,
                 last_messaging_write: RwLock::new(now),
                 average_latency: RwLock::new(internal.messaging_properties.initial_latency),
-                receiving_bytes_sender,
-                packets_to_send_sender,
             });
 
             let server_downgraded = Arc::downgrade(&internal);
