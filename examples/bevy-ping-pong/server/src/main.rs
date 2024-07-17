@@ -19,6 +19,11 @@ use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;
 
 #[derive(Component)]
+struct RuntimeKeeper {
+    _runtime: Runtime,
+}
+
+#[derive(Component)]
 struct ServerConnecting {
     task: Task<io::Result<(BindResult, BevyPacketCaller)>>,
 }
@@ -50,7 +55,8 @@ fn main() {
 
 fn init(mut commands: Commands) {
     let task_pool = AsyncComputeTaskPool::get();
-    let runtime = Arc::new(Runtime::new().expect("Failed to create Tokio runtime"));
+    let runtime = Runtime::new().expect("Failed to create Tokio runtime");
+    let handle = runtime.handle().clone();
 
     let addr = "127.0.0.1:8822".parse().unwrap();
     let packet_managers = PacketManagers::default();
@@ -59,7 +65,8 @@ fn init(mut commands: Commands) {
     let server_properties = Arc::new(ServerProperties::default());
 
     let task = task_pool.spawn(async move {
-        Arc::clone(&runtime)
+        handle
+            .clone()
             .spawn(async move {
                 let bind_result = Server::bind(
                     addr,
@@ -67,7 +74,7 @@ fn init(mut commands: Commands) {
                     messaging_properties,
                     read_handler_properties,
                     server_properties,
-                    runtime,
+                    handle,
                 )
                 .await?;
                 Ok((bind_result, packet_managers.bevy_caller))
@@ -77,6 +84,7 @@ fn init(mut commands: Commands) {
     });
 
     commands.spawn(ServerConnecting { task });
+    commands.spawn(RuntimeKeeper { _runtime: runtime });
 }
 
 fn foo_read(mut packet: ResMut<ServerPacketResource<FooPacket>>) {
