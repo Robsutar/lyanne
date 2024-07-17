@@ -40,12 +40,12 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
     quote::quote! {
         impl Packet for #ident {
             fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
-                bincode::serialize(self)
+                lyanne::packets::serializer::serialize(self)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
             }
 
             fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
-                bincode::deserialize(bytes)
+                lyanne::packets::serializer::deserialize(bytes)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
             }
 

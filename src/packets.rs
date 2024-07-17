@@ -11,6 +11,10 @@ use bevy::ecs::system::Commands;
 use bevy::ecs::system::Resource;
 #[cfg(feature = "bevy")]
 use bevy::ecs::world::World;
+
+use crate as lyanne;
+
+pub use bincode as serializer;
 use serde::{Deserialize, Serialize};
 
 pub extern crate lyanne_derive;
@@ -289,13 +293,3 @@ pub struct ClientTickEndPacket;
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct ServerTickEndPacket;
-
-#[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct FooPacket {
-    pub message: String,
-}
-
-#[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct BarPacket {
-    pub message: String,
-}
