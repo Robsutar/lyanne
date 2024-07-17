@@ -59,7 +59,7 @@ pub enum ServerDisconnectReason {
     /// Server was disconnected due to invalid protocol communication.
     InvalidProtocolCommunication,
     /// Server was disconnected because of an error while sending bytes.
-    ByteSendError,
+    ByteSendError(io::Error),
     /// Server was manually disconnected.
     ManualDisconnect,
     /// Server disconnected itself.
@@ -485,10 +485,10 @@ impl ConnectedServer {
                         ]
                     }
                 };
-                if client.socket.send(&bytes).await.is_err() {
+                if let Err(e) = client.socket.send(&bytes).await {
                     let _ = client
                         .reason_to_disconnect_sender
-                        .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                        .try_send((ServerDisconnectReason::ByteSendError(e), None));
                     break 'l1;
                 }
             } else {
@@ -503,10 +503,10 @@ impl ConnectedServer {
     ) {
         'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
             if let Some(client) = client.upgrade() {
-                if client.socket.send(&bytes).await.is_err() {
+                if let Err(e) = client.socket.send(&bytes).await {
                     let _ = client
                         .reason_to_disconnect_sender
-                        .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                        .try_send((ServerDisconnectReason::ByteSendError(e), None));
                     break 'l1;
                 }
             } else {

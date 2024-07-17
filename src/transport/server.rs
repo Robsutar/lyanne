@@ -80,7 +80,7 @@ pub enum ClientDisconnectReason {
     /// Client was disconnected due to invalid protocol communication.
     InvalidProtocolCommunication,
     /// Client was disconnected because of an error while sending bytes.
-    ByteSendError,
+    ByteSendError(io::Error),
     /// Client was manually disconnected.
     ManualDisconnect,
     /// Client disconnected itself.
@@ -494,10 +494,10 @@ impl ConnectedClient {
                         ]
                     }
                 };
-                if server.socket.send_to(&bytes, addr).await.is_err() {
+                if let Err(e) = server.socket.send_to(&bytes, addr).await {
                     let _ = server.clients_to_disconnect_sender.try_send((
                         addr,
-                        (ClientDisconnectReason::InvalidProtocolCommunication, None),
+                        (ClientDisconnectReason::ByteSendError(e), None),
                     ));
                     break 'l1;
                 }
@@ -514,10 +514,10 @@ impl ConnectedClient {
     ) {
         'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
             if let Some(server) = server.upgrade() {
-                if server.socket.send_to(&bytes, addr).await.is_err() {
+                if let Err(e) = server.socket.send_to(&bytes, addr).await {
                     let _ = server.clients_to_disconnect_sender.try_send((
                         addr,
-                        (ClientDisconnectReason::InvalidProtocolCommunication, None),
+                        (ClientDisconnectReason::ByteSendError(e), None),
                     ));
                     break 'l1;
                 }
