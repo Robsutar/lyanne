@@ -179,8 +179,8 @@ pub struct ConnectedServerMessaging {
     /// The tuple is the sent instant, and the map of the message parts of the message.
     pending_confirmation: BTreeMap<MessageId, (Instant, BTreeMap<MessagePartId, SentMessagePart>)>,
 
-    /// Map of incoming message parts.
-    incoming_message: MessagePartMap,
+    /// Map of incoming messages parts.
+    incoming_messages: MessagePartMap,
     /// The length of bytes received in the current tick.
     tick_bytes_len: usize,
 
@@ -219,8 +219,8 @@ pub struct ConnectedServer {
     last_messaging_write: RwLock<Instant>,
     /// The average latency duration.
     average_latency: RwLock<Duration>,
-    /// The byte size of [`ConnectedClientMessaging::incoming_message`]
-    incoming_message_total_size: RwLock<usize>,
+    /// The byte size of [`ConnectedClientMessaging::incoming_messages`]
+    incoming_messages_total_size: RwLock<usize>,
 }
 
 impl ConnectedServer {
@@ -238,8 +238,8 @@ impl ConnectedServer {
 
     /// # Returns
     /// The total size of the stored incoming messages, that were not completed wet, or not read yet.
-    pub fn incoming_message_total_size(&self) -> usize {
-        *self.incoming_message_total_size.read().unwrap()
+    pub fn incoming_messages_total_size(&self) -> usize {
+        *self.incoming_messages_total_size.read().unwrap()
     }
 
     async fn create_receiving_bytes_handler(
@@ -311,7 +311,7 @@ impl ConnectedServer {
                                     let message_id = part.message_id();
                                     let part_id = part.id();
 
-                                    match messaging.incoming_message.try_insert(part) {
+                                    match messaging.incoming_messages.try_insert(part) {
                                         MessagePartMapTryInsertResult::PastMessageId => {
                                             let _ = server
                                                 .message_part_confirmation_sender
@@ -319,7 +319,7 @@ impl ConnectedServer {
                                         },
                                         MessagePartMapTryInsertResult::Stored => {
                                             'l2: loop {
-                                                match messaging.incoming_message.try_read(&client.packet_registry){
+                                                match messaging.incoming_messages.try_read(&client.packet_registry){
                                                     MessagePartMapTryReadResult::PendingParts => break 'l2,
                                                     MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
                                                         let _ = client.reason_to_disconnect_sender.try_send((
@@ -349,7 +349,7 @@ impl ConnectedServer {
                                         },
                                     }
 
-                                    *server.incoming_message_total_size.write().unwrap() = messaging.incoming_message.total_size();
+                                    *server.incoming_messages_total_size.write().unwrap() = messaging.incoming_messages.total_size();
                                 } else {
                                     let _ = client.reason_to_disconnect_sender.try_send((
                                         ServerDisconnectReason::InvalidProtocolCommunication,
@@ -825,7 +825,7 @@ impl Client {
         let messaging = Mutex::new(ConnectedServerMessaging {
             cipher,
             pending_confirmation: BTreeMap::new(),
-            incoming_message: MessagePartMap::new(
+            incoming_messages: MessagePartMap::new(
                 messaging_properties.initial_next_message_part_id,
             ),
             tick_bytes_len: 0,
@@ -845,7 +845,7 @@ impl Client {
             messaging,
             last_messaging_write: RwLock::new(Instant::now()),
             average_latency: RwLock::new(messaging_properties.initial_latency),
-            incoming_message_total_size: RwLock::new(0),
+            incoming_messages_total_size: RwLock::new(0),
         });
 
         let runtime_clone = Arc::clone(&runtime);
