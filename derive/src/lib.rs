@@ -12,12 +12,12 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
         let client_schedule_ident =
             syn::Ident::new(&format!("{}ClientSchedule", ident), ident.span());
         functions.push(quote::quote! {
-            fn run_client_schedule(world: &mut World) -> Result<(), bevy_ecs::world::error::TryRunScheduleError>{
+            fn run_client_schedule(world: &mut lyanne::bevy::bevy_ecs::world::World) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError>{
                 world.try_run_schedule(#client_schedule_ident)
             }
         });
         external.push(quote::quote! {
-            #[derive(bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+            #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
             pub struct #client_schedule_ident;
         });
     }
@@ -27,12 +27,12 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
         let server_schedule_ident =
             syn::Ident::new(&format!("{}ServerSchedule", ident), ident.span());
         functions.push(quote::quote! {
-            fn run_server_schedule(world: &mut World) -> Result<(), bevy_ecs::world::error::TryRunScheduleError>{
+            fn run_server_schedule(world: &mut lyanne::bevy::bevy_ecs::world::World) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError>{
                 world.try_run_schedule(#server_schedule_ident)
             }
         });
         external.push(quote::quote! {
-            #[derive(bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+            #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
             pub struct #server_schedule_ident;
         });
     }
