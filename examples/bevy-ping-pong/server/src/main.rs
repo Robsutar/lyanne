@@ -7,14 +7,14 @@ use bevy::{
     prelude::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
-use bevy_ping_pong::{BevyPacketCaller, PacketManagers};
-use lyanne::packets::{BarPacketServerSchedule, SerializedPacketList, ServerPacketResource};
+use bevy_ping_pong::{
+    BarPacket, BarPacketServerSchedule, BevyPacketCaller, FooPacket, FooPacketServerSchedule,
+    PacketManagers,
+};
+use lyanne::packets::{SerializedPacketList, ServerPacketResource};
+use lyanne::transport::server::Server;
 use lyanne::transport::server::{BindResult, IgnoredAddrReason, ServerProperties};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
-use lyanne::{
-    packets::{BarPacket, FooPacket, FooPacketServerSchedule, PacketRegistry},
-    transport::server::Server,
-};
 use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;
 

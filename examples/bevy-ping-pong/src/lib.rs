@@ -4,12 +4,11 @@ use bevy::prelude::{Commands, World};
 use lyanne::{
     add_essential_packets,
     packets::{
-        BarPacket, ClientPacketResource, ClientTickEndPacket, DeserializedPacket, FooPacket,
-        Packet, PacketId, PacketRegistry, PacketToDowncast, ServerPacketResource,
-        ServerTickEndPacket,
+        ClientPacketResource, ClientTickEndPacket, DeserializedPacket, Packet, PacketId,
+        PacketRegistry, PacketToDowncast, ServerPacketResource, ServerTickEndPacket,
     },
 };
-
+use serde::{Deserialize, Serialize};
 pub struct BevyPacketCaller {
     #[cfg(feature = "client")]
     client_caller_map:
@@ -108,4 +107,14 @@ impl Default for PacketManagers {
 
         exit
     }
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct FooPacket {
+    pub message: String,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct BarPacket {
+    pub message: String,
 }

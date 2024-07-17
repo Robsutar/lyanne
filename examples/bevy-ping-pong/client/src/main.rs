@@ -6,16 +6,14 @@ use bevy::{
     prelude::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
-use bevy_ping_pong::{BevyPacketCaller, PacketManagers};
-use lyanne::packets::{BarPacketClientSchedule, ClientPacketResource};
+use bevy_ping_pong::{
+    BarPacket, BarPacketClientSchedule, BevyPacketCaller, FooPacket, FooPacketClientSchedule,
+    PacketManagers,
+};
+use lyanne::packets::ClientPacketResource;
 use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectResult};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
-use lyanne::{
-    packets::{
-        BarPacket, FooPacket, FooPacketClientSchedule, PacketRegistry, SerializedPacketList,
-    },
-    transport::client::ClientProperties,
-};
+use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
 use rand::{thread_rng, Rng};
 use tokio::runtime::Runtime;
 
