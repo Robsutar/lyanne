@@ -6,7 +6,7 @@ use std::{
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 
 use crate::{
-    messages::{MessagePart, MessagePartId, MESSAGE_ID_SIZE, MESSAGE_PART_ID_SIZE},
+    messages::{MessagePart, MessagePartId},
     packets::SerializedPacketList,
     utils::RttProperties,
 };
