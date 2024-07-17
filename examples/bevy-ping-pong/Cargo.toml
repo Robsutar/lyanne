@@ -9,7 +9,7 @@ client = ["lyanne/client"]
 server = ["lyanne/server"]
 
 [dependencies]
-bevy = "^0.13.0"
+bevy = "^0.14.0"
 lyanne = { path = "../../", features = ["bevy"] }
 tokio = { version = "^1.0.0", features = ["full"] }
 rand = "^0.8.0"

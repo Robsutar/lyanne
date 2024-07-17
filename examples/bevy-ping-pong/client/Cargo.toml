@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 bevy-ping-pong = { path = "../" }
-bevy = "^0.13.0"
+bevy = "^0.14.0"
 lyanne = { path = "../../../", features = [
     "bevy",
     "troubles_simulator",
