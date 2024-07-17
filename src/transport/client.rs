@@ -13,7 +13,7 @@ use chacha20poly1305::{
     ChaCha20Poly1305, ChaChaPoly1305, Key, Nonce,
 };
 use rand::rngs::OsRng;
-use tokio::{net::UdpSocket, runtime::Runtime, sync::Mutex, task::JoinHandle, time::timeout};
+use tokio::{net::UdpSocket, runtime::Handle, sync::Mutex, task::JoinHandle, time::timeout};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
@@ -163,7 +163,8 @@ pub enum ClientDisconnectState {
 
 /// Result when calling [`Client::disconnect`].
 pub struct ClientDisconnectResult {
-    _runtime: Arc<Runtime>,
+    /// TODO: that is not needed for all runtimes.
+    _runtime: Handle,
     /// The state of the disconnection.
     pub state: ClientDisconnectState
 }
@@ -543,7 +544,7 @@ struct ClientInternal {
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
     /// The runtime for asynchronous operations.
-    runtime: Arc<Runtime>,
+    runtime: Handle,
     /// Actual state of client periodic tick flow.
     tick_state: RwLock<ClientTickState>,
 
@@ -573,11 +574,11 @@ impl ClientInternal {
     {
         let _ = self
             .tasks_keeper_sender
-            .try_send(Arc::clone(&self.runtime).spawn(future));
+            .try_send(self.runtime.clone().spawn(future));
     }
 
     fn create_async_tasks_keeper(
-        runtime: Arc<Runtime>,
+        runtime: Handle,
         tasks_keeper_receiver: async_channel::Receiver<tokio::task::JoinHandle<()>>,
     ) -> JoinHandle<()> {
         runtime.spawn(async move {
@@ -706,7 +707,7 @@ impl Client {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        runtime: Arc<Runtime>,
+        runtime: Handle,
         message: SerializedPacketList,
     ) -> Result<ConnectResult, ConnectError> {
         let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
@@ -793,7 +794,7 @@ impl Client {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        runtime: Arc<Runtime>,
+        runtime: Handle,
         remote_addr: SocketAddr,
         sent_time: Instant,
     ) -> Result<ConnectResult, ConnectError> {
@@ -846,7 +847,7 @@ impl Client {
             incoming_messages_total_size: RwLock::new(0),
         });
 
-        let runtime_clone = Arc::clone(&runtime);
+        let runtime_clone = runtime.clone();
 
         let client = Client {
             internal: Arc::new(ClientInternal {
@@ -1122,8 +1123,8 @@ impl Client {
         self,
         message: Option<SerializedPacketList>,
     ) -> JoinHandle<ClientDisconnectResult> {
-        let runtime_keeper = Arc::clone(&self.internal.runtime);
-        Arc::clone(&self.internal.runtime).spawn(async move {
+        let runtime_keeper = self.internal.runtime.clone();
+        self.internal.runtime.clone().spawn(async move {
             let sent_time = Instant::now();
             
             let tasks_keeper_handle = self.internal.tasks_keeper_handle.lock().await.take().unwrap();

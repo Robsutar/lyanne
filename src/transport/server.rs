@@ -13,7 +13,7 @@ use chacha20poly1305::{
 };
 use dashmap::{DashMap, DashSet};
 use rand::rngs::OsRng;
-use tokio::{net::UdpSocket, runtime::Runtime, sync::Mutex, task::JoinHandle, time::timeout};
+use tokio::{net::UdpSocket, runtime::Handle, sync::Mutex, task::JoinHandle, time::timeout};
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 use crate::{
@@ -575,7 +575,7 @@ struct ServerInternal {
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
     /// The runtime for asynchronous operations.
-    runtime: Arc<Runtime>,
+    runtime: Handle,
     /// Actual state of server periodic tick flow.
     tick_state: RwLock<ServerTickState>,
 
@@ -640,11 +640,11 @@ impl ServerInternal {
     {
         let _ = self
             .tasks_keeper_sender
-            .try_send(Arc::clone(&self.runtime).spawn(future));
+            .try_send(self.runtime.clone().spawn(future));
     }
 
     fn create_async_tasks_keeper(
-        runtime: Arc<Runtime>,
+        runtime: Handle,
         tasks_keeper_receiver: async_channel::Receiver<tokio::task::JoinHandle<()>>,
     ) -> JoinHandle<()> {
         runtime.spawn(async move {
@@ -951,7 +951,7 @@ impl Server {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         server_properties: Arc<ServerProperties>,
-        runtime: Arc<Runtime>,
+        runtime: Handle,
     ) -> io::Result<BindResult> {
         let socket = Arc::new(UdpSocket::bind(addr).await?);
 
@@ -973,7 +973,7 @@ impl Server {
         let (clients_to_disconnect_sender, clients_to_disconnect_receiver) =
             async_channel::unbounded();
 
-        let runtime_clone = Arc::clone(&runtime);
+        let runtime_clone = runtime.clone();
 
         let server = Arc::new(ServerInternal {
             tasks_keeper_sender,
