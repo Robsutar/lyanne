@@ -15,7 +15,7 @@ edition = "2021"
 [features]
 # TODO: remove bevy, client and server from default features
 default = ["bevy", "troubles_simulator", "client", "server"]
-bevy = ["dep:bevy", "lyanne-derive/bevy"]
+bevy = ["dep:bevy_ecs", "lyanne-derive/bevy"]
 troubles_simulator = []
 client = ["lyanne-derive/client"]
 server = ["lyanne-derive/server"]
@@ -26,7 +26,7 @@ tokio = { version = "^1.0.0", features = ["net", "rt-multi-thread"] }
 tokio-util = "^0.7.0"
 serde = { version = "^1.0.0", features = ["derive"] }
 bincode = "^1.0.0"
-bevy = { version = "^0.13.0", optional = true }
+bevy_ecs = { version = "^0.14.0", optional = true }
 rand = "^0.8.0"
 dashmap = "^6.0.0"
 x25519-dalek = "^2.0.0"

@@ -6,11 +6,9 @@ use std::{
 };
 
 #[cfg(feature = "bevy")]
-use bevy::ecs::system::Commands;
+use bevy_ecs::system::Resource;
 #[cfg(feature = "bevy")]
-use bevy::ecs::system::Resource;
-#[cfg(feature = "bevy")]
-use bevy::ecs::world::World;
+use bevy_ecs::world::World;
 
 use crate as lyanne;
 
@@ -32,12 +30,12 @@ pub trait Packet:
     #[cfg(all(feature = "bevy", feature = "client"))]
     fn run_client_schedule(
         world: &mut World,
-    ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
+    ) -> Result<(), bevy_ecs::world::error::TryRunScheduleError>;
 
     #[cfg(all(feature = "bevy", feature = "server"))]
     fn run_server_schedule(
         world: &mut World,
-    ) -> Result<(), bevy::ecs::world::error::TryRunScheduleError>;
+    ) -> Result<(), bevy_ecs::world::error::TryRunScheduleError>;
 }
 
 #[macro_export]
