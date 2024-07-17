@@ -226,6 +226,8 @@ pub struct ConnectedClient {
     last_messaging_write: RwLock<Instant>,
     /// The average latency duration.
     average_latency: RwLock<Duration>,
+    /// The byte size of [`ConnectedClientMessaging::incoming_message`]
+    incoming_message_total_size: RwLock<usize>,
 }
 
 impl ConnectedClient {
@@ -233,6 +235,12 @@ impl ConnectedClient {
     /// The average time of messaging response of this client after a server message.
     pub fn average_latency(&self) -> Duration {
         *self.average_latency.read().unwrap()
+    }
+    
+    /// # Returns
+    /// The total size of the stored incoming messages, that were not completed wet, or not read yet.
+    pub fn incoming_message_total_size(&self) -> usize {
+        *self.incoming_message_total_size.read().unwrap()
     }
 
     async fn create_receiving_bytes_handler(
@@ -346,6 +354,8 @@ impl ConnectedClient {
                                             }
                                         },
                                     }
+
+                                    *client.incoming_message_total_size.write().unwrap() = messaging.incoming_message.total_size();
                                 } else {
                                     let _ = server.clients_to_disconnect_sender.try_send((
                                         addr,
@@ -1341,6 +1351,7 @@ impl Server {
                 messaging,
                 last_messaging_write: RwLock::new(now),
                 average_latency: RwLock::new(internal.messaging_properties.initial_latency),
+                incoming_message_total_size: RwLock::new(0)
             });
 
             let server_downgraded = Arc::downgrade(&internal);

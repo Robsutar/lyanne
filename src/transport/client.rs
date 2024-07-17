@@ -219,9 +219,17 @@ pub struct ConnectedServer {
     last_messaging_write: RwLock<Instant>,
     /// The average latency duration.
     average_latency: RwLock<Duration>,
+    /// The byte size of [`ConnectedClientMessaging::incoming_message`]
+    incoming_message_total_size: RwLock<usize>,
 }
 
 impl ConnectedServer {
+    /// # Returns
+    /// The remove server address.
+    pub fn addr(&self) -> &SocketAddr {
+        &self.addr
+    }
+
     /// # Returns
     /// The average time of messaging response of the server after a client message + server tick delay
     pub fn average_latency(&self) -> Duration {
@@ -229,9 +237,9 @@ impl ConnectedServer {
     }
 
     /// # Returns
-    /// The remove server address.
-    pub fn addr(&self) -> &SocketAddr {
-        &self.addr
+    /// The total size of the stored incoming messages, that were not completed wet, or not read yet.
+    pub fn incoming_message_total_size(&self) -> usize {
+        *self.incoming_message_total_size.read().unwrap()
     }
 
     async fn create_receiving_bytes_handler(
@@ -340,6 +348,8 @@ impl ConnectedServer {
                                             }
                                         },
                                     }
+
+                                    *server.incoming_message_total_size.write().unwrap() = messaging.incoming_message.total_size();
                                 } else {
                                     let _ = client.reason_to_disconnect_sender.try_send((
                                         ServerDisconnectReason::InvalidProtocolCommunication,
@@ -835,6 +845,7 @@ impl Client {
             messaging,
             last_messaging_write: RwLock::new(Instant::now()),
             average_latency: RwLock::new(messaging_properties.initial_latency),
+            incoming_message_total_size: RwLock::new(0),
         });
 
         let runtime_clone = Arc::clone(&runtime);
