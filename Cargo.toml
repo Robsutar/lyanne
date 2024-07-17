@@ -13,6 +13,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+# TODO: remove bevy, client and server from default features
 default = ["bevy", "troubles_simulator", "client", "server"]
 bevy = ["dep:bevy", "lyanne-derive/bevy"]
 troubles_simulator = []
