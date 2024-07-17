@@ -288,7 +288,7 @@ impl ConnectedServer {
                             } else {
                                 let _ = client
                                     .reason_to_disconnect_sender
-                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                    .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
                             }
                         }
@@ -297,7 +297,7 @@ impl ConnectedServer {
                             if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + 12 {
                                 let _ = client
                                     .reason_to_disconnect_sender
-                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                    .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
                             }
 
@@ -322,10 +322,9 @@ impl ConnectedServer {
                                                 match messaging.incoming_messages.try_read(&client.packet_registry){
                                                     MessagePartMapTryReadResult::PendingParts => break 'l2,
                                                     MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
-                                                        let _ = client.reason_to_disconnect_sender.try_send((
+                                                        let _ = client.reason_to_disconnect_sender.try_send(
                                                             ServerDisconnectReason::InvalidProtocolCommunication,
-                                                            None,
-                                                        ));
+                                                        );
                                                         break 'l1;
                                                     },
                                                     MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
@@ -351,16 +350,15 @@ impl ConnectedServer {
 
                                     *server.incoming_messages_total_size.write().unwrap() = messaging.incoming_messages.total_size();
                                 } else {
-                                    let _ = client.reason_to_disconnect_sender.try_send((
-                                        ServerDisconnectReason::InvalidProtocolCommunication,
-                                        None,
-                                    ));
+                                    let _ = client.reason_to_disconnect_sender.try_send(
+                                        ServerDisconnectReason::InvalidProtocolCommunication
+                                    );
                                     break 'l1;
                                 }
                             } else {
                                 let _ = client
                                     .reason_to_disconnect_sender
-                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                    .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
                             }
                         }
@@ -369,7 +367,7 @@ impl ConnectedServer {
                             if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
                                 let _ = client
                                     .reason_to_disconnect_sender
-                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                    .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
                             } else if let Ok(message) =
                                 DeserializedPacket::deserialize_list(&bytes[1..], &client.packet_registry)
@@ -380,12 +378,12 @@ impl ConnectedServer {
 
                                 let _ = client
                                     .reason_to_disconnect_sender
-                                    .try_send((ServerDisconnectReason::DisconnectRequest(message), None));
+                                    .try_send(ServerDisconnectReason::DisconnectRequest(message));
                                 break 'l1;
                             } else {
                                 let _ = client
                                     .reason_to_disconnect_sender
-                                    .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                    .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
                             }
                         }
@@ -395,7 +393,7 @@ impl ConnectedServer {
                         _ => {
                             let _ = client
                                 .reason_to_disconnect_sender
-                                .try_send((ServerDisconnectReason::InvalidProtocolCommunication, None));
+                                .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                             break 'l1;
                         }
                     }
@@ -498,7 +496,7 @@ impl ConnectedServer {
                 if let Err(e) = client.socket.send(&bytes).await {
                     let _ = client
                         .reason_to_disconnect_sender
-                        .try_send((ServerDisconnectReason::ByteSendError(e), None));
+                        .try_send(ServerDisconnectReason::ByteSendError(e));
                     break 'l1;
                 }
             } else {
@@ -516,7 +514,7 @@ impl ConnectedServer {
                 if let Err(e) = client.socket.send(&bytes).await {
                     let _ = client
                         .reason_to_disconnect_sender
-                        .try_send((ServerDisconnectReason::ByteSendError(e), None));
+                        .try_send(ServerDisconnectReason::ByteSendError(e));
                     break 'l1;
                 }
             } else {
@@ -534,10 +532,10 @@ struct ClientInternal {
     tasks_keeper_sender: async_channel::Sender<JoinHandle<()>>,
     /// Sender for addresses to be disconnected.
     reason_to_disconnect_sender:
-        async_channel::Sender<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
+        async_channel::Sender<ServerDisconnectReason>,
     /// Receiver for addresses to be disconnected.
     reason_to_disconnect_receiver:
-        async_channel::Receiver<(ServerDisconnectReason, Option<JustifiedRejectionContext>)>,
+        async_channel::Receiver<ServerDisconnectReason>,
 
     /// Task handle of the receiver.
     tasks_keeper_handle: Mutex<Option<JoinHandle<()>>>,
@@ -1005,8 +1003,7 @@ impl Client {
             return ClientTickResult::Disconnected;
         }
 
-        if let Ok((reason, context)) = internal.reason_to_disconnect_receiver.try_recv() {
-            //TODO: use context
+        if let Ok(reason) = internal.reason_to_disconnect_receiver.try_recv() {
             *internal.disconnect_reason.write().unwrap() = Some(Some(reason));
             return ClientTickResult::Disconnected;
         }
