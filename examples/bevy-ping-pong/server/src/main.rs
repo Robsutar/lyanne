@@ -16,8 +16,11 @@ use lyanne::transport::server::Server;
 use lyanne::transport::server::{BindResult, IgnoredAddrReason, ServerProperties};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use rand::{thread_rng, Rng};
+
+#[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
 use tokio::runtime::Runtime;
 
+#[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
 #[derive(Component)]
 struct RuntimeKeeper {
     _runtime: Runtime,
@@ -55,8 +58,12 @@ fn main() {
 
 fn init(mut commands: Commands) {
     let task_pool = AsyncComputeTaskPool::get();
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
     let runtime = Runtime::new().expect("Failed to create Tokio runtime");
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
     let handle = runtime.handle().clone();
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    let handle_clone = handle.clone();
 
     let addr = "127.0.0.1:8822".parse().unwrap();
     let packet_managers = PacketManagers::default();
@@ -64,26 +71,27 @@ fn init(mut commands: Commands) {
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let server_properties = Arc::new(ServerProperties::default());
 
-    let task = task_pool.spawn(async move {
-        handle
-            .clone()
-            .spawn(async move {
-                let bind_result = Server::bind(
-                    addr,
-                    Arc::new(packet_managers.packet_registry),
-                    messaging_properties,
-                    read_handler_properties,
-                    server_properties,
-                    handle,
-                )
-                .await?;
-                Ok((bind_result, packet_managers.bevy_caller))
-            })
-            .await
-            .unwrap()
-    });
+    let spawn_body = async move {
+        let bind_result = Server::bind(
+            addr,
+            Arc::new(packet_managers.packet_registry),
+            messaging_properties,
+            read_handler_properties,
+            server_properties,
+            #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+            handle,
+        )
+        .await?;
+        Ok((bind_result, packet_managers.bevy_caller))
+    };
+
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    let task = task_pool.spawn(async move { handle_clone.spawn(spawn_body).await.unwrap() });
+    #[cfg(all(feature = "rt-bevy", not(feature = "rt-tokio")))]
+    let task = task_pool.spawn(spawn_body);
 
     commands.spawn(ServerConnecting { task });
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
     commands.spawn(RuntimeKeeper { _runtime: runtime });
 }
 

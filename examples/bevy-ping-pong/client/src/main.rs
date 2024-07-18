@@ -15,8 +15,11 @@ use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectR
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
 use rand::{thread_rng, Rng};
+
+#[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
 use tokio::runtime::Runtime;
 
+#[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
 #[derive(Component)]
 struct RuntimeKeeper {
     _runtime: Runtime,
@@ -52,8 +55,12 @@ fn main() {
 
 fn init(mut commands: Commands) {
     let task_pool = AsyncComputeTaskPool::get();
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
     let runtime = Runtime::new().expect("Failed to create Tokio runtime");
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
     let handle = runtime.handle().clone();
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    let handle_clone = handle.clone();
 
     let remote_addr = "127.0.0.1:8822".parse().unwrap();
     let packet_managers = PacketManagers::default();
@@ -65,30 +72,31 @@ fn init(mut commands: Commands) {
         message: "Auth me!!!".to_string(),
     })];
 
-    let task = task_pool.spawn(async move {
-        handle
-            .clone()
-            .spawn(async move {
-                match Client::connect(
-                    remote_addr,
-                    Arc::new(packet_managers.packet_registry),
-                    messaging_properties,
-                    read_handler_properties,
-                    client_properties,
-                    handle,
-                    SerializedPacketList::create(authentication_packets),
-                )
-                .await
-                {
-                    Ok(connect_result) => Ok((connect_result, packet_managers.bevy_caller)),
-                    Err(e) => Err(e),
-                }
-            })
-            .await
-            .unwrap()
-    });
+    let spawn_body = async move {
+        match Client::connect(
+            remote_addr,
+            Arc::new(packet_managers.packet_registry),
+            messaging_properties,
+            read_handler_properties,
+            client_properties,
+            #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+            handle,
+            SerializedPacketList::create(authentication_packets),
+        )
+        .await
+        {
+            Ok(connect_result) => Ok((connect_result, packet_managers.bevy_caller)),
+            Err(e) => Err(e),
+        }
+    };
+
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    let task = task_pool.spawn(async move { handle_clone.spawn(spawn_body).await.unwrap() });
+    #[cfg(all(feature = "rt-bevy", not(feature = "rt-tokio")))]
+    let task = task_pool.spawn(spawn_body);
 
     commands.spawn(ClientConnecting { task });
+    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
     commands.spawn(RuntimeKeeper { _runtime: runtime });
 }
 
@@ -150,7 +158,11 @@ fn client_tick(mut commands: Commands, mut query: Query<(Entity, &mut ClientConn
                     })]));
                 let handle = client.disconnect(message);
 
+                #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
                 let result = future::block_on(handle).unwrap();
+
+                #[cfg(all(feature = "rt-bevy", not(feature = "rt-tokio")))]
+                let result = future::block_on(handle);
                 panic!("Client disconnected itself: {:?}", result.state);
             }
         } else {
