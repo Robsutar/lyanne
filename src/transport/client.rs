@@ -13,18 +13,15 @@ use chacha20poly1305::{
     ChaCha20Poly1305, ChaChaPoly1305, Key, Nonce,
 };
 use rand::rngs::OsRng;
-use tokio::{net::UdpSocket, runtime::Handle, sync::Mutex, task::JoinHandle, time::timeout};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
     messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap, MessagePartMapTryInsertResult, MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE
-    },
-    packets::{
+    }, packets::{
         ClientTickEndPacket, DeserializedPacket, Packet, PacketRegistry, SerializedPacket,
         SerializedPacketList,
-    },
-    utils::{DurationMonitor, RttCalculator},
+    }, rt::{cancel, spawn, timeout, try_lock, Mutex, TaskHandle, UdpSocket}, utils::{DurationMonitor, RttCalculator}
 };
 
 use super::{
@@ -163,8 +160,6 @@ pub enum ClientDisconnectState {
 
 /// Result when calling [`Client::disconnect`].
 pub struct ClientDisconnectResult {
-    /// TODO: that is not needed for all runtimes.
-    _runtime: Handle,
     /// The state of the disconnection.
     pub state: ClientDisconnectState
 }
@@ -530,7 +525,7 @@ impl ConnectedServer {
 /// Intended to be used inside [`Client`].
 struct ClientInternal {
     /// Sender for make the spawned tasks keep alive.
-    tasks_keeper_sender: async_channel::Sender<JoinHandle<()>>,
+    tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
     /// Sender for addresses to be disconnected.
     reason_to_disconnect_sender:
         async_channel::Sender<ServerDisconnectReason>,
@@ -539,12 +534,16 @@ struct ClientInternal {
         async_channel::Receiver<ServerDisconnectReason>,
 
     /// Task handle of the receiver.
-    tasks_keeper_handle: Mutex<Option<JoinHandle<()>>>,
+    tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
     
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
+    #[cfg(all(
+        feature = "rt-tokio",
+        not(feature = "rt-bevy")
+    ))]
     /// The runtime for asynchronous operations.
-    runtime: Handle,
+    runtime: crate::rt::Runtime,
     /// Actual state of client periodic tick flow.
     tick_state: RwLock<ClientTickState>,
 
@@ -568,24 +567,46 @@ struct ClientInternal {
 }
 
 impl ClientInternal {
+    
     fn create_async_task<F>(self: &Arc<Self>, future: F)
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let _ = self
-            .tasks_keeper_sender
-            .try_send(self.runtime.clone().spawn(future));
+        #[cfg(all(
+            feature = "rt-tokio",
+            not(feature = "rt-bevy")
+        ))]
+        {
+            let _ = self
+                .tasks_keeper_sender
+                .try_send(spawn(&self.runtime,future));
+        }
+        #[cfg(not(feature = "rt-tokio"))]
+        {
+            let _ = self
+                .tasks_keeper_sender
+                .try_send(spawn(future));
+        }
     }
 
-    fn create_async_tasks_keeper(
-        runtime: Handle,
-        tasks_keeper_receiver: async_channel::Receiver<tokio::task::JoinHandle<()>>,
-    ) -> JoinHandle<()> {
-        runtime.spawn(async move {
-            while let Ok(handle) = tasks_keeper_receiver.recv().await {
-                handle.await.unwrap();
-            }
-        })
+    #[cfg(all(
+        feature = "rt-tokio",
+        not(feature = "rt-bevy")
+    ))]
+    async fn create_async_tasks_keeper(
+        tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
+    ) {
+        while let Ok(handle) = tasks_keeper_receiver.recv().await {
+            handle.await.unwrap();
+        }
+    }
+    #[cfg(not(feature = "rt-tokio"))]
+    async fn create_async_tasks_keeper(
+        tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
+    ) {
+        while let Ok(handle) = tasks_keeper_receiver.recv().await {
+            handle.await;
+        }
     }
 
     fn try_check_read_handler(self: &Arc<Self>) {
@@ -661,7 +682,7 @@ impl ClientInternal {
         socket: &Arc<UdpSocket>,
         read_timeout: Duration,
     ) -> io::Result<Vec<u8>> {
-        let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, tokio::time::error::Elapsed> =
+        let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, ()> =
             timeout(read_timeout, async move {
                 let mut buf = [0u8; 1024];
                 let len = socket.recv(&mut buf).await?;
@@ -707,7 +728,11 @@ impl Client {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        runtime: Handle,
+        #[cfg(all(
+            feature = "rt-tokio",
+            not(feature = "rt-bevy")
+        ))]
+        runtime: crate::rt::Runtime,
         message: SerializedPacketList,
     ) -> Result<ConnectResult, ConnectError> {
         let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
@@ -770,6 +795,10 @@ impl Client {
                                 messaging_properties,
                                 read_handler_properties,
                                 client_properties,
+                                #[cfg(all(
+                                    feature = "rt-tokio",
+                                    not(feature = "rt-bevy")
+                                ))]
                                 runtime,
                                 remote_addr,
                                 sent_time,
@@ -794,7 +823,11 @@ impl Client {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        runtime: Handle,
+        #[cfg(all(
+            feature = "rt-tokio",
+            not(feature = "rt-bevy")
+        ))]
+        runtime: crate::rt::Runtime,
         remote_addr: SocketAddr,
         sent_time: Instant,
     ) -> Result<ConnectResult, ConnectError> {
@@ -847,18 +880,33 @@ impl Client {
             incoming_messages_total_size: RwLock::new(0),
         });
 
-        let runtime_clone = runtime.clone();
+        let tasks_keeper_handle;
+        #[cfg(all(
+            feature = "rt-tokio",
+            not(feature = "rt-bevy")
+        ))]
+        {
+            tasks_keeper_handle = spawn(&runtime, ClientInternal::create_async_tasks_keeper(tasks_keeper_receiver));
+        }
+        
+        #[cfg(not(feature = "rt-tokio"))]
+        {
+            tasks_keeper_handle = spawn(ClientInternal::create_async_tasks_keeper(tasks_keeper_receiver));
+        }  
+
+        let tasks_keeper_handle = Mutex::new(Some(tasks_keeper_handle));
 
         let client = Client {
             internal: Arc::new(ClientInternal {
                 tasks_keeper_sender,
                 reason_to_disconnect_sender,
                 reason_to_disconnect_receiver,
-                tasks_keeper_handle: Mutex::new(Some(ClientInternal::create_async_tasks_keeper(
-                    runtime_clone,
-                    tasks_keeper_receiver,
-                ))),
+                tasks_keeper_handle,
                 socket: Arc::clone(&socket),
+                #[cfg(all(
+                    feature = "rt-tokio",
+                    not(feature = "rt-bevy")
+                ))]
                 runtime,
                 tick_state: RwLock::new(ClientTickState::TickStartPending),
                 packet_registry: packet_registry.clone(),
@@ -1012,7 +1060,7 @@ impl Client {
         let now = Instant::now();
 
         let server = &internal.connected_server;
-        if let Ok(mut messaging) = server.messaging.try_lock() {
+        if let Some(mut messaging) = try_lock(&server.messaging) {
             *server.last_messaging_write.write().unwrap() = now;
             *server.average_latency.write().unwrap() =
                 messaging.latency_monitor.average_value();
@@ -1122,14 +1170,18 @@ impl Client {
     pub fn disconnect(
         self,
         message: Option<SerializedPacketList>,
-    ) -> JoinHandle<ClientDisconnectResult> {
-        let runtime_keeper = self.internal.runtime.clone();
-        self.internal.runtime.clone().spawn(async move {
+    ) -> TaskHandle<ClientDisconnectResult> {
+        spawn(
+            #[cfg(all(
+                feature = "rt-tokio",
+                not(feature = "rt-bevy")
+            ))]
+            &self.internal.runtime.clone(),
+            async move {
             let sent_time = Instant::now();
             
             let tasks_keeper_handle = self.internal.tasks_keeper_handle.lock().await.take().unwrap();
-            tasks_keeper_handle.abort();
-            let _ = tasks_keeper_handle.await;
+            cancel(tasks_keeper_handle).await;
 
             let socket = Arc::clone(&self.internal.socket);
             let read_timeout = self.internal.client_properties.auth_packet_loss_interpretation;
@@ -1149,7 +1201,6 @@ impl Client {
                     let now = Instant::now();
                     if let Err(e) = socket.send(&context.finished_bytes).await {
                         return ClientDisconnectResult {
-                            _runtime: runtime_keeper,
                             state: ClientDisconnectState::Error(e),
                         };
                     }
@@ -1161,7 +1212,6 @@ impl Client {
                         Ok(result) => {
                             if &result == rejection_confirm_bytes {
                                 return ClientDisconnectResult {
-                                    _runtime: runtime_keeper,
                                     state: ClientDisconnectState::Confirmed,
                                 };
                             }
@@ -1169,7 +1219,6 @@ impl Client {
                         Err(_) => {
                             if now - sent_time > timeout_interpretation {
                                 return ClientDisconnectResult {
-                                    _runtime: runtime_keeper,
                                     state: ClientDisconnectState::ConfirmationTimeout,
                                 };
                             }
@@ -1178,7 +1227,6 @@ impl Client {
                 }
             } else {
                 ClientDisconnectResult {
-                    _runtime: runtime_keeper,
                     state: ClientDisconnectState::WithoutReason,
                 }
             }

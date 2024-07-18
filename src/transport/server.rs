@@ -13,19 +13,16 @@ use chacha20poly1305::{
 };
 use dashmap::{DashMap, DashSet};
 use rand::rngs::OsRng;
-use tokio::{net::UdpSocket, runtime::Handle, sync::Mutex, task::JoinHandle, time::timeout};
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 use crate::{
     messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap,
         MessagePartMapTryInsertResult, MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE,
-    },
-    packets::{
+    }, packets::{
         DeserializedPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
         ServerTickEndPacket,
-    },
-    utils::{DurationMonitor, RttCalculator},
+    }, rt::{ spawn, timeout, try_lock, Mutex, TaskHandle, UdpSocket}, utils::{DurationMonitor, RttCalculator}
 };
 
 use super::{
@@ -543,7 +540,7 @@ impl ConnectedClient {
 /// Intended to be used inside [`Server`].
 struct ServerInternal {
     /// Sender for make the spawned tasks keep alive.
-    tasks_keeper_sender: async_channel::Sender<JoinHandle<()>>,
+    tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
     /// Sender for signaling the reading of [`Server::ignored_addrs_asking_reason`]
     ignored_addrs_asking_reason_read_signal_sender: async_channel::Sender<()>,
     /// Sender for signaling the reading of [`Server::rejections_to_confirm`]
@@ -570,12 +567,16 @@ struct ServerInternal {
     )>,
 
     /// Task handle of the receiver.
-    tasks_keeper_handle: JoinHandle<()>,
+    tasks_keeper_handle: TaskHandle<()>,
 
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
+    #[cfg(all(
+        feature = "rt-tokio",
+        not(feature = "rt-bevy")
+    ))]
     /// The runtime for asynchronous operations.
-    runtime: Handle,
+    runtime: crate::rt::Runtime,
     /// Actual state of server periodic tick flow.
     tick_state: RwLock<ServerTickState>,
 
@@ -638,20 +639,41 @@ impl ServerInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let _ = self
-            .tasks_keeper_sender
-            .try_send(self.runtime.clone().spawn(future));
+        #[cfg(all(
+            feature = "rt-tokio",
+            not(feature = "rt-bevy")
+        ))]
+        {
+            let _ = self
+                .tasks_keeper_sender
+                .try_send(spawn(&self.runtime,future));
+        }
+        #[cfg(not(feature = "rt-tokio"))]
+        {
+            let _ = self
+                .tasks_keeper_sender
+                .try_send(spawn(future));
+        }
     }
 
-    fn create_async_tasks_keeper(
-        runtime: Handle,
-        tasks_keeper_receiver: async_channel::Receiver<tokio::task::JoinHandle<()>>,
-    ) -> JoinHandle<()> {
-        runtime.spawn(async move {
-            while let Ok(handle) = tasks_keeper_receiver.recv().await {
-                handle.await.unwrap();
-            }
-        })
+    #[cfg(all(
+        feature = "rt-tokio",
+        not(feature = "rt-bevy")
+    ))]
+    async fn create_async_tasks_keeper(
+        tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
+    ) {
+        while let Ok(handle) = tasks_keeper_receiver.recv().await {
+            handle.await.unwrap();
+        }
+    }
+    #[cfg(not(feature = "rt-tokio"))]
+    async fn create_async_tasks_keeper(
+        tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
+    ) {
+        while let Ok(handle) = tasks_keeper_receiver.recv().await {
+            handle.await;
+        }
     }
 
     async fn create_pending_auth_resend_handler(
@@ -801,12 +823,13 @@ impl ServerInternal {
     ) -> io::Result<(SocketAddr, Vec<u8>)> {
         let pre_read_next_bytes_result: Result<
             io::Result<(SocketAddr, Vec<u8>)>,
-            tokio::time::error::Elapsed,
+            (),
         > = timeout(read_timeout, async move {
-            let mut buf = [0u8; 1024];
-            let (len, addr) = socket.recv_from(&mut buf).await?;
-            Ok((addr, buf[..len].to_vec()))
-        })
+                let mut buf = [0u8; 1024];
+                let (len, addr) = socket.recv_from(&mut buf).await?;
+                Ok((addr, buf[..len].to_vec()))
+            }
+        )
         .await;
 
         match pre_read_next_bytes_result {
@@ -951,7 +974,11 @@ impl Server {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         server_properties: Arc<ServerProperties>,
-        runtime: Handle,
+        #[cfg(all(
+            feature = "rt-tokio",
+            not(feature = "rt-bevy")
+        ))]
+        runtime: crate::rt::Runtime,
     ) -> io::Result<BindResult> {
         let socket = Arc::new(UdpSocket::bind(addr).await?);
 
@@ -973,7 +1000,19 @@ impl Server {
         let (clients_to_disconnect_sender, clients_to_disconnect_receiver) =
             async_channel::unbounded();
 
-        let runtime_clone = runtime.clone();
+        let tasks_keeper_handle;
+        #[cfg(all(
+            feature = "rt-tokio",
+            not(feature = "rt-bevy")
+        ))]
+        {
+            tasks_keeper_handle = spawn(&runtime, ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
+        }
+        
+        #[cfg(not(feature = "rt-tokio"))]
+        {
+            tasks_keeper_handle = spawn(ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
+        }   
 
         let server = Arc::new(ServerInternal {
             tasks_keeper_sender,
@@ -987,12 +1026,13 @@ impl Server {
             clients_to_auth_receiver,
             clients_to_disconnect_receiver,
 
-            tasks_keeper_handle: ServerInternal::create_async_tasks_keeper(
-                runtime_clone,
-                tasks_keeper_receiver,
-            ),
+            tasks_keeper_handle,
 
             socket,
+            #[cfg(all(
+                feature = "rt-tokio",
+                not(feature = "rt-bevy")
+            ))]
             runtime,
             tick_state: RwLock::new(ServerTickState::TickStartPending),
 
@@ -1165,7 +1205,7 @@ impl Server {
             if addrs_to_disconnect.contains_key(client.key()) {
                 continue 'l1;
             }
-            if let Ok(mut messaging) = client.messaging.try_lock() {
+            if let Some(mut messaging) = try_lock(&client.messaging) {
                 *client.last_messaging_write.write().unwrap() = now;
                 *client.average_latency.write().unwrap() =
                     messaging.latency_monitor.average_value();
