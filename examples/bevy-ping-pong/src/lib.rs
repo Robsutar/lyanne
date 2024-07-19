@@ -7,9 +7,12 @@ use lyanne::packets::ClientPacketResource;
 use lyanne::packets::ServerPacketResource;
 use lyanne::{
     add_essential_packets,
-    packets::{DeserializedPacket, Packet, PacketId, PacketRegistry, PacketToDowncast},
+    packets::{
+        DeserializedPacket, Packet, PacketId, PacketRegistry, PacketToDowncast, ServerTickEndPacket,
+    },
 };
 
+use serde::{Deserialize, Serialize};
 pub struct BevyPacketCaller {
     #[cfg(feature = "client")]
     client_caller_map:
@@ -110,74 +113,12 @@ impl Default for PacketManagers {
     }
 }
 
-#[derive(Debug)]
+#[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct FooPacket {
     pub message: String,
 }
 
-impl Packet for FooPacket {
-    fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
-        Ok(self.message.as_bytes().to_vec())
-    }
-
-    fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
-        match String::from_utf8(bytes.to_vec()) {
-            Ok(message) => Ok(Self { message }),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-        }
-    }
-
-    #[cfg(feature = "client")]
-    fn run_client_schedule(
-        world: &mut World,
-    ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
-        world.try_run_schedule(FooPacketClientSchedule)
-    }
-
-    #[cfg(feature = "server")]
-    fn run_server_schedule(
-        world: &mut World,
-    ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
-        world.try_run_schedule(FooPacketServerSchedule)
-    }
-}
-#[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct FooPacketClientSchedule;
-#[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct FooPacketServerSchedule;
-
-#[derive(Debug)]
+#[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct BarPacket {
     pub message: String,
 }
-
-impl Packet for BarPacket {
-    fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
-        Ok(self.message.as_bytes().to_vec())
-    }
-
-    fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
-        match String::from_utf8(bytes.to_vec()) {
-            Ok(message) => Ok(Self { message }),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-        }
-    }
-
-    #[cfg(feature = "client")]
-    fn run_client_schedule(
-        world: &mut World,
-    ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
-        world.try_run_schedule(BarPacketClientSchedule)
-    }
-
-    #[cfg(feature = "server")]
-    fn run_server_schedule(
-        world: &mut World,
-    ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
-        world.try_run_schedule(BarPacketServerSchedule)
-    }
-}
-#[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct BarPacketClientSchedule;
-#[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct BarPacketServerSchedule;

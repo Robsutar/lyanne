@@ -13,6 +13,7 @@ bevy-ping-pong = { path = "../", features = ["server"] }
 bevy = "^0.14.0"
 lyanne = { path = "../../../", features = [
     "bevy-packet-schedules",
+    "sd-bincode",
     "troubles_simulator",
     "server",
 ] }
