@@ -55,7 +55,6 @@ fn main() {
 }
 
 fn init(mut commands: Commands) {
-    let task_pool = AsyncComputeTaskPool::get();
     #[cfg(feature = "rt-tokio")]
     let runtime = Runtime::new().expect("Failed to create Tokio runtime");
     #[cfg(feature = "rt-tokio")]
