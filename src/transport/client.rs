@@ -575,7 +575,7 @@ impl ClientInternal {
                 .tasks_keeper_sender
                 .try_send(spawn(&self.runtime,future));
         }
-        #[cfg(not(feature = "rt-tokio"))]
+        #[cfg(feature = "rt-bevy")]
         {
             let _ = self
                 .tasks_keeper_sender
@@ -591,7 +591,7 @@ impl ClientInternal {
             handle.await.unwrap();
         }
     }
-    #[cfg(not(feature = "rt-tokio"))]
+    #[cfg(feature = "rt-bevy")]
     async fn create_async_tasks_keeper(
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
@@ -878,7 +878,7 @@ impl Client {
             tasks_keeper_handle = spawn(&runtime, ClientInternal::create_async_tasks_keeper(tasks_keeper_receiver));
         }
         
-        #[cfg(not(feature = "rt-tokio"))]
+        #[cfg(feature = "rt-bevy")]
         {
             tasks_keeper_handle = spawn(ClientInternal::create_async_tasks_keeper(tasks_keeper_receiver));
         }  
