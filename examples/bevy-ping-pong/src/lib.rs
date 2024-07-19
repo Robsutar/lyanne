@@ -1,13 +1,18 @@
 use std::collections::HashMap;
 
 use bevy::prelude::{Commands, World};
+#[cfg(feature = "client")]
+use lyanne::packets::ClientPacketResource;
+#[cfg(feature = "server")]
+use lyanne::packets::ServerPacketResource;
 use lyanne::{
     add_essential_packets,
     packets::{
-        ClientPacketResource, ClientTickEndPacket, DeserializedPacket, Packet, PacketId,
-        PacketRegistry, PacketToDowncast, ServerPacketResource, ServerTickEndPacket,
+        ClientTickEndPacket, DeserializedPacket, Packet, PacketId, PacketRegistry,
+        PacketToDowncast, ServerTickEndPacket,
     },
 };
+
 use serde::{Deserialize, Serialize};
 pub struct BevyPacketCaller {
     #[cfg(feature = "client")]
