@@ -13,9 +13,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-# TODO: remove bevy, rt-tokio, client and server from default features
-default = ["bevy", "client", "server"]
-bevy = ["dep:bevy_ecs", "lyanne-derive/bevy"]
+default = []
 rt-tokio = ["dep:tokio"]
 rt-bevy = [
     "dep:bevy_tasks",
