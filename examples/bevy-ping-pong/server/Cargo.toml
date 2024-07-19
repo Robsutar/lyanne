@@ -12,7 +12,7 @@ rt-bevy = ["lyanne/rt-bevy"]
 bevy-ping-pong = { path = "../", features = ["server"] }
 bevy = "^0.14.0"
 lyanne = { path = "../../../", features = [
-    "bevy",
+    "bevy-packet-schedules",
     "troubles_simulator",
     "server",
 ] }

@@ -10,7 +10,7 @@ quote = "^1.0.0"
 [features]
 client = []
 server = []
-bevy = []
+bevy-packet-schedules = []
 
 [lib]
 proc-macro = true

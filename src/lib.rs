@@ -4,5 +4,5 @@ pub mod rt;
 pub mod transport;
 pub mod utils;
 
-#[cfg(feature = "bevy")]
+#[cfg(feature = "bevy-packet-schedules")]
 pub mod bevy;

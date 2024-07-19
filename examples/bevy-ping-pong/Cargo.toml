@@ -9,7 +9,7 @@ server = ["lyanne/server"]
 
 [dependencies]
 bevy = "^0.14.0"
-lyanne = { path = "../../", features = ["bevy"] }
+lyanne = { path = "../../", features = ["bevy-packet-schedules"] }
 tokio = { version = "^1.0.0", features = ["full"] }
 rand = "^0.8.0"
 serde = { version = "^1.0.0", features = ["derive"] }

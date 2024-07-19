@@ -5,9 +5,9 @@ use std::{
     io,
 };
 
-#[cfg(feature = "bevy")]
+#[cfg(feature = "bevy-packet-schedules")]
 use bevy_ecs::system::Resource;
-#[cfg(feature = "bevy")]
+#[cfg(feature = "bevy-packet-schedules")]
 use bevy_ecs::world::World;
 
 use crate as lyanne;
@@ -27,12 +27,12 @@ pub trait Packet:
     fn serialize_packet(&self) -> io::Result<Vec<u8>>;
     fn deserialize_packet(bytes: &[u8]) -> io::Result<Self>;
 
-    #[cfg(all(feature = "bevy", feature = "client"))]
+    #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
     fn run_client_schedule(
         world: &mut World,
     ) -> Result<(), bevy_ecs::world::error::TryRunScheduleError>;
 
-    #[cfg(all(feature = "bevy", feature = "server"))]
+    #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
     fn run_server_schedule(
         world: &mut World,
     ) -> Result<(), bevy_ecs::world::error::TryRunScheduleError>;
@@ -46,13 +46,13 @@ macro_rules! add_essential_packets {
     };
 }
 
-#[cfg(all(feature = "bevy", feature = "client"))]
+#[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
 #[derive(Resource)]
 pub struct ClientPacketResource<P: Packet> {
     pub packet: Option<P>,
 }
 
-#[cfg(all(feature = "bevy", feature = "server"))]
+#[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
 #[derive(Resource)]
 pub struct ServerPacketResource<P: Packet> {
     pub packet: Option<P>,

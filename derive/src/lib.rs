@@ -7,7 +7,7 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
     let mut functions = Vec::new();
     let mut external = Vec::new();
 
-    #[cfg(all(feature = "bevy", feature = "client"))]
+    #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
     {
         let client_schedule_ident =
             syn::Ident::new(&format!("{}ClientSchedule", ident), ident.span());
@@ -22,7 +22,7 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
         });
     }
 
-    #[cfg(all(feature = "bevy", feature = "server"))]
+    #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
     {
         let server_schedule_ident =
             syn::Ident::new(&format!("{}ServerSchedule", ident), ident.span());

@@ -14,6 +14,10 @@ edition = "2021"
 
 [features]
 default = []
+client = ["lyanne-derive/client"]
+server = ["lyanne-derive/server"]
+troubles_simulator = []
+
 rt-tokio = ["dep:tokio"]
 rt-bevy = [
     "dep:bevy_tasks",
@@ -22,9 +26,8 @@ rt-bevy = [
     "dep:futures",
     "dep:futures-timer",
 ]
-troubles_simulator = []
-client = ["lyanne-derive/client"]
-server = ["lyanne-derive/server"]
+
+bevy-packet-schedules = ["dep:bevy_ecs", "lyanne-derive/bevy-packet-schedules"]
 
 [dependencies]
 lyanne-derive = { path = "derive" }
@@ -39,7 +42,6 @@ async-channel = "^2.0.0"
 
 smol = { version = "^2.0.0", optional = true }
 async-std = { version = "^1.0.0", optional = true }
-bevy_ecs = { version = "^0.14.0", optional = true }
 
 # rt-bevy
 tokio = { version = "^1.0.0", optional = true, features = [
@@ -53,3 +55,5 @@ async-net = { version = "^2.0.0", optional = true }
 async-lock = { version = "^3.0.0", optional = true }
 futures = { version = "^0.3", optional = true, features = ["alloc"] }
 futures-timer = { version = "^3.0.0", optional = true }
+
+bevy_ecs = { version = "^0.14.0", optional = true }
