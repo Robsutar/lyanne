@@ -10,7 +10,6 @@ use lyanne::{
     packets::{DeserializedPacket, Packet, PacketId, PacketRegistry, PacketToDowncast},
 };
 
-use serde::{Deserialize, Serialize};
 pub struct BevyPacketCaller {
     #[cfg(feature = "client")]
     client_caller_map:
@@ -111,7 +110,7 @@ impl Default for PacketManagers {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Debug)]
 pub struct FooPacket {
     pub message: String,
 }
@@ -147,7 +146,7 @@ pub struct FooPacketClientSchedule;
 #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FooPacketServerSchedule;
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Debug)]
 pub struct BarPacket {
     pub message: String,
 }
