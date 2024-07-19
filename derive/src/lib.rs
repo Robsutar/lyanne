@@ -7,6 +7,10 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
     let mut functions = Vec::new();
     let mut external = Vec::new();
 
+    // To avoid explicit use of proc_macro2
+    functions.push(quote::quote! {});
+    external.push(quote::quote! {});
+
     #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
     {
         let client_schedule_ident =
