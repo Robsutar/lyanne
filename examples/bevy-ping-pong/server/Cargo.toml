@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["rt-tokio"]
+default = ["rt-bevy"]
 rt-tokio = ["dep:tokio", "lyanne/rt-tokio"]
 rt-bevy = ["lyanne/rt-bevy"]
 
