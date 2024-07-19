@@ -571,10 +571,7 @@ struct ServerInternal {
 
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
-    #[cfg(all(
-        feature = "rt-tokio",
-        not(feature = "rt-bevy")
-    ))]
+    #[cfg(feature = "rt-tokio")]
     /// The runtime for asynchronous operations.
     runtime: crate::rt::Runtime,
     /// Actual state of server periodic tick flow.
@@ -639,10 +636,7 @@ impl ServerInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        #[cfg(all(
-            feature = "rt-tokio",
-            not(feature = "rt-bevy")
-        ))]
+        #[cfg(feature = "rt-tokio")]
         {
             let _ = self
                 .tasks_keeper_sender
@@ -656,10 +650,7 @@ impl ServerInternal {
         }
     }
 
-    #[cfg(all(
-        feature = "rt-tokio",
-        not(feature = "rt-bevy")
-    ))]
+    #[cfg(feature = "rt-tokio")]
     async fn create_async_tasks_keeper(
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
@@ -974,10 +965,7 @@ impl Server {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         server_properties: Arc<ServerProperties>,
-        #[cfg(all(
-            feature = "rt-tokio",
-            not(feature = "rt-bevy")
-        ))]
+        #[cfg(feature = "rt-tokio")]
         runtime: crate::rt::Runtime,
     ) -> io::Result<BindResult> {
         let socket = Arc::new(UdpSocket::bind(addr).await?);
@@ -1001,10 +989,7 @@ impl Server {
             async_channel::unbounded();
 
         let tasks_keeper_handle;
-        #[cfg(all(
-            feature = "rt-tokio",
-            not(feature = "rt-bevy")
-        ))]
+        #[cfg(feature = "rt-tokio")]
         {
             tasks_keeper_handle = spawn(&runtime, ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
         }
@@ -1029,10 +1014,7 @@ impl Server {
             tasks_keeper_handle,
 
             socket,
-            #[cfg(all(
-                feature = "rt-tokio",
-                not(feature = "rt-bevy")
-            ))]
+            #[cfg(feature = "rt-tokio")]
             runtime,
             tick_state: RwLock::new(ServerTickState::TickStartPending),
 

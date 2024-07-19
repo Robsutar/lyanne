@@ -538,10 +538,7 @@ struct ClientInternal {
     
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
-    #[cfg(all(
-        feature = "rt-tokio",
-        not(feature = "rt-bevy")
-    ))]
+    #[cfg(feature = "rt-tokio")]
     /// The runtime for asynchronous operations.
     runtime: crate::rt::Runtime,
     /// Actual state of client periodic tick flow.
@@ -572,10 +569,7 @@ impl ClientInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        #[cfg(all(
-            feature = "rt-tokio",
-            not(feature = "rt-bevy")
-        ))]
+        #[cfg(feature = "rt-tokio")]
         {
             let _ = self
                 .tasks_keeper_sender
@@ -589,10 +583,7 @@ impl ClientInternal {
         }
     }
 
-    #[cfg(all(
-        feature = "rt-tokio",
-        not(feature = "rt-bevy")
-    ))]
+    #[cfg(feature = "rt-tokio")]
     async fn create_async_tasks_keeper(
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
@@ -728,10 +719,7 @@ impl Client {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        #[cfg(all(
-            feature = "rt-tokio",
-            not(feature = "rt-bevy")
-        ))]
+        #[cfg(feature = "rt-tokio")]
         runtime: crate::rt::Runtime,
         message: SerializedPacketList,
     ) -> Result<ConnectResult, ConnectError> {
@@ -795,10 +783,7 @@ impl Client {
                                 messaging_properties,
                                 read_handler_properties,
                                 client_properties,
-                                #[cfg(all(
-                                    feature = "rt-tokio",
-                                    not(feature = "rt-bevy")
-                                ))]
+                                #[cfg(feature = "rt-tokio")]
                                 runtime,
                                 remote_addr,
                                 sent_time,
@@ -823,10 +808,7 @@ impl Client {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        #[cfg(all(
-            feature = "rt-tokio",
-            not(feature = "rt-bevy")
-        ))]
+        #[cfg(feature = "rt-tokio")]
         runtime: crate::rt::Runtime,
         remote_addr: SocketAddr,
         sent_time: Instant,
@@ -881,10 +863,7 @@ impl Client {
         });
 
         let tasks_keeper_handle;
-        #[cfg(all(
-            feature = "rt-tokio",
-            not(feature = "rt-bevy")
-        ))]
+        #[cfg(feature = "rt-tokio")]
         {
             tasks_keeper_handle = spawn(&runtime, ClientInternal::create_async_tasks_keeper(tasks_keeper_receiver));
         }
@@ -903,10 +882,7 @@ impl Client {
                 reason_to_disconnect_receiver,
                 tasks_keeper_handle,
                 socket: Arc::clone(&socket),
-                #[cfg(all(
-                    feature = "rt-tokio",
-                    not(feature = "rt-bevy")
-                ))]
+                #[cfg(feature = "rt-tokio")]
                 runtime,
                 tick_state: RwLock::new(ClientTickState::TickStartPending),
                 packet_registry: packet_registry.clone(),
@@ -1172,10 +1148,7 @@ impl Client {
         message: Option<SerializedPacketList>,
     ) -> TaskHandle<ClientDisconnectResult> {
         spawn(
-            #[cfg(all(
-                feature = "rt-tokio",
-                not(feature = "rt-bevy")
-            ))]
+            #[cfg(feature = "rt-tokio")]
             &self.internal.runtime.clone(),
             async move {
             let sent_time = Instant::now();

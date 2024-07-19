@@ -1,10 +1,7 @@
 macro_rules! cfg_rt_tokio {
     ($($item:item)*) => {
         $(
-            #[cfg(all(
-                feature = "rt-tokio",
-                not(feature = "rt-bevy")
-            ))]
+            #[cfg(feature = "rt-tokio")]
             $item
         )*
     }
@@ -13,10 +10,7 @@ macro_rules! cfg_rt_tokio {
 macro_rules! cfg_rt_bevy {
     ($($item:item)*) => {
         $(
-            #[cfg(all(
-                feature = "rt-bevy",
-                not(feature = "rt-tokio")
-            ))]
+            #[cfg(feature = "rt-bevy")]
             $item
         )*
     }
