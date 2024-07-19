@@ -10,16 +10,16 @@ use bevy_ping_pong::{
     BarPacket, BarPacketClientSchedule, BevyPacketCaller, FooPacket, FooPacketClientSchedule,
     PacketManagers,
 };
-use lyanne::packets::ClientPacketResource;
 use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectResult};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
+use lyanne::{packets::ClientPacketResource, rt::TaskHandle};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
 use rand::{thread_rng, Rng};
 
-#[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+#[cfg(feature = "rt-tokio")]
 use tokio::runtime::Runtime;
 
-#[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+#[cfg(feature = "rt-tokio")]
 #[derive(Component)]
 struct RuntimeKeeper {
     _runtime: Runtime,
@@ -27,7 +27,8 @@ struct RuntimeKeeper {
 
 #[derive(Component)]
 struct ClientConnecting {
-    task: Task<Result<(ConnectResult, BevyPacketCaller), ConnectError>>,
+    bevy_caller: Option<BevyPacketCaller>,
+    task: TaskHandle<Result<ConnectResult, ConnectError>>,
 }
 
 #[derive(Component)]
@@ -55,11 +56,11 @@ fn main() {
 
 fn init(mut commands: Commands) {
     let task_pool = AsyncComputeTaskPool::get();
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    #[cfg(feature = "rt-tokio")]
     let runtime = Runtime::new().expect("Failed to create Tokio runtime");
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    #[cfg(feature = "rt-tokio")]
     let handle = runtime.handle().clone();
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    #[cfg(feature = "rt-tokio")]
     let handle_clone = handle.clone();
 
     let remote_addr = "127.0.0.1:8822".parse().unwrap();
@@ -72,31 +73,22 @@ fn init(mut commands: Commands) {
         message: "Auth me!!!".to_string(),
     })];
 
-    let spawn_body = async move {
-        match Client::connect(
-            remote_addr,
-            Arc::new(packet_managers.packet_registry),
-            messaging_properties,
-            read_handler_properties,
-            client_properties,
-            #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
-            handle,
-            SerializedPacketList::create(authentication_packets),
-        )
-        .await
-        {
-            Ok(connect_result) => Ok((connect_result, packet_managers.bevy_caller)),
-            Err(e) => Err(e),
-        }
-    };
+    let connect_handle = Client::connect(
+        remote_addr,
+        Arc::new(packet_managers.packet_registry),
+        messaging_properties,
+        read_handler_properties,
+        client_properties,
+        #[cfg(feature = "rt-tokio")]
+        handle,
+        SerializedPacketList::create(authentication_packets),
+    );
 
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
-    let task = task_pool.spawn(async move { handle_clone.spawn(spawn_body).await.unwrap() });
-    #[cfg(all(feature = "rt-bevy", not(feature = "rt-tokio")))]
-    let task = task_pool.spawn(spawn_body);
-
-    commands.spawn(ClientConnecting { task });
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    commands.spawn(ClientConnecting {
+        bevy_caller: Some(packet_managers.bevy_caller),
+        task: connect_handle,
+    });
+    #[cfg(feature = "rt-tokio")]
     commands.spawn(RuntimeKeeper { _runtime: runtime });
 }
 
@@ -121,10 +113,10 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
             commands.entity(entity).despawn();
 
             match connect {
-                Ok((connect_result, bevy_caller)) => {
+                Ok(connect_result) => {
                     let client_connected = ClientConnected {
                         client: Some(connect_result.client),
-                        bevy_caller,
+                        bevy_caller: client_connecting.bevy_caller.take().unwrap(),
                     };
                     info!(
                         "Client connected, first message size: {:?}",
@@ -158,10 +150,10 @@ fn client_tick(mut commands: Commands, mut query: Query<(Entity, &mut ClientConn
                     })]));
                 let handle = client.disconnect(message);
 
-                #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+                #[cfg(feature = "rt-tokio")]
                 let result = future::block_on(handle).unwrap();
 
-                #[cfg(all(feature = "rt-bevy", not(feature = "rt-tokio")))]
+                #[cfg(feature = "rt-bevy")]
                 let result = future::block_on(handle);
                 panic!("Client disconnected itself: {:?}", result.state);
             }

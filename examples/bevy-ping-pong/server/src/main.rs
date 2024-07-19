@@ -12,15 +12,16 @@ use bevy_ping_pong::{
     PacketManagers,
 };
 use lyanne::packets::{SerializedPacketList, ServerPacketResource};
+use lyanne::rt::TaskHandle;
 use lyanne::transport::server::Server;
 use lyanne::transport::server::{BindResult, IgnoredAddrReason, ServerProperties};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use rand::{thread_rng, Rng};
 
-#[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+#[cfg(feature = "rt-tokio")]
 use tokio::runtime::Runtime;
 
-#[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+#[cfg(feature = "rt-tokio")]
 #[derive(Component)]
 struct RuntimeKeeper {
     _runtime: Runtime,
@@ -28,7 +29,8 @@ struct RuntimeKeeper {
 
 #[derive(Component)]
 struct ServerConnecting {
-    task: Task<io::Result<(BindResult, BevyPacketCaller)>>,
+    bevy_caller: Option<BevyPacketCaller>,
+    task: TaskHandle<io::Result<BindResult>>,
 }
 
 #[derive(Component)]
@@ -57,12 +59,11 @@ fn main() {
 }
 
 fn init(mut commands: Commands) {
-    let task_pool = AsyncComputeTaskPool::get();
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    #[cfg(feature = "rt-tokio")]
     let runtime = Runtime::new().expect("Failed to create Tokio runtime");
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    #[cfg(feature = "rt-tokio")]
     let handle = runtime.handle().clone();
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    #[cfg(feature = "rt-tokio")]
     let handle_clone = handle.clone();
 
     let addr = "127.0.0.1:8822".parse().unwrap();
@@ -71,27 +72,21 @@ fn init(mut commands: Commands) {
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let server_properties = Arc::new(ServerProperties::default());
 
-    let spawn_body = async move {
-        let bind_result = Server::bind(
-            addr,
-            Arc::new(packet_managers.packet_registry),
-            messaging_properties,
-            read_handler_properties,
-            server_properties,
-            #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
-            handle,
-        )
-        .await?;
-        Ok((bind_result, packet_managers.bevy_caller))
-    };
+    let bind_handle = Server::bind(
+        addr,
+        Arc::new(packet_managers.packet_registry),
+        messaging_properties,
+        read_handler_properties,
+        server_properties,
+        #[cfg(feature = "rt-tokio")]
+        handle,
+    );
 
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
-    let task = task_pool.spawn(async move { handle_clone.spawn(spawn_body).await.unwrap() });
-    #[cfg(all(feature = "rt-bevy", not(feature = "rt-tokio")))]
-    let task = task_pool.spawn(spawn_body);
-
-    commands.spawn(ServerConnecting { task });
-    #[cfg(all(feature = "rt-tokio", not(feature = "rt-bevy")))]
+    commands.spawn(ServerConnecting {
+        bevy_caller: Some(packet_managers.bevy_caller),
+        task: bind_handle,
+    });
+    #[cfg(feature = "rt-tokio")]
     commands.spawn(RuntimeKeeper { _runtime: runtime });
 }
 
@@ -113,10 +108,13 @@ fn bar_second_read(mut packet: ResMut<ServerPacketResource<BarPacket>>) {
 fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut ServerConnecting)>) {
     for (entity, mut server_connecting) in query.iter_mut() {
         if let Some(bind) = future::block_on(future::poll_once(&mut server_connecting.task)) {
+            #[cfg(feature = "rt-tokio")]
+            let bind = bind.unwrap();
+
             commands.entity(entity).despawn();
 
             match bind {
-                Ok((bind_result, bevy_caller)) => {
+                Ok(bind_result) => {
                     info!("Server bind");
 
                     if false {
@@ -133,7 +131,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
                     commands.spawn(ServerConnected {
                         server: Some(bind_result.server),
                         tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
-                        bevy_caller,
+                        bevy_caller: server_connecting.bevy_caller.take().unwrap(),
                     });
                 }
                 Err(err) => {
