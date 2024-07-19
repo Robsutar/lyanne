@@ -10,9 +10,14 @@ use bevy_ecs::system::Resource;
 #[cfg(feature = "bevy-packet-schedules")]
 use bevy_ecs::world::World;
 
-use crate as lyanne;
+use crate::{
+    self as lyanne,
+    sd::{cfg_sd_bincode, cfg_sd_none},
+};
 
-pub use bincode as serializer;
+#[cfg(feature = "sd-bincode")]
+pub use bincode;
+#[cfg(feature = "sd-bincode")]
 use serde::{Deserialize, Serialize};
 
 pub extern crate lyanne_derive;
@@ -21,29 +26,59 @@ pub use lyanne_derive::Packet;
 pub type PacketId = u16;
 pub type PacketToDowncast = dyn Any + Send + Sync;
 
-pub trait Packet:
-    Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any + Send + Sync
-{
-    fn serialize_packet(&self) -> io::Result<Vec<u8>>;
-    fn deserialize_packet(bytes: &[u8]) -> io::Result<Self>;
+macro_rules! packet_body {
+    () => {
+        #[cfg(not(feature = "sd-bincode"))]
+        fn serialize_packet(&self) -> io::Result<Vec<u8>>;
+        #[cfg(not(feature = "sd-bincode"))]
+        fn deserialize_packet(bytes: &[u8]) -> io::Result<Self>;
 
-    #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
-    fn run_client_schedule(
-        world: &mut World,
-    ) -> Result<(), bevy_ecs::world::error::TryRunScheduleError>;
+        #[cfg(feature = "sd-bincode")]
+        fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+            lyanne::packets::bincode::serialize::<Self>(self)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        }
 
-    #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
-    fn run_server_schedule(
-        world: &mut World,
-    ) -> Result<(), bevy_ecs::world::error::TryRunScheduleError>;
+        #[cfg(feature = "sd-bincode")]
+        fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
+            lyanne::packets::bincode::deserialize::<Self>(bytes)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        }
+
+        #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
+        fn run_client_schedule(
+            world: &mut World,
+        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError>;
+
+        #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
+        fn run_server_schedule(
+            world: &mut World,
+        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError>;
+    };
 }
 
 #[macro_export]
 macro_rules! add_essential_packets {
     ($exit:expr) => {
-        $exit.add::<ClientTickEndPacket>();
-        $exit.add::<ServerTickEndPacket>();
+        $exit.add::<lyanne::packets::ClientTickEndPacket>();
+        $exit.add::<lyanne::packets::ServerTickEndPacket>();
     };
+}
+
+cfg_sd_bincode! {
+    pub trait Packet:
+        Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any + Send + Sync
+    {
+        packet_body!();
+    }
+}
+
+cfg_sd_none! {
+    pub trait Packet:
+        Sized + Debug + 'static + Any + Send + Sync
+    {
+        packet_body!();
+    }
 }
 
 #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
@@ -286,8 +321,72 @@ impl SerializedPacketList {
     }
 }
 
-#[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct ClientTickEndPacket;
+cfg_sd_bincode! {
+    #[derive(Packet, Deserialize, Serialize, Debug)]
+    pub struct ClientTickEndPacket;
 
-#[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct ServerTickEndPacket;
+    #[derive(Packet, Deserialize, Serialize, Debug)]
+    pub struct ServerTickEndPacket;
+}
+
+cfg_sd_none! {
+    #[derive(Debug)]
+    pub struct ClientTickEndPacket;
+    impl Packet for ClientTickEndPacket {
+        fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
+            Ok(Self)
+        }
+
+        #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
+        fn run_client_schedule(
+            world: &mut World,
+        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+            world.try_run_schedule(ClientTickEndPacketClientSchedule)
+        }
+
+        #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
+        fn run_server_schedule(
+            world: &mut World,
+        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+            world.try_run_schedule(ClientTickEndPacketServerSchedule)
+        }
+    }
+    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    struct ClientTickEndPacketClientSchedule;
+    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    struct ClientTickEndPacketServerSchedule;
+
+    #[derive(Debug)]
+    pub struct ServerTickEndPacket;
+    impl Packet for ServerTickEndPacket {
+        fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
+            Ok(Self)
+        }
+
+        #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
+        fn run_client_schedule(
+            world: &mut World,
+        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+            world.try_run_schedule(ServerTickEndPacketClientSchedule)
+        }
+
+        #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
+        fn run_server_schedule(
+            world: &mut World,
+        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+            world.try_run_schedule(ServerTickEndPacketServerSchedule)
+        }
+    }
+    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    struct ServerTickEndPacketClientSchedule;
+    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    struct ServerTickEndPacketServerSchedule;
+}

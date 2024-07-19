@@ -27,12 +27,17 @@ rt-bevy = [
     "dep:futures-timer",
 ]
 
-bevy-packet-schedules = ["dep:bevy_ecs", "lyanne-derive/bevy-packet-schedules"]
+sd-bincode = [
+    "lyanne-derive/sd-bincode",
+    "dep:serde",
+    "dep:bincode",
+    "dep:bincode",
+]
+
+bevy-packet-schedules = ["lyanne-derive/bevy-packet-schedules", "dep:bevy_ecs"]
 
 [dependencies]
 lyanne-derive = { path = "derive" }
-serde = { version = "^1.0.0", features = ["derive"] }
-bincode = "^1.0.0"
 rand = "^0.8.0"
 dashmap = "^6.0.0"
 x25519-dalek = "^2.0.0"
@@ -48,7 +53,6 @@ tokio = { version = "^1.0.0", optional = true, features = [
     "net",
     "rt-multi-thread",
 ] }
-
 # rt-bevy
 bevy_tasks = { version = "^0.14.0", optional = true }
 async-net = { version = "^2.0.0", optional = true }
@@ -57,3 +61,7 @@ futures = { version = "^0.3", optional = true, features = ["alloc"] }
 futures-timer = { version = "^3.0.0", optional = true }
 
 bevy_ecs = { version = "^0.14.0", optional = true }
+
+# sd-bincode
+serde = { version = "^1.0.0", features = ["derive"], optional = true }
+bincode = { version = "^1.0.0", optional = true }
