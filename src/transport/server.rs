@@ -959,7 +959,7 @@ pub struct Server {
 
 impl Server {
     /// Bind a [`UdpSocket´], to create a new Server instance
-    pub async fn bind(
+    pub fn bind(
         addr: SocketAddr,
         packet_registry: Arc<PacketRegistry>,
         messaging_properties: Arc<MessagingProperties>,
@@ -967,111 +967,122 @@ impl Server {
         server_properties: Arc<ServerProperties>,
         #[cfg(feature = "rt-tokio")]
         runtime: crate::rt::Runtime,
-    ) -> io::Result<BindResult> {
-        let socket = Arc::new(UdpSocket::bind(addr).await?);
-
-        let (tasks_keeper_sender, tasks_keeper_receiver) = async_channel::unbounded();
-        let (pending_auth_resend_sender, pending_auth_resend_receiver) =
-            async_channel::unbounded();
-        let (pending_rejection_confirm_resend_sender, pending_rejection_confirm_resend_receiver) =
-            async_channel::unbounded();
-            let (
-                ignored_addrs_asking_reason_read_signal_sender,
-                ignored_addrs_asking_reason_read_signal_receiver,
-            ) = async_channel::unbounded();
-            let (
-                rejections_to_confirm_signal_sender,
-                rejections_to_confirm_signal_receiver,
-            ) = async_channel::unbounded();
-                
-        let (clients_to_auth_sender, clients_to_auth_receiver) = async_channel::unbounded();
-        let (clients_to_disconnect_sender, clients_to_disconnect_receiver) =
-            async_channel::unbounded();
-
-        let tasks_keeper_handle;
+    ) -> TaskHandle<io::Result<BindResult>>
+    {
         #[cfg(feature = "rt-tokio")]
-        {
-            tasks_keeper_handle = spawn(&runtime, ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
-        }
-        
-        #[cfg(not(feature = "rt-tokio"))]
-        {
-            tasks_keeper_handle = spawn(ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
-        }   
+        let runtime_exit = runtime.clone();
 
-        let server = Arc::new(ServerInternal {
-            tasks_keeper_sender,
-            ignored_addrs_asking_reason_read_signal_sender,
-            rejections_to_confirm_signal_sender,
-            clients_to_auth_sender,
-            clients_to_disconnect_sender,
-            pending_rejection_confirm_resend_sender,
-            pending_auth_resend_sender,
+        let bind_result_body = async move {
+            let socket = Arc::new(UdpSocket::bind(addr).await?);
 
-            clients_to_auth_receiver,
-            clients_to_disconnect_receiver,
+            let (tasks_keeper_sender, tasks_keeper_receiver) = async_channel::unbounded();
+            let (pending_auth_resend_sender, pending_auth_resend_receiver) =
+                async_channel::unbounded();
+            let (pending_rejection_confirm_resend_sender, pending_rejection_confirm_resend_receiver) =
+                async_channel::unbounded();
+                let (
+                    ignored_addrs_asking_reason_read_signal_sender,
+                    ignored_addrs_asking_reason_read_signal_receiver,
+                ) = async_channel::unbounded();
+                let (
+                    rejections_to_confirm_signal_sender,
+                    rejections_to_confirm_signal_receiver,
+                ) = async_channel::unbounded();
+                    
+            let (clients_to_auth_sender, clients_to_auth_receiver) = async_channel::unbounded();
+            let (clients_to_disconnect_sender, clients_to_disconnect_receiver) =
+                async_channel::unbounded();
 
-            tasks_keeper_handle,
-
-            socket,
+            let tasks_keeper_handle;
             #[cfg(feature = "rt-tokio")]
-            runtime,
-            tick_state: RwLock::new(ServerTickState::TickStartPending),
+            {
+                tasks_keeper_handle = spawn(&runtime, ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
+            }
+            
+            #[cfg(not(feature = "rt-tokio"))]
+            {
+                tasks_keeper_handle = spawn(ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
+            }   
 
-            packet_registry,
-            messaging_properties,
-            read_handler_properties,
-            server_properties,
+            let server = Arc::new(ServerInternal {
+                tasks_keeper_sender,
+                ignored_addrs_asking_reason_read_signal_sender,
+                rejections_to_confirm_signal_sender,
+                clients_to_auth_sender,
+                clients_to_disconnect_sender,
+                pending_rejection_confirm_resend_sender,
+                pending_auth_resend_sender,
 
-            connected_clients: DashMap::new(),
-            ignored_ips: DashMap::new(),
-            temporary_ignored_ips: DashMap::new(),
-            ignored_addrs_asking_reason: DashMap::new(),
-            rejections_to_confirm: DashSet::new(),
-            addrs_in_auth: DashSet::new(),
-            assigned_addrs_in_auth: RwLock::new(HashSet::new()),
-            pending_auth: DashMap::new(),
-            recently_disconnected: DashMap::new(),
-            pending_rejection_confirm: DashMap::new(),
-        });
+                clients_to_auth_receiver,
+                clients_to_disconnect_receiver,
 
-        let server_downgraded = Arc::downgrade(&server);
-        server.create_async_task(async move {
-            ServerInternal::create_pending_auth_resend_handler(
-                server_downgraded,
-                pending_auth_resend_receiver,
-            )
-            .await;
-        });
+                tasks_keeper_handle,
 
-        let server_downgraded = Arc::downgrade(&server);
-        server.create_async_task(async move {
-            ServerInternal::create_pending_rejection_confirm_resend_handler(
-                server_downgraded,
-                pending_rejection_confirm_resend_receiver,
-            )
-            .await;
-        });
+                socket,
+                #[cfg(feature = "rt-tokio")]
+                runtime,
+                tick_state: RwLock::new(ServerTickState::TickStartPending),
 
-        let server_downgraded = Arc::downgrade(&server);
-        server.create_async_task(async move {
-            ServerInternal::create_ignored_addrs_asking_reason_handler(
-                server_downgraded,
-                ignored_addrs_asking_reason_read_signal_receiver,
-            )
-            .await;
-        });
+                packet_registry,
+                messaging_properties,
+                read_handler_properties,
+                server_properties,
 
-        let server_downgraded = Arc::downgrade(&server);
-        server.create_async_task(async move {
-            ServerInternal::create_rejections_to_confirm_handler(
-                server_downgraded,
-                rejections_to_confirm_signal_receiver,
-            )
-            .await;
-        });
+                connected_clients: DashMap::new(),
+                ignored_ips: DashMap::new(),
+                temporary_ignored_ips: DashMap::new(),
+                ignored_addrs_asking_reason: DashMap::new(),
+                rejections_to_confirm: DashSet::new(),
+                addrs_in_auth: DashSet::new(),
+                assigned_addrs_in_auth: RwLock::new(HashSet::new()),
+                pending_auth: DashMap::new(),
+                recently_disconnected: DashMap::new(),
+                pending_rejection_confirm: DashMap::new(),
+            });
 
-        Ok(BindResult { server:Server{internal:server} })
+            let server_downgraded = Arc::downgrade(&server);
+            server.create_async_task(async move {
+                ServerInternal::create_pending_auth_resend_handler(
+                    server_downgraded,
+                    pending_auth_resend_receiver,
+                )
+                .await;
+            });
+
+            let server_downgraded = Arc::downgrade(&server);
+            server.create_async_task(async move {
+                ServerInternal::create_pending_rejection_confirm_resend_handler(
+                    server_downgraded,
+                    pending_rejection_confirm_resend_receiver,
+                )
+                .await;
+            });
+
+            let server_downgraded = Arc::downgrade(&server);
+            server.create_async_task(async move {
+                ServerInternal::create_ignored_addrs_asking_reason_handler(
+                    server_downgraded,
+                    ignored_addrs_asking_reason_read_signal_receiver,
+                )
+                .await;
+            });
+
+            let server_downgraded = Arc::downgrade(&server);
+            server.create_async_task(async move {
+                ServerInternal::create_rejections_to_confirm_handler(
+                    server_downgraded,
+                    rejections_to_confirm_signal_receiver,
+                )
+                .await;
+            });
+
+            Ok(BindResult { server:Server{internal:server} })
+        };
+
+        spawn(
+            #[cfg(feature = "rt-tokio")]
+            &runtime_exit, 
+            bind_result_body)
     }
 
     /// Packet Registry getter.

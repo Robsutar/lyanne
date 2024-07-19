@@ -713,7 +713,7 @@ pub struct Client {
 
 impl Client {
     /// Connect to a server via a [`UdpSocket`], creating a new Client instance.
-    pub async fn connect(
+    pub fn connect(
         remote_addr: SocketAddr,
         packet_registry: Arc<PacketRegistry>,
         messaging_properties: Arc<MessagingProperties>,
@@ -722,80 +722,90 @@ impl Client {
         #[cfg(feature = "rt-tokio")]
         runtime: crate::rt::Runtime,
         message: SerializedPacketList,
-    ) -> Result<ConnectResult, ConnectError> {
-        let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
-        socket.connect(remote_addr).await?;
+    ) -> TaskHandle<Result<ConnectResult, ConnectError>> {
+        #[cfg(feature = "rt-tokio")]
+        let runtime_exit = runtime.clone();
 
-        let client_private_key = EphemeralSecret::random_from_rng(OsRng);
-        let client_public_key = PublicKey::from(&client_private_key);
-        let client_public_key_bytes = client_public_key.as_bytes();
+        let bind_result_body = async move {
+            let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
+            socket.connect(remote_addr).await?;
 
-        let sent_time = Instant::now();
+            let client_private_key = EphemeralSecret::random_from_rng(OsRng);
+            let client_public_key = PublicKey::from(&client_private_key);
+            let client_public_key_bytes = client_public_key.as_bytes();
 
-        let mut public_key_sent = Vec::with_capacity(1 + client_public_key_bytes.len());
-        public_key_sent.push(MessageChannel::PUBLIC_KEY_SEND);
-        public_key_sent.extend_from_slice(client_public_key_bytes);
+            let sent_time = Instant::now();
 
-        let mut buf = [0u8; 1024];
-        loop {
-            let now = Instant::now();
-            if now - sent_time > messaging_properties.timeout_interpretation {
-                return Err(ConnectError::Timeout);
-            }
+            let mut public_key_sent = Vec::with_capacity(1 + client_public_key_bytes.len());
+            public_key_sent.push(MessageChannel::PUBLIC_KEY_SEND);
+            public_key_sent.extend_from_slice(client_public_key_bytes);
 
-            socket.send(&public_key_sent).await?;
-            match timeout(
-                client_properties.auth_packet_loss_interpretation,
-                socket.recv(&mut buf),
-            )
-            .await
-            {
-                Ok(len) => {
-                    let len = len?;
-                    let bytes = &buf[..len];
-                    if bytes.len() < MESSAGE_CHANNEL_SIZE {
-                        return Err(ConnectError::InvalidProtocolCommunication);
-                    }
-
-                    match bytes[0] {
-                        MessageChannel::IGNORED_REASON => {
-                            // 4 for the minimal SerializedPacket
-                            if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
-                                return Err(ConnectError::InvalidProtocolCommunication);
-                            } else if let Ok(message) =
-                                DeserializedPacket::deserialize_list(&bytes[1..], &packet_registry)
-                            {
-                                return Err(ConnectError::Ignored(message));
-                            } else {
-                                return Err(ConnectError::InvalidProtocolCommunication);
-                            }
-                        }
-                        MessageChannel::PUBLIC_KEY_SEND => {
-                            if len != 33 {
-                                return Err(ConnectError::InvalidProtocolCommunication);
-                            }
-                            return Client::connect_public_key_send_match_arm(
-                                socket,
-                                buf,
-                                client_private_key,
-                                message,
-                                packet_registry,
-                                messaging_properties,
-                                read_handler_properties,
-                                client_properties,
-                                #[cfg(feature = "rt-tokio")]
-                                runtime,
-                                remote_addr,
-                                sent_time,
-                            )
-                            .await;
-                        }
-                        _ => (),
-                    }
+            let mut buf = [0u8; 1024];
+            loop {
+                let now = Instant::now();
+                if now - sent_time > messaging_properties.timeout_interpretation {
+                    return Err(ConnectError::Timeout);
                 }
-                _ => (),
+
+                socket.send(&public_key_sent).await?;
+                match timeout(
+                    client_properties.auth_packet_loss_interpretation,
+                    socket.recv(&mut buf),
+                )
+                .await
+                {
+                    Ok(len) => {
+                        let len = len?;
+                        let bytes = &buf[..len];
+                        if bytes.len() < MESSAGE_CHANNEL_SIZE {
+                            return Err(ConnectError::InvalidProtocolCommunication);
+                        }
+
+                        match bytes[0] {
+                            MessageChannel::IGNORED_REASON => {
+                                // 4 for the minimal SerializedPacket
+                                if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
+                                    return Err(ConnectError::InvalidProtocolCommunication);
+                                } else if let Ok(message) =
+                                    DeserializedPacket::deserialize_list(&bytes[1..], &packet_registry)
+                                {
+                                    return Err(ConnectError::Ignored(message));
+                                } else {
+                                    return Err(ConnectError::InvalidProtocolCommunication);
+                                }
+                            }
+                            MessageChannel::PUBLIC_KEY_SEND => {
+                                if len != 33 {
+                                    return Err(ConnectError::InvalidProtocolCommunication);
+                                }
+                                return Client::connect_public_key_send_match_arm(
+                                    socket,
+                                    buf,
+                                    client_private_key,
+                                    message,
+                                    packet_registry,
+                                    messaging_properties,
+                                    read_handler_properties,
+                                    client_properties,
+                                    #[cfg(feature = "rt-tokio")]
+                                    runtime,
+                                    remote_addr,
+                                    sent_time,
+                                )
+                                .await;
+                            }
+                            _ => (),
+                        }
+                    }
+                    _ => (),
+                }
             }
-        }
+        };
+        
+        spawn(
+            #[cfg(feature = "rt-tokio")]
+            &runtime_exit, 
+            bind_result_body)
     }
 
     /// Just to reduce [`Client::connect`] nesting.
