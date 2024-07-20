@@ -14,10 +14,10 @@ use serde::{Deserialize, Serialize};
 pub struct BevyPacketCaller {
     #[cfg(feature = "client")]
     client_caller_map:
-        HashMap<PacketId, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
+        HashMap<PacketId, Box<dyn Fn(&mut World, Box<PacketToDowncast>) -> () + Send + Sync>>,
     #[cfg(feature = "server")]
     server_caller_map:
-        HashMap<PacketId, Box<dyn Fn(&mut Commands, Box<PacketToDowncast>) -> () + Send + Sync>>,
+        HashMap<PacketId, Box<dyn Fn(&mut World, Box<PacketToDowncast>) -> () + Send + Sync>>,
 }
 
 impl BevyPacketCaller {
@@ -34,54 +34,46 @@ impl BevyPacketCaller {
         #[cfg(feature = "client")]
         self.client_caller_map.insert(
             packet_id,
-            Box::new(
-                |commands: &mut Commands, as_any: Box<PacketToDowncast>| -> () {
+            Box::new(|world: &mut World, as_any: Box<PacketToDowncast>| -> () {
                     let packet = *as_any.downcast::<P>().unwrap();
-                    commands.add(move |world: &mut World| {
                         world.insert_resource(ClientPacketResource::<P> {
                             packet: Some(packet),
                         });
-                        let _ = P::run_client_schedule(world);
+                let _ = world.try_run_schedule(P::client_schedule());
                         world.remove_resource::<ClientPacketResource<P>>().unwrap();
-                    });
-                },
-            ),
+            }),
         );
 
         #[cfg(feature = "server")]
         self.server_caller_map.insert(
             packet_id,
-            Box::new(
-                |commands: &mut Commands, as_any: Box<PacketToDowncast>| -> () {
+            Box::new(|world: &mut World, as_any: Box<PacketToDowncast>| -> () {
                     let packet = *as_any.downcast::<P>().unwrap();
-                    commands.add(move |world: &mut World| {
                         world.insert_resource(ServerPacketResource::<P> {
                             packet: Some(packet),
                         });
-                        let _ = P::run_server_schedule(world);
+                let _ = world.try_run_schedule(P::server_schedule());
                         world.remove_resource::<ServerPacketResource<P>>().unwrap();
-                    });
-                },
-            ),
+            }),
         );
     }
 
     #[cfg(feature = "server")]
-    pub fn server_call(&self, commands: &mut Commands, deserialized_packet: DeserializedPacket) {
+    pub fn server_call(&self, world: &mut World, deserialized_packet: DeserializedPacket) {
         let call = self
             .server_caller_map
             .get(&deserialized_packet.packet_id)
             .unwrap();
-        call(commands, deserialized_packet.packet);
+        call(world, deserialized_packet.packet);
     }
 
     #[cfg(feature = "client")]
-    pub fn client_call(&self, commands: &mut Commands, deserialized_packet: DeserializedPacket) {
+    pub fn client_call(&self, world: &mut World, deserialized_packet: DeserializedPacket) {
         let call = self
             .client_caller_map
             .get(&deserialized_packet.packet_id)
             .unwrap();
-        call(commands, deserialized_packet.packet);
+        call(world, deserialized_packet.packet);
     }
 }
 
