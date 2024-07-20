@@ -5,11 +5,6 @@ use std::{
     io,
 };
 
-#[cfg(feature = "bevy-packet-schedules")]
-use bevy_ecs::system::Resource;
-#[cfg(feature = "bevy-packet-schedules")]
-use bevy_ecs::world::World;
-
 use crate::{
     self as lyanne,
     sd::{cfg_sd_bincode, cfg_sd_none},
@@ -46,14 +41,14 @@ macro_rules! packet_body {
         }
 
         #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
-        fn run_client_schedule(
-            world: &mut World,
-        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError>;
+        type ClientSchedule: lyanne::bevy::bevy_ecs::schedule::ScheduleLabel;
+        #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
+        fn client_schedule() -> Self::ClientSchedule;
 
         #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
-        fn run_server_schedule(
-            world: &mut World,
-        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError>;
+        type ServerSchedule: lyanne::bevy::bevy_ecs::schedule::ScheduleLabel;
+        #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
+        fn server_schedule() -> Self::ServerSchedule;
     };
 }
 
@@ -82,13 +77,13 @@ cfg_sd_none! {
 }
 
 #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
-#[derive(Resource)]
+#[derive(lyanne::bevy::bevy_ecs::system::Resource)]
 pub struct ClientPacketResource<P: Packet> {
     pub packet: Option<P>,
 }
 
 #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
-#[derive(Resource)]
+#[derive(lyanne::bevy::bevy_ecs::system::Resource)]
 pub struct ServerPacketResource<P: Packet> {
     pub packet: Option<P>,
 }
