@@ -7,9 +7,7 @@ use lyanne::packets::ClientPacketResource;
 use lyanne::packets::ServerPacketResource;
 use lyanne::{
     add_essential_packets,
-    packets::{
-        DeserializedPacket, Packet, PacketId, PacketRegistry, PacketToDowncast, ServerTickEndPacket,
-    },
+    packets::{DeserializedPacket, Packet, PacketId, PacketRegistry, PacketToDowncast},
 };
 
 use serde::{Deserialize, Serialize};
