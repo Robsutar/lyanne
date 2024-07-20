@@ -101,7 +101,7 @@ impl PacketManagers {
 impl Default for PacketManagers {
     fn default() -> Self {
         let mut exit = Self {
-            packet_registry: PacketRegistry::with_essential(),
+            packet_registry: PacketRegistry::empty(),
             bevy_caller: BevyPacketCaller::new(),
         };
 
