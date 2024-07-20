@@ -1,11 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use bevy::{
-    app::ScheduleRunnerPlugin,
-    log::LogPlugin,
-    prelude::*,
-    tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
-};
+use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{
     BarPacket, BarPacketClientSchedule, BevyPacketCaller, FooPacket, FooPacketClientSchedule,
     PacketManagers,
@@ -15,15 +10,6 @@ use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{packets::ClientPacketResource, rt::TaskHandle};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
 use rand::{thread_rng, Rng};
-
-#[cfg(feature = "rt-tokio")]
-use tokio::runtime::Runtime;
-
-#[cfg(feature = "rt-tokio")]
-#[derive(Component)]
-struct RuntimeKeeper {
-    _runtime: Runtime,
-}
 
 #[derive(Component)]
 struct ClientConnecting {
@@ -55,13 +41,6 @@ fn main() {
 }
 
 fn init(mut commands: Commands) {
-    #[cfg(feature = "rt-tokio")]
-    let runtime = Runtime::new().expect("Failed to create Tokio runtime");
-    #[cfg(feature = "rt-tokio")]
-    let handle = runtime.handle().clone();
-    #[cfg(feature = "rt-tokio")]
-    let handle_clone = handle.clone();
-
     let remote_addr = "127.0.0.1:8822".parse().unwrap();
     let packet_managers = PacketManagers::default();
     let messaging_properties = Arc::new(MessagingProperties::default());
@@ -78,8 +57,6 @@ fn init(mut commands: Commands) {
         messaging_properties,
         read_handler_properties,
         client_properties,
-        #[cfg(feature = "rt-tokio")]
-        handle,
         SerializedPacketList::create(authentication_packets),
     );
 
@@ -87,8 +64,6 @@ fn init(mut commands: Commands) {
         bevy_caller: Some(packet_managers.bevy_caller),
         task: connect_handle,
     });
-    #[cfg(feature = "rt-tokio")]
-    commands.spawn(RuntimeKeeper { _runtime: runtime });
 }
 
 fn foo_read(mut packet: ResMut<ClientPacketResource<FooPacket>>) {
@@ -149,10 +124,6 @@ fn client_tick(mut commands: Commands, mut query: Query<(Entity, &mut ClientConn
                     })]));
                 let handle = client.disconnect(message);
 
-                #[cfg(feature = "rt-tokio")]
-                let result = future::block_on(handle).unwrap();
-
-                #[cfg(feature = "rt-bevy")]
                 let result = future::block_on(handle);
                 panic!("Client disconnected itself: {:?}", result.state);
             }

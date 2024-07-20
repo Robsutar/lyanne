@@ -18,15 +18,6 @@ use lyanne::transport::server::{BindResult, IgnoredAddrReason, ServerProperties}
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use rand::{thread_rng, Rng};
 
-#[cfg(feature = "rt-tokio")]
-use tokio::runtime::Runtime;
-
-#[cfg(feature = "rt-tokio")]
-#[derive(Component)]
-struct RuntimeKeeper {
-    _runtime: Runtime,
-}
-
 #[derive(Component)]
 struct ServerConnecting {
     bevy_caller: Option<BevyPacketCaller>,
@@ -59,13 +50,6 @@ fn main() {
 }
 
 fn init(mut commands: Commands) {
-    #[cfg(feature = "rt-tokio")]
-    let runtime = Runtime::new().expect("Failed to create Tokio runtime");
-    #[cfg(feature = "rt-tokio")]
-    let handle = runtime.handle().clone();
-    #[cfg(feature = "rt-tokio")]
-    let handle_clone = handle.clone();
-
     let addr = "127.0.0.1:8822".parse().unwrap();
     let packet_managers = PacketManagers::default();
     let messaging_properties = Arc::new(MessagingProperties::default());
@@ -78,16 +62,12 @@ fn init(mut commands: Commands) {
         messaging_properties,
         read_handler_properties,
         server_properties,
-        #[cfg(feature = "rt-tokio")]
-        handle,
     );
 
     commands.spawn(ServerConnecting {
         bevy_caller: Some(packet_managers.bevy_caller),
         task: bind_handle,
     });
-    #[cfg(feature = "rt-tokio")]
-    commands.spawn(RuntimeKeeper { _runtime: runtime });
 }
 
 fn foo_read(mut packet: ResMut<ServerPacketResource<FooPacket>>) {
@@ -108,9 +88,6 @@ fn bar_second_read(mut packet: ResMut<ServerPacketResource<BarPacket>>) {
 fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut ServerConnecting)>) {
     for (entity, mut server_connecting) in query.iter_mut() {
         if let Some(bind) = future::block_on(future::poll_once(&mut server_connecting.task)) {
-            #[cfg(feature = "rt-tokio")]
-            let bind = bind.unwrap();
-
             commands.entity(entity).despawn();
 
             match bind {

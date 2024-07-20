@@ -3,16 +3,12 @@ name = "bevy-ping-pong-client"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["rt-bevy"]
-rt-tokio = ["dep:tokio", "lyanne/rt-tokio"]
-rt-bevy = ["lyanne/rt-bevy"]
-
 [dependencies]
 bevy-ping-pong = { path = "../", features = ["client"] }
 bevy = "^0.14.0"
 lyanne = { path = "../../../", features = [
     "bevy-packet-schedules",
+    "rt-bevy",
     "sd-bincode",
     "troubles_simulator",
     "client",
