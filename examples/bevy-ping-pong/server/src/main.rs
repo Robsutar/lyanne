@@ -3,22 +3,13 @@ pub mod game;
 use std::{io, sync::Arc, time::Duration};
 
 use bevy::time::TimePlugin;
-use bevy::{
-    app::ScheduleRunnerPlugin,
-    log::LogPlugin,
-    prelude::*,
-    tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
-};
-use bevy_ping_pong::{
-    BarPacket, BarPacketServerSchedule, BevyPacketCaller, FooPacket, FooPacketServerSchedule,
-    PacketManagers,
-};
-use lyanne::packets::{SerializedPacketList, ServerPacketResource};
+use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
+use bevy_ping_pong::{BevyPacketCaller, GameConfig, PacketManagers};
+use lyanne::packets::SerializedPacketList;
 use lyanne::rt::TaskHandle;
 use lyanne::transport::server::Server;
 use lyanne::transport::server::{BindResult, IgnoredAddrReason, ServerProperties};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
-use rand::{thread_rng, Rng};
 
 #[derive(Component)]
 struct ServerConnecting {
@@ -29,7 +20,7 @@ struct ServerConnecting {
 #[derive(Component)]
 struct ServerConnected {
     server: Option<Server>,
-    bevy_caller: BevyPacketCaller,
+    bevy_caller: Option<BevyPacketCaller>,
     tick_timer: Timer,
 }
 
@@ -45,9 +36,6 @@ fn main() {
         .add_systems(Startup, init)
         .add_systems(Update, read_bind_result)
         .add_systems(Update, server_tick)
-        .add_systems(FooPacketServerSchedule, foo_read)
-        .add_systems(BarPacketServerSchedule, bar_read)
-        .add_systems(BarPacketServerSchedule, bar_second_read)
         .run();
 }
 
@@ -72,21 +60,6 @@ fn init(mut commands: Commands) {
     });
 }
 
-fn foo_read(mut packet: ResMut<ServerPacketResource<FooPacket>>) {
-    let packet = packet.packet.take();
-    //println!("xaxa! {:?}", packet);
-}
-
-fn bar_read(mut packet: ResMut<ServerPacketResource<BarPacket>>) {
-    let packet = packet.packet.take();
-    //println!("pepe! {:?}", packet);
-}
-
-fn bar_second_read(mut packet: ResMut<ServerPacketResource<BarPacket>>) {
-    let packet = packet.packet.take();
-    //println!("pepe TWO! {:?}", packet);
-}
-
 fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut ServerConnecting)>) {
     for (entity, mut server_connecting) in query.iter_mut() {
         if let Some(bind) = future::block_on(future::poll_once(&mut server_connecting.task)) {
@@ -96,21 +69,10 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
                 Ok(bind_result) => {
                     info!("Server bind");
 
-                    if false {
-                        bind_result.server.ignore_ip(
-                            "127.0.0.1".parse().unwrap(),
-                            IgnoredAddrReason::from_serialized_list(SerializedPacketList::create(
-                                vec![bind_result.server.packet_registry().serialize(&FooPacket {
-                                    message: "Oh no!".to_owned(),
-                                })],
-                            )),
-                        );
-                    }
-
                     commands.spawn(ServerConnected {
                         server: Some(bind_result.server),
+                        bevy_caller: Some(server_connecting.bevy_caller.take().unwrap()),
                         tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
-                        bevy_caller: server_connecting.bevy_caller.take().unwrap(),
                     });
                 }
                 Err(err) => {
@@ -132,87 +94,59 @@ fn server_tick(
             .tick(time.delta())
             .just_finished()
         {
-            let server = server_connected.server.as_ref().unwrap();
-            if true {
-                for entry in server.connected_clients_iter() {
-                    let connected_client = entry.value();
-                    let mut rng = thread_rng();
-                    for _ in 0..rng.gen_range(500..501) {
-                        let message = format!("Random str: {:?}", rng.gen::<i32>());
-                        if rng.gen_bool(0.5) {
-                            let packet = FooPacket { message };
-                            server.send_packet(&connected_client, &packet);
-                        } else {
-                            let packet = BarPacket { message };
-                            server.send_packet(&connected_client, &packet);
-                        }
-                    }
-                }
-            }
-
-            if false {
-                let mut rng = thread_rng();
-                if rng.gen_bool(0.01) {
-                    info!("Disconnecting clients");
-                    for client in server.connected_clients_iter() {
-                        server.disconnect_from(
-                            &client,
-                            Some(SerializedPacketList::create(vec![server
-                                .packet_registry()
-                                .serialize(&BarPacket {
-                                    message: "Bye bye".to_owned(),
-                                })])),
-                        )
-                    }
-                }
-            }
-
+            if server_connected
+                .server
+                .as_ref()
+                .unwrap()
+                .connected_clients_size()
+                == 2
             {
-                let tick_result = server.tick_start();
+                let mut connected_clients_iter = server_connected
+                    .server
+                    .as_ref()
+                    .unwrap()
+                    .connected_clients_iter();
 
-                let clients_packets_to_process = tick_result.received_messages;
-                let clients_to_auth = tick_result.to_auth;
+                let player_left_addr = connected_clients_iter.next().unwrap().key().clone();
+                let player_right_addr = connected_clients_iter.next().unwrap().key().clone();
+                drop(connected_clients_iter);
 
-                for (_, message_list) in clients_packets_to_process {
-                    for message in message_list {
-                        for deserialized_packet in message.packets {
-                            server_connected
-                                .bevy_caller
-                                .server_call(&mut commands, deserialized_packet);
-                        }
-                    }
-                }
+                let server = server_connected.server.take().unwrap();
+                let bevy_caller = server_connected.bevy_caller.take().unwrap();
 
-                for (addr, message) in clients_to_auth {
-                    if true {
+                commands.entity(entity).despawn();
+                commands.spawn(game::Game::start(
+                    GameConfig::default(),
+                    server,
+                    Arc::new(bevy_caller),
+                    player_left_addr,
+                    "Player Left".to_owned(),
+                    player_right_addr,
+                    "Player Right".to_owned(),
+                ));
+            } else {
+                let server = server_connected.server.as_ref().unwrap();
+
+                {
+                    let tick_result = server.tick_start();
+
+                    let clients_to_auth = tick_result.to_auth;
+
+                    for (addr, message) in clients_to_auth {
                         info!(
                             "authenticating client {:?}, message count: {:?}",
                             addr,
                             message.message.len()
                         );
                         server.authenticate(addr, message);
-                    } else {
-                        info!(
-                            "refusing client {:?}, message count: {:?}",
-                            addr,
-                            message.message.len()
-                        );
-                        server.refuse(
-                            addr,
-                            SerializedPacketList::create(vec![server.packet_registry().serialize(
-                                &BarPacket {
-                                    message: "No, you not".to_owned(),
-                                },
-                            )]),
-                        );
                     }
-                }
 
-                for (addr, reason) in tick_result.disconnected {
-                    info!("client disconnected: {:?}, reason: {:?}", addr, reason)
-                }
+                    for (addr, reason) in tick_result.disconnected {
+                        info!("client disconnected: {:?}, reason: {:?}", addr, reason)
+                    }
 
-                server.tick_end();
+                    server.tick_end();
+                }
             }
         }
     }
