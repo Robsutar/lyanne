@@ -1,6 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
-use bevy::prelude::{Commands, World};
+use bevy::{
+    math::{Rect, Vec2},
+    prelude::World,
+};
 #[cfg(feature = "client")]
 use lyanne::packets::ClientPacketResource;
 #[cfg(feature = "server")]
@@ -35,12 +38,12 @@ impl BevyPacketCaller {
         self.client_caller_map.insert(
             packet_id,
             Box::new(|world: &mut World, as_any: Box<PacketToDowncast>| -> () {
-                    let packet = *as_any.downcast::<P>().unwrap();
-                        world.insert_resource(ClientPacketResource::<P> {
-                            packet: Some(packet),
-                        });
+                let packet = *as_any.downcast::<P>().unwrap();
+                world.insert_resource(ClientPacketResource::<P> {
+                    packet: Some(packet),
+                });
                 let _ = world.try_run_schedule(P::client_schedule());
-                        world.remove_resource::<ClientPacketResource<P>>().unwrap();
+                world.remove_resource::<ClientPacketResource<P>>().unwrap();
             }),
         );
 
@@ -48,12 +51,12 @@ impl BevyPacketCaller {
         self.server_caller_map.insert(
             packet_id,
             Box::new(|world: &mut World, as_any: Box<PacketToDowncast>| -> () {
-                    let packet = *as_any.downcast::<P>().unwrap();
-                        world.insert_resource(ServerPacketResource::<P> {
-                            packet: Some(packet),
-                        });
+                let packet = *as_any.downcast::<P>().unwrap();
+                world.insert_resource(ServerPacketResource::<P> {
+                    packet: Some(packet),
+                });
                 let _ = world.try_run_schedule(P::server_schedule());
-                        world.remove_resource::<ServerPacketResource<P>>().unwrap();
+                world.remove_resource::<ServerPacketResource<P>>().unwrap();
             }),
         );
     }
@@ -96,19 +99,104 @@ impl Default for PacketManagers {
         };
 
         add_essential_packets!(exit);
-        exit.add::<FooPacket>();
-        exit.add::<BarPacket>();
+        exit.add::<GameStartPacket>();
+        exit.add::<PlayerPositionPacket>();
+        exit.add::<SelfCommandUpdatePacket>();
+        exit.add::<ClackPacket>();
+        exit.add::<PointPacket>();
+        exit.add::<MatchFinished>();
+        exit.add::<ConnectionRefuseMessage>();
 
         exit
     }
 }
 
-#[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct FooPacket {
-    pub message: String,
+pub const WINDOW_SIZE: Vec2 = Vec2::new(800.0, 600.0);
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct GameConfig {
+    pub max_points: usize,
+    pub max_time: Duration,
+    pub arena: Rect,
+    pub player_bar_size: Vec2,
+    pub player_movement_speed: f32,
+    pub goal_min_max_y: (f32, f32),
+    pub ball_speed_multiplier: f32,
+}
+
+impl Default for GameConfig {
+    fn default() -> Self {
+        let max_time = Duration::from_secs(180);
+        Self {
+            max_points: 3,
+            max_time,
+            arena: Rect::new(
+                -WINDOW_SIZE.x / 2.0 + 10.0,
+                -WINDOW_SIZE.y / 3.0,
+                WINDOW_SIZE.x / 2.0 - 10.0,
+                WINDOW_SIZE.y / 3.0,
+            ),
+            player_bar_size: Vec2::new(2.5, 10.0),
+            player_movement_speed: 2.0,
+            goal_min_max_y: (-10.0, 10.0),
+            ball_speed_multiplier: 1.1,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
+pub enum PlayerSide {
+    Left,
+    Right,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub enum FinishCause {
+    TimeIsOver,
+    MaxPoints,
+    Forfeit,
 }
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
-pub struct BarPacket {
+pub struct AuthenticationPacket {
+    pub player_name: String,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct GameStartPacket {
+    pub owned_type: PlayerSide,
+    pub enemy_name: String,
+    pub config: GameConfig,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct PlayerPositionPacket {
+    pub player: PlayerSide,
+    pub new_y: f32,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub enum SelfCommandUpdatePacket {
+    None,
+    Up,
+    Down,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct ClackPacket;
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct PointPacket {
+    pub side: PlayerSide,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct MatchFinished {
+    pub winner: PlayerSide,
+    pub cause: FinishCause,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct ConnectionRefuseMessage {
     pub message: String,
 }
