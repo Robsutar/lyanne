@@ -1541,6 +1541,15 @@ impl Server {
     }
 
     /// # Returns
+    /// The amount of connected clients in the server
+    pub fn connected_clients_size(
+        &self,
+    ) -> usize {
+        let internal = &self.internal;
+        internal.connected_clients.len()
+    }
+
+    /// # Returns
     /// Iterator with the clients connected to the server.
     pub fn connected_clients_iter(
         &self,
