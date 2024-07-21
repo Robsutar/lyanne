@@ -1,3 +1,5 @@
+pub mod game;
+
 use std::{io, sync::Arc, time::Duration};
 
 use bevy::time::TimePlugin;
