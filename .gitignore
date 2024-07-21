@@ -22,3 +22,6 @@ rustc-ice*
 
 # Ignore Obsidian.md files
 .obsidian
+
+# Internal TODO file
+.TODO.md
