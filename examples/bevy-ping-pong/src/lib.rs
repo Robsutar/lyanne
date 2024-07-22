@@ -181,7 +181,7 @@ pub struct GameStartPacket {
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct PlayerPositionPacket {
-    pub player: PlayerSide,
+    pub side: PlayerSide,
     pub new_y: f32,
 }
 
