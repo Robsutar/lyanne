@@ -307,6 +307,12 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
             game.player_right
                 .tick_for_movement(player_movement_speed, goal_min_max_y);
 
+            let ball_position_packet =
+                game.server
+                    .packet_registry()
+                    .serialize(&BallPositionPacket {
+                        new_pos: game.ball.pos,
+                    });
             let player_left_position_packet =
                 game.server
                     .packet_registry()
@@ -325,6 +331,8 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
             for client in game.server.connected_clients_iter() {
                 game.server.send_packet_serialized(
                     &client,
+                    SerializedPacket::clone(&ball_position_packet),
+                );
                 game.server.send_packet_serialized(
                     &client,
                     SerializedPacket::clone(&player_left_position_packet),
