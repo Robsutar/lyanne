@@ -386,35 +386,26 @@ fn is_colliding(rect: Rect, ball: &Ball) -> bool {
 }
 
 fn try_collide(rect: Rect, ball: &mut Ball) -> bool {
-    let mut collision = false;
-
-    if ball.pos.x - ball.radius <= rect.min.x {
-        ball.velocity.x = -ball.velocity.x.abs();
-        collision = true;
-    } else if ball.pos.x + ball.radius >= rect.max.x {
-        ball.velocity.x = ball.velocity.x.abs();
-        collision = true;
+    if ball.pos.x + ball.radius >= rect.min.x && ball.pos.x - ball.radius <= rect.max.x {
+        if ball.pos.y - ball.radius <= rect.max.y && ball.pos.y + ball.radius >= rect.max.y {
+            ball.velocity.y = ball.velocity.y.abs();
+            return true;
     }
-
-    if ball.pos.y - ball.radius <= rect.min.y {
+        if ball.pos.y + ball.radius >= rect.min.y && ball.pos.y - ball.radius <= rect.min.y {
         ball.velocity.y = -ball.velocity.y.abs();
-        collision = true;
-    } else if ball.pos.y + ball.radius >= rect.max.y {
-        ball.velocity.y = ball.velocity.y.abs();
-        collision = true;
+            return true;
+        }
     }
-
-    collision
-}
-
-fn is_outside_colliding(rect: Rect, ball: &Ball) -> bool {
-    if ball.pos.x - ball.radius <= rect.min.x || ball.pos.x + ball.radius >= rect.max.x {
+    if ball.pos.y + ball.radius >= rect.min.y && ball.pos.y - ball.radius <= rect.max.y {
+        if ball.pos.x - ball.radius <= rect.max.x && ball.pos.x + ball.radius >= rect.max.x {
+            ball.velocity.x = ball.velocity.x.abs();
+            return true;
+    }
+        if ball.pos.x + ball.radius >= rect.min.x && ball.pos.x - ball.radius <= rect.min.x {
+            ball.velocity.x = -ball.velocity.x.abs();
         return true;
     }
-    if ball.pos.y - ball.radius <= rect.min.y || ball.pos.y + ball.radius >= rect.max.y {
-        return true;
     }
-
     false
 }
 
