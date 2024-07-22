@@ -220,7 +220,6 @@ fn update(
                 };
 
                 if new_command != game.actual_command {
-                    println!("Command update: {:?}", new_command);
                     game.client.send_packet(&new_command);
                     game.actual_command = new_command;
                 }
@@ -273,8 +272,6 @@ fn clack_packet_read(
 ) {
     let packet = packet.packet.take().unwrap();
     let mut game = query.get_mut(player_packet_schedule.game_entity).unwrap();
-
-    println!("clack sound");
 }
 
 fn point_packet_read(

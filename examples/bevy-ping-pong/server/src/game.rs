@@ -287,16 +287,9 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                 println!("right point");
             } else if try_collide(game.player_left.get_bar(&game.config), &mut game.ball) {
                 clack = true;
-                println!(
-                    "left collide {:?} retry? {:?}",
-                    game.player_left.get_bar(&game.config),
-                    is_colliding(game.player_left.get_bar(&game.config), &mut game.ball)
-                );
             } else if try_collide(game.player_right.get_bar(&game.config), &mut game.ball) {
                 clack = true;
-                println!("right collide");
             } else if try_outside_collide(game.config.arena, &mut game.ball) {
-                println!("Outside collide");
                 clack = true;
             }
 
