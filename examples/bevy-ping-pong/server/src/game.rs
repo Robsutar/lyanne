@@ -348,16 +348,6 @@ fn self_command_update_read(
     player.actual_command = packet;
 }
 
-fn is_colliding(rect: Rect, ball: &Ball) -> bool {
-    if ball.pos.x + ball.radius < rect.min.x || ball.pos.x - ball.radius > rect.max.x {
-        return false;
-    }
-    if ball.pos.y + ball.radius < rect.min.y || ball.pos.y - ball.radius > rect.max.y {
-        return false;
-    }
-    true
-}
-
 fn reset_round(game: &mut Mut<Game>) {
     let y = (game.config.arena.min.y + game.config.arena.max.y) / 2.0;
     {
@@ -384,6 +374,15 @@ fn send_point_packets(game: &mut Mut<Game>, side: PlayerSide) {
         game.server
             .send_packet_serialized(&client, SerializedPacket::clone(&point_packet));
     }
+}
+
+fn is_colliding(rect: Rect, ball: &Ball) -> bool {
+    if ball.pos.x - ball.radius >= rect.min.x && ball.pos.x + ball.radius <= rect.max.x {
+        if ball.pos.y - ball.radius >= rect.min.y && ball.pos.y + ball.radius <= rect.max.y {
+            return true;
+        }
+    }
+    false
 }
 
 fn try_collide(rect: Rect, ball: &mut Ball) -> bool {
