@@ -140,7 +140,7 @@ impl Default for GameConfig {
                 WINDOW_SIZE.y / 3.0,
             ),
             player_bar_size: Vec2::new(150.0, 150.0),
-            player_movement_speed: 2.0,
+            player_movement_speed: 10.0,
             goal_min_max_y: (-10.0, 10.0),
             ball_radius: 5.0,
             ball_speed_multiplier: 1.1,
