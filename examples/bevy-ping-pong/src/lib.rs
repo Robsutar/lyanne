@@ -192,7 +192,7 @@ pub struct PlayerPositionPacket {
     pub new_y: f32,
 }
 
-#[derive(Packet, Deserialize, Serialize, Debug)]
+#[derive(Packet, Deserialize, Serialize, Debug, PartialEq, Eq)]
 pub enum SelfCommandUpdatePacket {
     None,
     Up,
