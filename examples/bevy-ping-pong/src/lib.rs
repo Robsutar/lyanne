@@ -99,7 +99,9 @@ impl Default for PacketManagers {
         };
 
         add_essential_packets!(exit);
+        exit.add::<AuthenticationPacket>();
         exit.add::<GameStartPacket>();
+        exit.add::<BallPositionPacket>();
         exit.add::<PlayerPositionPacket>();
         exit.add::<SelfCommandUpdatePacket>();
         exit.add::<ClackPacket>();
