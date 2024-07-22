@@ -410,9 +410,9 @@ fn try_collide(rect: Rect, ball: &mut Ball) -> bool {
         if ball.pos.y - ball.radius <= rect.max.y && ball.pos.y + ball.radius >= rect.max.y {
             ball.velocity.y = ball.velocity.y.abs();
             return true;
-    }
+        }
         if ball.pos.y + ball.radius >= rect.min.y && ball.pos.y - ball.radius <= rect.min.y {
-        ball.velocity.y = -ball.velocity.y.abs();
+            ball.velocity.y = -ball.velocity.y.abs();
             return true;
         }
     }
@@ -420,11 +420,11 @@ fn try_collide(rect: Rect, ball: &mut Ball) -> bool {
         if ball.pos.x - ball.radius <= rect.max.x && ball.pos.x + ball.radius >= rect.max.x {
             ball.velocity.x = ball.velocity.x.abs();
             return true;
-    }
+        }
         if ball.pos.x + ball.radius >= rect.min.x && ball.pos.x - ball.radius <= rect.min.x {
             ball.velocity.x = -ball.velocity.x.abs();
-        return true;
-    }
+            return true;
+        }
     }
     false
 }
