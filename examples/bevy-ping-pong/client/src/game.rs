@@ -9,6 +9,7 @@ use lyanne::{
     packets::ClientPacketResource,
     transport::client::{Client, ClientTickResult},
 };
+use rand::{thread_rng, Rng};
 
 pub struct Ball {
     pub entity: Entity,
@@ -27,7 +28,7 @@ impl Ball {
             entity: commands
                 .spawn(MaterialMesh2dBundle {
                     mesh: Mesh2dHandle(meshes.add(Circle::new(config.ball_radius))),
-                    material: materials.add(Color::srgb(1.0, 0.0, 0.0)),
+                    material: materials.add(random_color()),
                     transform: Transform::from_xyz(x, y, 0.0),
                     ..default()
                 })
@@ -268,10 +269,14 @@ fn player_position_read(
 fn clack_packet_read(
     player_packet_schedule: Res<ServerPacketSchedule>,
     mut packet: ResMut<ClientPacketResource<ClackPacket>>,
-    mut query: Query<&mut Game>,
+    query: Query<&Game>,
+    mut ball_query: Query<&mut Handle<ColorMaterial>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let packet = packet.packet.take().unwrap();
-    let mut game = query.get_mut(player_packet_schedule.game_entity).unwrap();
+    let _packet = packet.packet.take().unwrap();
+    let game = query.get(player_packet_schedule.game_entity).unwrap();
+
+    *ball_query.get_mut(game.ball.entity).unwrap() = materials.add(random_color());
 }
 
 fn point_packet_read(
@@ -284,4 +289,14 @@ fn point_packet_read(
 
     let player = game.get_player_mut(packet.side);
     player.points += 1;
+}
+
+fn random_color() -> Color {
+    let mut rng = thread_rng();
+
+    Color::srgb(
+        rng.gen_range(0.0..1.0),
+        rng.gen_range(0.0..1.0),
+        rng.gen_range(0.0..1.0),
+    )
 }
