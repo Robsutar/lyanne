@@ -1,3 +1,5 @@
+pub mod game;
+
 use std::{sync::Arc, time::Duration};
 
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
