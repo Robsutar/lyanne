@@ -390,15 +390,6 @@ fn send_point_packets(game: &mut Mut<Game>, side: PlayerSide) {
     }
 }
 
-fn is_colliding(rect: Rect, ball: &Ball) -> bool {
-    if ball.pos.x - ball.radius >= rect.min.x && ball.pos.x + ball.radius <= rect.max.x {
-        if ball.pos.y - ball.radius >= rect.min.y && ball.pos.y + ball.radius <= rect.max.y {
-            return true;
-        }
-    }
-    false
-}
-
 fn try_collide(rect: Rect, ball: &mut Ball) -> bool {
     if ball.pos.x + ball.radius >= rect.min.x && ball.pos.x - ball.radius <= rect.max.x {
         if ball.pos.y - ball.radius <= rect.max.y && ball.pos.y + ball.radius >= rect.max.y {
