@@ -180,6 +180,11 @@ pub struct GameStartPacket {
 }
 
 #[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct BallPositionPacket {
+    pub new_pos: Vec2,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct PlayerPositionPacket {
     pub side: PlayerSide,
     pub new_y: f32,
