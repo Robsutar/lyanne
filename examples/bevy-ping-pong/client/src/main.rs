@@ -1,14 +1,13 @@
 pub mod game;
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
+use bevy::{prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, PacketManagers};
+use lyanne::rt::TaskHandle;
 use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectResult};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
-use lyanne::{packets::ClientPacketResource, rt::TaskHandle};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
-use rand::{thread_rng, Rng};
 
 #[derive(Component)]
 struct ClientConnecting {

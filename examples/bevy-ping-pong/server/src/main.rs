@@ -5,10 +5,9 @@ use std::{io, sync::Arc, time::Duration};
 use bevy::time::TimePlugin;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{BevyPacketCaller, GameConfig, PacketManagers};
-use lyanne::packets::SerializedPacketList;
 use lyanne::rt::TaskHandle;
 use lyanne::transport::server::Server;
-use lyanne::transport::server::{BindResult, IgnoredAddrReason, ServerProperties};
+use lyanne::transport::server::{BindResult, ServerProperties};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 
 #[derive(Component)]
