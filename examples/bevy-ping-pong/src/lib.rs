@@ -146,7 +146,7 @@ impl Default for GameConfig {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerSide {
     Left,
     Right,
