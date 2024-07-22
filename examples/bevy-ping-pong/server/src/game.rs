@@ -12,6 +12,14 @@ use lyanne::{
 };
 use rand::{thread_rng, Rng};
 
+enum RectCollision {
+    None,
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 pub struct Ball {
     pub radius: f32,
     pub pos: Vec2,
@@ -39,7 +47,6 @@ pub struct Player {
     pub name: String,
     pub side: PlayerSide,
     pub points: usize,
-    pub goal_x: f32,
     pub actual_command: SelfCommandUpdatePacket,
     pub pos: Vec2,
 }
@@ -59,7 +66,6 @@ impl Player {
             name,
             side,
             points: 0,
-            goal_x: x,
             actual_command: SelfCommandUpdatePacket::None,
             pos: Vec2::new(x, y),
         }
@@ -256,46 +262,35 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
 
             let mut clack = false;
 
-            if is_colliding(
-                Rect::new(
-                    game.player_left.goal_x,
-                    game.config.goal_min_max_y.0,
-                    game.player_left.goal_x,
-                    game.config.goal_min_max_y.1,
-                ),
-                &game.ball,
-            ) {
-                game.player_left.points += 1;
-                reset_round(&mut game);
-                send_point_packets(&mut game, PlayerSide::Left);
-
-                let ball_speed_multiplier = game.config.ball_speed_multiplier;
-                game.ball.velocity *= ball_speed_multiplier;
-                clack = true;
-                println!("left point");
-            } else if is_colliding(
-                Rect::new(
-                    game.player_right.goal_x,
-                    game.config.goal_min_max_y.0,
-                    game.player_right.goal_x,
-                    game.config.goal_min_max_y.1,
-                ),
-                &game.ball,
-            ) {
-                game.player_right.points += 1;
-                reset_round(&mut game);
-                send_point_packets(&mut game, PlayerSide::Right);
-
-                let ball_speed_multiplier = game.config.ball_speed_multiplier;
-                game.ball.velocity *= ball_speed_multiplier;
-                clack = true;
-                println!("right point");
-            } else if try_collide(game.player_left.get_bar(&game.config), &mut game.ball) {
+            if try_collide(game.player_left.get_bar(&game.config), &mut game.ball) {
                 clack = true;
             } else if try_collide(game.player_right.get_bar(&game.config), &mut game.ball) {
                 clack = true;
-            } else if try_outside_collide(game.config.arena, &mut game.ball) {
-                clack = true;
+            } else {
+                match try_outside_collide(game.config.arena, &mut game.ball) {
+                    RectCollision::None => (),
+                    RectCollision::Top | RectCollision::Bottom => clack = true,
+                    RectCollision::Left => {
+                        game.player_left.points += 1;
+                        reset_round(&mut game);
+                        send_point_packets(&mut game, PlayerSide::Left);
+
+                        let ball_speed_multiplier = game.config.ball_speed_multiplier;
+                        game.ball.velocity *= ball_speed_multiplier;
+                        println!("left point");
+                        clack = true
+                    }
+                    RectCollision::Right => {
+                        game.player_right.points += 1;
+                        reset_round(&mut game);
+                        send_point_packets(&mut game, PlayerSide::Right);
+
+                        let ball_speed_multiplier = game.config.ball_speed_multiplier;
+                        game.ball.velocity *= ball_speed_multiplier;
+                        println!("right point");
+                        clack = true;
+                    }
+                }
             }
 
             let arena = game.config.arena;
@@ -428,23 +423,23 @@ fn try_collide(rect: Rect, ball: &mut Ball) -> bool {
     false
 }
 
-fn try_outside_collide(rect: Rect, ball: &mut Ball) -> bool {
-    let mut collision = false;
+fn try_outside_collide(rect: Rect, ball: &mut Ball) -> RectCollision {
+    let mut collision = RectCollision::None;
 
     if ball.pos.x - ball.radius <= rect.min.x {
         ball.velocity.x = ball.velocity.x.abs();
-        collision = true;
+        collision = RectCollision::Left;
     } else if ball.pos.x + ball.radius >= rect.max.x {
         ball.velocity.x = -ball.velocity.x.abs();
-        collision = true;
+        collision = RectCollision::Right;
     }
 
     if ball.pos.y - ball.radius <= rect.min.y {
         ball.velocity.y = ball.velocity.y.abs();
-        collision = true;
+        collision = RectCollision::Bottom;
     } else if ball.pos.y + ball.radius >= rect.max.y {
         ball.velocity.y = -ball.velocity.y.abs();
-        collision = true;
+        collision = RectCollision::Top;
     }
 
     collision
