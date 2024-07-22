@@ -119,7 +119,8 @@ impl Game {
         player_right_addr: SocketAddr,
         player_right_name: String,
     ) -> Self {
-        let ball = Ball::new(&config);
+        println!("Starting game");
+        let ball = Ball::default_of(&config);
         let player_left = Player::default_of(
             &config,
             player_left_addr,
@@ -266,6 +267,7 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                 let ball_speed_multiplier = game.config.ball_speed_multiplier;
                 game.ball.velocity *= ball_speed_multiplier;
                 clack = true;
+                println!("left point");
             } else if is_colliding(
                 Rect::new(
                     game.player_right.goal_x,
@@ -282,11 +284,19 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                 let ball_speed_multiplier = game.config.ball_speed_multiplier;
                 game.ball.velocity *= ball_speed_multiplier;
                 clack = true;
+                println!("right point");
             } else if try_collide(game.player_left.get_bar(&game.config), &mut game.ball) {
                 clack = true;
+                println!(
+                    "left collide {:?} retry? {:?}",
+                    game.player_left.get_bar(&game.config),
+                    is_colliding(game.player_left.get_bar(&game.config), &mut game.ball)
+                );
             } else if try_collide(game.player_right.get_bar(&game.config), &mut game.ball) {
                 clack = true;
+                println!("right collide");
             } else if try_outside_collide(game.config.arena, &mut game.ball) {
+                println!("Outside collide");
                 clack = true;
             }
 
