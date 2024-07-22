@@ -19,14 +19,17 @@ pub struct Ball {
 }
 
 impl Ball {
-    fn new(config: &GameConfig) -> Self {
-        let mut rng = thread_rng();
+    fn default_of(config: &GameConfig) -> Self {
         let x = (config.arena.min.x + config.arena.max.x) / 2.0;
         let y = (config.arena.min.y + config.arena.max.y) / 2.0;
+
+        let mut rng = thread_rng();
+        let angle: f32 = rng.gen_range(0.0..2.0 * PI);
+        let speed_distance = 10.0;
         Self {
-            radius: 5.0,
+            radius: config.ball_radius,
             pos: Vec2::new(x, y),
-            velocity: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
+            velocity: Vec2::new(speed_distance * angle.cos(), speed_distance * angle.sin()),
         }
     }
 }
@@ -358,10 +361,13 @@ fn is_colliding(rect: Rect, ball: &Ball) -> bool {
 fn reset_round(game: &mut Mut<Game>) {
     let y = (game.config.arena.min.y + game.config.arena.max.y) / 2.0;
     {
-        let mut rng = thread_rng();
         let x = (game.config.arena.min.x + game.config.arena.max.x) / 2.0;
         game.ball.pos = Vec2::new(x, y);
-        game.ball.velocity = Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0));
+
+        let mut rng = thread_rng();
+        let angle: f32 = rng.gen_range(0.0..2.0 * PI);
+        let speed_distance = 10.0;
+        game.ball.velocity = Vec2::new(speed_distance * angle.cos(), speed_distance * angle.sin());
     }
 
     game.player_left.pos.y = y;
