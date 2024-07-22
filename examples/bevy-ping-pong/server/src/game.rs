@@ -74,15 +74,20 @@ impl Player {
         )
     }
 
-    fn tick_for_movement(&mut self, player_movement_speed: f32, goal_min_max_y: (f32, f32)) {
+    fn tick_for_movement(
+        &mut self,
+        arena: Rect,
+        player_movement_speed: f32,
+        player_bar_height: f32,
+    ) {
         match self.actual_command {
             SelfCommandUpdatePacket::Up => {
-                if self.pos.y + player_movement_speed < goal_min_max_y.1 {
+                if self.pos.y + player_movement_speed + player_bar_height / 2.0 < arena.max.y {
                     self.pos.y += player_movement_speed;
                 }
             }
             SelfCommandUpdatePacket::Down => {
-                if self.pos.y + player_movement_speed > goal_min_max_y.0 {
+                if self.pos.y - player_movement_speed - player_bar_height / 2.0 > arena.min.y {
                     self.pos.y -= player_movement_speed;
                 }
             }
@@ -293,12 +298,13 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                 clack = true;
             }
 
+            let arena = game.config.arena;
             let player_movement_speed = game.config.player_movement_speed;
-            let goal_min_max_y = game.config.goal_min_max_y;
+            let player_bar_height = game.config.player_bar_size.y;
             game.player_left
-                .tick_for_movement(player_movement_speed, goal_min_max_y);
+                .tick_for_movement(arena, player_movement_speed, player_bar_height);
             game.player_right
-                .tick_for_movement(player_movement_speed, goal_min_max_y);
+                .tick_for_movement(arena, player_movement_speed, player_bar_height);
 
             let ball_position_packet =
                 game.server
