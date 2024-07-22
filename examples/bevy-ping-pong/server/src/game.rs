@@ -174,10 +174,10 @@ impl Game {
         game
     }
 
-    fn get_player(&mut self, side: PlayerSide) -> &mut Player {
+    fn get_player_mut(&mut self, side: PlayerSide) -> &mut Player {
         match side {
             PlayerSide::Left => &mut self.player_left,
-            PlayerSide::Right => &mut self.player_left,
+            PlayerSide::Right => &mut self.player_right,
         }
     }
 }
@@ -343,8 +343,8 @@ fn self_command_update_read(
 ) {
     let packet = packet.packet.take().unwrap();
     let mut game = query.get_mut(player_packet_schedule.game_entity).unwrap();
-    let player = game.get_player(player_packet_schedule.side);
 
+    let player = game.get_player_mut(player_packet_schedule.side);
     player.actual_command = packet;
 }
 
