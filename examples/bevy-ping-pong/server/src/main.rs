@@ -33,6 +33,7 @@ fn main() {
         .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::from_millis(3)))
         .add_plugins(LogPlugin::default())
         .add_plugins(TimePlugin::default())
+        .add_plugins(game::GamePlugin)
         .add_systems(Startup, init)
         .add_systems(Update, read_bind_result)
         .add_systems(Update, server_tick)
