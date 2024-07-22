@@ -92,6 +92,7 @@ pub struct Game {
     pub bevy_caller: Arc<BevyPacketCaller>,
     pub ball: Ball,
     pub player_me: Player,
+    pub actual_command: SelfCommandUpdatePacket,
     pub player_enemy: Player,
     pub start_instant: Instant,
     pub arena_entity: Entity,
@@ -150,6 +151,7 @@ impl Game {
             bevy_caller,
             ball,
             player_me,
+            actual_command: SelfCommandUpdatePacket::None,
             player_enemy,
             start_instant: Instant::now(),
             arena_entity,
@@ -187,7 +189,11 @@ impl Plugin for GamePlugin {
     }
 }
 
-fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>) {
+fn update(
+    mut commands: Commands,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut query: Query<(Entity, &mut Game)>,
+) {
     for (entity, mut game) in query.iter_mut() {
         let tick = game.client.tick_start();
         match tick {
@@ -202,6 +208,22 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>) {
                     }
                     world.remove_resource::<ServerPacketSchedule>().unwrap();
                 });
+
+                let new_command = {
+                    if keyboard_input.pressed(KeyCode::KeyW) {
+                        SelfCommandUpdatePacket::Up
+                    } else if keyboard_input.pressed(KeyCode::KeyS) {
+                        SelfCommandUpdatePacket::Down
+                    } else {
+                        SelfCommandUpdatePacket::None
+                    }
+                };
+
+                if new_command != game.actual_command {
+                    println!("Command update: {:?}", new_command);
+                    game.client.send_packet(&new_command);
+                    game.actual_command = new_command;
+                }
 
                 game.client.tick_after_message();
             }
