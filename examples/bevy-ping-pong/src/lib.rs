@@ -121,6 +121,7 @@ pub struct GameConfig {
     pub player_bar_size: Vec2,
     pub player_movement_speed: f32,
     pub goal_min_max_y: (f32, f32),
+    pub ball_radius: f32,
     pub ball_speed_multiplier: f32,
 }
 
@@ -136,9 +137,10 @@ impl Default for GameConfig {
                 WINDOW_SIZE.x / 2.0 - 10.0,
                 WINDOW_SIZE.y / 3.0,
             ),
-            player_bar_size: Vec2::new(2.5, 10.0),
+            player_bar_size: Vec2::new(150.0, 150.0),
             player_movement_speed: 2.0,
             goal_min_max_y: (-10.0, 10.0),
+            ball_radius: 5.0,
             ball_speed_multiplier: 1.1,
         }
     }
