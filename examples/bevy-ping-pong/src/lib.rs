@@ -151,6 +151,14 @@ pub enum PlayerSide {
     Left,
     Right,
 }
+impl PlayerSide {
+    pub fn opposite(&self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+        }
+    }
+}
 
 #[derive(Deserialize, Serialize, Debug)]
 pub enum FinishCause {
