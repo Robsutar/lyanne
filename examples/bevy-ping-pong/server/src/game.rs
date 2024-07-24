@@ -249,7 +249,7 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                         side,
                     });
                     for message in message_list {
-                        for deserialized_packet in message.packets {
+                        for deserialized_packet in message.to_packet_list() {
                             bevy_caller.server_call(world, deserialized_packet);
                         }
                     }

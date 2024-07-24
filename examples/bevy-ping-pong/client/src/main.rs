@@ -76,7 +76,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
                     };
                     info!(
                         "Client connected, first message size: {:?}",
-                        connect_result.message.packets.len()
+                        connect_result.message.as_packet_list().len()
                     );
 
                     commands.spawn(client_connected);
@@ -99,7 +99,7 @@ fn client_tick(
         let tick = client_connected.client.as_ref().unwrap().tick_start();
         match tick {
             ClientTickResult::ReceivedMessage(message) => {
-                for deserialized_packet in message.packets {
+                for deserialized_packet in message.to_packet_list() {
                     if let Ok(packet) = deserialized_packet.packet.downcast::<GameStartPacket>() {
                         commands.entity(entity).despawn();
 

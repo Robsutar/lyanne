@@ -260,7 +260,7 @@ impl DeserializedMessageCheck {
 
 #[derive(Debug)]
 pub struct DeserializedMessage {
-    pub packets: Vec<DeserializedPacket>,
+    packets: Vec<DeserializedPacket>,
 }
 
 impl DeserializedMessage {
@@ -311,6 +311,18 @@ impl DeserializedMessage {
                 ));
             }
         }
+    }
+
+    /// # Returns
+    /// Reference of ordered packet list of this message.
+    pub fn as_packet_list(&self) -> &Vec<DeserializedPacket> {
+        &self.packets
+    }
+
+    /// # Returns
+    /// Ordered packet list of this message.
+    pub fn to_packet_list(self) -> Vec<DeserializedPacket> {
+        self.packets
     }
 }
 

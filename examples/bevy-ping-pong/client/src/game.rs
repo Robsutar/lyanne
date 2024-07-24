@@ -204,7 +204,7 @@ fn update(
                     world.insert_resource(ServerPacketSchedule {
                         game_entity: entity.clone(),
                     });
-                    for deserialized_packet in message.packets {
+                    for deserialized_packet in message.to_packet_list() {
                         bevy_caller.client_call(world, deserialized_packet);
                     }
                     world.remove_resource::<ServerPacketSchedule>().unwrap();
