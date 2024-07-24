@@ -350,16 +350,20 @@ cfg_sd_none! {
             world.try_run_schedule(ClientTickEndPacketServerSchedule)
         }
     }
+    #[allow(dead_code)]
     #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
     #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct ClientTickEndPacketClientSchedule;
+    #[allow(dead_code)]
     #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
     #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct ClientTickEndPacketServerSchedule;
 
+    #[allow(dead_code)]
     #[cfg(not(all(feature = "bevy-packet-schedules", feature = "client")))]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct ClientTickEndPacketClientSchedule;
+    #[allow(dead_code)]
     #[cfg(not(all(feature = "bevy-packet-schedules", feature = "server")))]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct ClientTickEndPacketServerSchedule;
@@ -389,16 +393,20 @@ cfg_sd_none! {
             world.try_run_schedule(ServerTickEndPacketServerSchedule)
         }
     }
+    #[allow(dead_code)]
     #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
     #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct ServerTickEndPacketClientSchedule;
+    #[allow(dead_code)]
     #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
     #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct ServerTickEndPacketServerSchedule;
 
+    #[allow(dead_code)]
     #[cfg(not(all(feature = "bevy-packet-schedules", feature = "client")))]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct ServerTickEndPacketClientSchedule;
+    #[allow(dead_code)]
     #[cfg(not(all(feature = "bevy-packet-schedules", feature = "server")))]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct ServerTickEndPacketServerSchedule;

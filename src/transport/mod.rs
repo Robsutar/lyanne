@@ -50,6 +50,7 @@ impl Default for MessagingProperties {
 pub(crate) type MessageChannelType = u8;
 pub(crate) struct MessageChannel;
 
+#[allow(dead_code)]
 impl MessageChannel {
     pub const MESSAGE_PART_CONFIRM: MessageChannelType = 0;
     pub const MESSAGE_PART_SEND: MessageChannelType = 1;
@@ -63,6 +64,7 @@ impl MessageChannel {
 
 pub const MESSAGE_CHANNEL_SIZE: usize = 1;
 
+#[allow(dead_code)]
 pub(crate) struct SentMessagePart {
     /// The last instant that the bytes were sent.
     last_sent_time: Instant,
@@ -110,6 +112,7 @@ impl Default for ReadHandlerProperties {
 }
 
 /// The context that caused an addr to be disconnected from the server.
+#[allow(dead_code)]
 pub struct JustifiedRejectionContext {
     /// The instant that the disconnection was made.
     rejection_instant: Instant,
