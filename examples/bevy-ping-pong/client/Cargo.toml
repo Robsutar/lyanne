@@ -3,6 +3,9 @@ name = "bevy-ping-pong-client"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+player-2 = []
+
 [dependencies]
 bevy-ping-pong = { path = "../", features = ["client"] }
 bevy = "^0.14.0"

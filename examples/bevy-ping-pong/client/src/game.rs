@@ -120,7 +120,6 @@ impl Game {
         commands: &mut Commands,
         meshes: &mut ResMut<Assets<Mesh>>,
         materials: &mut ResMut<Assets<ColorMaterial>>,
-        asset_server: &Res<AssetServer>,
         client: Client,
         bevy_caller: Arc<BevyPacketCaller>,
         player_me_side: PlayerSide,
