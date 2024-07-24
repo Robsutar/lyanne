@@ -36,6 +36,8 @@ sd-bincode = [
 
 bevy-packet-schedules = ["lyanne-derive/bevy-packet-schedules", "dep:bevy_ecs"]
 
+deserialized-message-map = []
+
 [dependencies]
 lyanne-derive = { path = "derive" }
 rand = "^0.8.0"
