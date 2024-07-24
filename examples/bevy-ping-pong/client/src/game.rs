@@ -52,6 +52,7 @@ impl Player {
         commands: &mut Commands,
         meshes: &mut ResMut<Assets<Mesh>>,
         materials: &mut ResMut<Assets<ColorMaterial>>,
+        text_style: TextStyle,
     ) -> Self {
         let x = {
             match side {
@@ -61,6 +62,20 @@ impl Player {
         };
         let y = (config.arena.min.y + config.arena.max.y) / 2.0;
 
+        commands.spawn(Text2dBundle {
+            text: Text::from_section(name.clone(), text_style),
+            transform: {
+                match side {
+                    PlayerSide::Left => {
+                        Transform::from_xyz(config.arena.min.x, config.arena.max.y, 10.0)
+                    }
+                    PlayerSide::Right => {
+                        Transform::from_xyz(config.arena.max.x, config.arena.max.y, 10.0)
+                    }
+                }
+            },
+            ..default()
+        });
         Self {
             entity: commands
                 .spawn(MaterialMesh2dBundle {
@@ -105,6 +120,7 @@ impl Game {
         commands: &mut Commands,
         meshes: &mut ResMut<Assets<Mesh>>,
         materials: &mut ResMut<Assets<ColorMaterial>>,
+        asset_server: &Res<AssetServer>,
         client: Client,
         bevy_caller: Arc<BevyPacketCaller>,
         player_me_side: PlayerSide,
@@ -113,6 +129,12 @@ impl Game {
     ) -> Self {
         println!("Starting game");
         let ball = Ball::default_of(&config, commands, meshes, materials);
+
+        let text_style = TextStyle {
+            font: Default::default(),
+            font_size: 60.0,
+            ..default()
+        };
         let player_me = Player::default_of(
             &config,
             player_me_name,
@@ -120,6 +142,7 @@ impl Game {
             commands,
             meshes,
             materials,
+            text_style.clone(),
         );
         let player_enemy = Player::default_of(
             &config,
@@ -128,6 +151,7 @@ impl Game {
             commands,
             meshes,
             materials,
+            text_style,
         );
 
         let arena_entity = commands

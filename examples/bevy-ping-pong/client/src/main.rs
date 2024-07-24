@@ -94,6 +94,7 @@ fn client_tick(
     mut query: Query<(Entity, &mut ClientConnected)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
     'l1: for (entity, mut client_connected) in query.iter_mut() {
         let tick = client_connected.client.as_ref().unwrap().tick_start();
@@ -112,6 +113,7 @@ fn client_tick(
                             &mut commands,
                             &mut meshes,
                             &mut materials,
+                            &asset_server,
                             client,
                             Arc::new(client_connected.bevy_caller.take().unwrap()),
                             packet.owned_type,
