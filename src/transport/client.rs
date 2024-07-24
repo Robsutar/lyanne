@@ -60,7 +60,7 @@ pub enum ServerDisconnectReason {
     /// Server was manually disconnected.
     ManualDisconnect,
     /// Server disconnected itself.
-    DisconnectRequest(Vec<DeserializedPacket>),
+    DisconnectRequest(DeserializedMessage),
 }
 
 /// General properties for the client management.
@@ -95,7 +95,7 @@ enum ClientTickState {
 pub enum ConnectError {
     Timeout,
     InvalidProtocolCommunication,
-    Ignored(Vec<DeserializedPacket>),
+    Ignored(DeserializedMessage),
     IoError(io::Error),
     Disconnected(ServerDisconnectReason),
 }
@@ -110,7 +110,7 @@ impl fmt::Display for ConnectError {
             ConnectError::Ignored(message) => write!(
                 f,
                 "Client addr is ignored by the server, reason size: {}",
-                message.len()
+                message.as_packet_list().len()
             ),
             ConnectError::IoError(ref err) => write!(f, "IO error: {}", err),
             ConnectError::Disconnected(reason) => write!(f, "Disconnected: {:?}", reason),
@@ -366,7 +366,7 @@ impl ConnectedServer {
                                     .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
                             } else if let Ok(message) =
-                                DeserializedPacket::deserialize_list(&bytes[1..], &client.packet_registry)
+                                DeserializedMessage::deserialize_single_list(&bytes[1..], &client.packet_registry)
                             {
                                 {
                                     let _ = client.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;
@@ -767,7 +767,7 @@ impl Client {
                                 if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
                                     return Err(ConnectError::InvalidProtocolCommunication);
                                 } else if let Ok(message) =
-                                    DeserializedPacket::deserialize_list(&bytes[1..], &packet_registry)
+                                    DeserializedMessage::deserialize_single_list(&bytes[1..], &packet_registry)
                                 {
                                     return Err(ConnectError::Ignored(message));
                                 } else {

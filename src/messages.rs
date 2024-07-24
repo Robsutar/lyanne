@@ -264,7 +264,7 @@ pub struct DeserializedMessage {
 }
 
 impl DeserializedMessage {
-    pub fn deserialize(
+    pub(crate) fn deserialize(
         packet_registry: &PacketRegistry,
         check: DeserializedMessageCheck,
         tree: BTreeMap<MessagePartId, MessagePart>,
@@ -311,6 +311,15 @@ impl DeserializedMessage {
                 ));
             }
         }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn deserialize_single_list(
+        buf: &[u8],
+        packet_registry: &PacketRegistry,
+    ) -> io::Result<Self> {
+        let packets = DeserializedPacket::deserialize_list(buf, packet_registry)?;
+        Ok(DeserializedMessage { packets })
     }
 
     /// # Returns

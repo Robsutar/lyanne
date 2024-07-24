@@ -81,7 +81,7 @@ pub enum ClientDisconnectReason {
     /// Client was manually disconnected.
     ManualDisconnect,
     /// Client disconnected itself.
-    DisconnectRequest(Vec<DeserializedPacket>),
+    DisconnectRequest(DeserializedMessage),
 }
 
 /// General properties for the server management.
@@ -142,7 +142,7 @@ struct AddrPendingAuthSend {
 /// the next step is read the message of the addr, and authenticate it or no.
 pub struct AddrToAuth {
     shared_key: SharedSecret,
-    pub message: Vec<DeserializedPacket>,
+    pub message: DeserializedMessage,
 }
 
 /// The reason to ignore messages from an addr.
@@ -377,7 +377,7 @@ impl ConnectedClient {
                                 ));
                                 break 'l1;
                             } else if let Ok(message) =
-                                DeserializedPacket::deserialize_list(&bytes[1..], &server.packet_registry)
+                                DeserializedMessage::deserialize_single_list(&bytes[1..], &server.packet_registry)
                             {
                                 server.recently_disconnected.insert(addr.clone(), Instant::now());
                                 server.rejections_to_confirm.insert(addr.clone());
@@ -879,9 +879,9 @@ impl ServerInternal {
                 if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
                     ReadClientBytesResult::AuthInsufficientBytesLen
                 } else {
-                    let packets =
-                        DeserializedPacket::deserialize_list(&bytes[33..], &self.packet_registry);
-                    if let Ok(message) = packets {
+                    let message =
+                        DeserializedMessage::deserialize_single_list(&bytes[33..], &self.packet_registry);
+                    if let Ok(message) = message {
                         let mut sent_server_public_key: [u8; 32] = [0; 32];
                         sent_server_public_key.copy_from_slice(&bytes[1..33]);
                         let sent_server_public_key = PublicKey::from(sent_server_public_key);
