@@ -116,7 +116,7 @@ enum ServerTickState {
 /// Result when calling [`Server::tick_start`].
 pub struct ServerTickResult {
     pub received_messages: HashMap<SocketAddr, Vec<DeserializedMessage>>,
-    pub to_auth: HashMap<SocketAddr, AddrToAuth>,
+    pub to_auth: HashMap<SocketAddr, (AddrToAuth, DeserializedMessage)>,
     pub disconnected: HashMap<SocketAddr, ClientDisconnectReason>,
 }
 
@@ -142,7 +142,6 @@ struct AddrPendingAuthSend {
 /// the next step is read the message of the addr, and authenticate it or no.
 pub struct AddrToAuth {
     shared_key: SharedSecret,
-    pub message: DeserializedMessage,
 }
 
 /// The reason to ignore messages from an addr.
@@ -546,7 +545,7 @@ struct ServerInternal {
     /// Sender for signaling the reading of [`Server::rejections_to_confirm`]
     rejections_to_confirm_signal_sender: async_channel::Sender<()>,
     /// Sender for addresses to be authenticated.
-    clients_to_auth_sender: async_channel::Sender<(SocketAddr, AddrToAuth)>,
+    clients_to_auth_sender: async_channel::Sender<(SocketAddr, (AddrToAuth, DeserializedMessage))>,
     /// Sender for addresses to be disconnected.
     clients_to_disconnect_sender: async_channel::Sender<(
         SocketAddr,
@@ -558,7 +557,7 @@ struct ServerInternal {
     pending_auth_resend_sender: async_channel::Sender<SocketAddr>,
 
     /// Receiver for addresses to be authenticated.
-    clients_to_auth_receiver: async_channel::Receiver<(SocketAddr, AddrToAuth)>,
+    clients_to_auth_receiver: async_channel::Receiver<(SocketAddr, (AddrToAuth, DeserializedMessage))>,
 
     /// Receiver for addresses to be disconnected.
     clients_to_disconnect_receiver: async_channel::Receiver<(
@@ -892,12 +891,11 @@ impl ServerInternal {
                             self.addrs_in_auth.insert(addr.clone());
                             let _ = self.clients_to_auth_sender.try_send((
                                 addr,
-                                AddrToAuth {
+                                (AddrToAuth {
                                     shared_key: pending_auth_send
                                         .server_private_key
                                         .diffie_hellman(&pending_auth_send.addr_public_key),
-                                    message,
-                                },
+                                }, message),
                             ));
                             ReadClientBytesResult::DonePendingAuth
                         }
@@ -1176,7 +1174,7 @@ impl Server {
         });
 
         let mut received_messages: HashMap<SocketAddr, Vec<DeserializedMessage>> = HashMap::new();
-        let mut to_auth: HashMap<SocketAddr, AddrToAuth> = HashMap::new();
+        let mut to_auth: HashMap<SocketAddr, (AddrToAuth, DeserializedMessage)> = HashMap::new();
         let mut disconnected: HashMap<SocketAddr, ClientDisconnectReason> = HashMap::new();
 
         let mut addrs_to_disconnect: HashMap<
