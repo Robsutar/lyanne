@@ -1,10 +1,11 @@
 pub mod game;
 
+use std::net::SocketAddr;
 use std::{io, sync::Arc, time::Duration};
 
 use bevy::time::TimePlugin;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
-use bevy_ping_pong::{BevyPacketCaller, GameConfig, PacketManagers};
+use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameConfig, PacketManagers};
 use lyanne::rt::TaskHandle;
 use lyanne::transport::server::Server;
 use lyanne::transport::server::{BindResult, ServerProperties};
@@ -20,6 +21,7 @@ struct ServerConnecting {
 struct ServerConnected {
     server: Option<Server>,
     bevy_caller: Option<BevyPacketCaller>,
+    players: Vec<(SocketAddr, AuthenticationPacket)>,
     tick_timer: Timer,
 }
 
@@ -73,6 +75,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Serve
                         server: Some(bind_result.server),
                         bevy_caller: Some(server_connecting.bevy_caller.take().unwrap()),
                         tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
+                        players: Vec::new(),
                     });
                 }
                 Err(err) => {
@@ -94,58 +97,58 @@ fn server_tick(
             .tick(time.delta())
             .just_finished()
         {
-            if server_connected
-                .server
-                .as_ref()
-                .unwrap()
-                .connected_clients_size()
-                == 2
-            {
-                let mut connected_clients_iter = server_connected
-                    .server
-                    .as_ref()
-                    .unwrap()
-                    .connected_clients_iter();
-
-                let player_left_addr = connected_clients_iter.next().unwrap().key().clone();
-                let player_right_addr = connected_clients_iter.next().unwrap().key().clone();
-                drop(connected_clients_iter);
-
+            if server_connected.players.len() == 2 {
                 let server = server_connected.server.take().unwrap();
                 let bevy_caller = server_connected.bevy_caller.take().unwrap();
+
+                let player_left = server_connected.players.remove(0);
+                let player_right = server_connected.players.remove(0);
 
                 commands.entity(entity).despawn();
                 commands.spawn(game::Game::start(
                     GameConfig::default(),
                     server,
                     Arc::new(bevy_caller),
-                    player_left_addr,
-                    "Player Left".to_owned(),
-                    player_right_addr,
-                    "Player Right".to_owned(),
+                    player_left.0,
+                    player_left.1.player_name,
+                    player_right.0,
+                    player_right.1.player_name,
                 ));
             } else {
-                let server = server_connected.server.as_ref().unwrap();
-
                 {
-                    let tick_result = server.tick_start();
+                    let tick_result = server_connected.server.as_ref().unwrap().tick_start();
 
                     let clients_to_auth = tick_result.to_auth;
 
-                    for (addr, message) in clients_to_auth {
-                        info!(
-                            "authenticating client {:?}, message count: {:?}",
-                            addr,
-                            message.message.len()
-                        );
-                        server.authenticate(addr, message);
+                    for (addr, (addr_to_auth, message)) in clients_to_auth {
+                        if let Ok(auth_packet) = message
+                            .to_packet_list()
+                            .remove(0)
+                            .packet
+                            .downcast::<AuthenticationPacket>()
+                        {
+                            info!(
+                                "authenticating client {:?}, authentication packet: {:?}",
+                                addr, auth_packet
+                            );
+                            server_connected.players.push((addr, *auth_packet));
+                            server_connected
+                                .server
+                                .as_ref()
+                                .unwrap()
+                                .authenticate(addr, addr_to_auth);
+
+                            if server_connected.players.len() == 2 {
+                                break;
+                            }
+                        }
                     }
 
                     for (addr, reason) in tick_result.disconnected {
                         info!("client disconnected: {:?}, reason: {:?}", addr, reason)
                     }
 
-                    server.tick_end();
+                    server_connected.server.as_ref().unwrap().tick_end();
                 }
             }
         }
