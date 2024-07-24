@@ -257,7 +257,7 @@ impl DeserializedPacket {
         packet_registry: &PacketRegistry,
     ) -> io::Result<Vec<DeserializedPacket>> {
         let mut packet_buf_index = 0;
-        let mut received_packets = Vec::<DeserializedPacket>::new();
+        let mut received_packets: Vec<DeserializedPacket> = Vec::new();
         loop {
             if buf.len() == packet_buf_index {
                 break;
@@ -292,7 +292,15 @@ impl DeserializedPacket {
                 }
             }
         }
+        if received_packets.is_empty() {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "The list has no packets.",
+            ))
+        } else {
         Ok(received_packets)
+        }
+    }
     }
 }
 
