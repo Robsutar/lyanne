@@ -298,9 +298,61 @@ impl DeserializedPacket {
                 "The list has no packets.",
             ))
         } else {
-        Ok(received_packets)
+            Ok(received_packets)
         }
     }
+
+    pub fn deserialize_list_as_map(
+        buf: &[u8],
+        packet_registry: &PacketRegistry,
+    ) -> io::Result<HashMap<PacketId, Vec<DeserializedPacket>>> {
+        let mut packet_buf_index = 0;
+        let mut received_packets: HashMap<PacketId, Vec<DeserializedPacket>> = HashMap::new();
+        loop {
+            if buf.len() == packet_buf_index {
+                break;
+            }
+
+            match SerializedPacket::read_first(buf, packet_buf_index) {
+                Ok(serialized_packet) => {
+                    packet_buf_index += serialized_packet.bytes.len();
+                    if let Some((_, deserialize)) =
+                        packet_registry.serde_map.get(&serialized_packet.packet_id)
+                    {
+                        match deserialize(&serialized_packet.bytes[4..]) {
+                            Ok(deserialized) => {
+                                received_packets
+                                    .entry(serialized_packet.packet_id)
+                                    .or_insert_with(|| Vec::new())
+                                    .push(DeserializedPacket {
+                                        packet_id: serialized_packet.packet_id,
+                                        packet: deserialized,
+                                    });
+                            }
+                            Err(e) => {
+                                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
+                            }
+                        }
+                    } else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("packet id not registered: {}", serialized_packet.packet_id),
+                        ));
+                    }
+                }
+                Err(e) => {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, e));
+                }
+            }
+        }
+        if received_packets.is_empty() {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "The list has no packets.",
+            ))
+        } else {
+            Ok(received_packets)
+        }
     }
 }
 
