@@ -19,7 +19,7 @@ use crate::{
     messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap, MessagePartMapTryInsertResult, MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE
     }, packets::{
-        ClientTickEndPacket, DeserializedPacket, Packet, PacketRegistry, SerializedPacket,
+        ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket,
         SerializedPacketList,
     }, rt::{cancel, spawn, timeout, try_lock, Mutex, TaskHandle, UdpSocket}, utils::{DurationMonitor, RttCalculator}
 };
