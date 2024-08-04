@@ -1,3 +1,3 @@
 # lyanne
 
-for multiplayer games
+Tick-oriented communication between server and clients.
