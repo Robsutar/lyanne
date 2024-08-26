@@ -10,9 +10,9 @@ player-2 = []
 bevy-ping-pong = { path = "../", features = ["client"] }
 bevy = "^0.14.0"
 lyanne = { path = "../../../", features = [
-    "bevy-packet-schedules",
-    "rt-bevy",
-    "sd-bincode",
+    "bevy_packet_schedules",
+    "rt_bevy",
+    "sd_bincode",
     "troubles_simulator",
     "client",
 ] }

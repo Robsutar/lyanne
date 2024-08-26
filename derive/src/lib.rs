@@ -11,7 +11,7 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
     functions.push(quote::quote! {});
     external.push(quote::quote! {});
 
-    #[cfg(all(feature = "bevy-packet-schedules", feature = "client"))]
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
     {
         let client_schedule_ident =
             syn::Ident::new(&format!("{}ClientSchedule", ident), ident.span());
@@ -27,7 +27,7 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
         });
     }
 
-    #[cfg(all(feature = "bevy-packet-schedules", feature = "server"))]
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
     {
         let server_schedule_ident =
             syn::Ident::new(&format!("{}ServerSchedule", ident), ident.span());

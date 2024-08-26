@@ -263,9 +263,9 @@ impl DeserializedMessageCheck {
 
 #[derive(Debug)]
 pub struct DeserializedMessage {
-    #[cfg(not(feature = "deserialized-message-map"))]
+    #[cfg(not(feature = "deserialized_message_map"))]
     packet_list: Vec<DeserializedPacket>,
-    #[cfg(feature = "deserialized-message-map")]
+    #[cfg(feature = "deserialized_message_map")]
     packet_map: HashMap<PacketId, Vec<DeserializedPacket>>,
 }
 
@@ -279,12 +279,12 @@ impl DeserializedMessage {
             DeserializedMessageCheckKind::Single => {
                 let (_, last) = &tree.last_key_value().unwrap();
                 return Ok(DeserializedMessage {
-                    #[cfg(not(feature = "deserialized-message-map"))]
+                    #[cfg(not(feature = "deserialized_message_map"))]
                     packet_list: DeserializedPacket::deserialize_list(
                         last.content(),
                         &packet_registry,
                     )?,
-                    #[cfg(feature = "deserialized-message-map")]
+                    #[cfg(feature = "deserialized_message_map")]
                     packet_map: DeserializedPacket::deserialize_list_as_map(
                         last.content(),
                         &packet_registry,
@@ -304,12 +304,12 @@ impl DeserializedMessage {
                     unified_messages.append(&mut content);
                 }
                 return Ok(DeserializedMessage {
-                    #[cfg(not(feature = "deserialized-message-map"))]
+                    #[cfg(not(feature = "deserialized_message_map"))]
                     packet_list: DeserializedPacket::deserialize_list(
                         &unified_messages,
                         &packet_registry,
                     )?,
-                    #[cfg(feature = "deserialized-message-map")]
+                    #[cfg(feature = "deserialized_message_map")]
                     packet_map: DeserializedPacket::deserialize_list_as_map(
                         &unified_messages,
                         &packet_registry,
@@ -337,37 +337,37 @@ impl DeserializedMessage {
         packet_registry: &PacketRegistry,
     ) -> io::Result<Self> {
         Ok(DeserializedMessage {
-            #[cfg(not(feature = "deserialized-message-map"))]
+            #[cfg(not(feature = "deserialized_message_map"))]
             packet_list: DeserializedPacket::deserialize_list(buf, packet_registry)?,
-            #[cfg(feature = "deserialized-message-map")]
+            #[cfg(feature = "deserialized_message_map")]
             packet_map: DeserializedPacket::deserialize_list_as_map(buf, packet_registry)?,
         })
     }
 
     /// # Returns
     /// Reference of ordered packet list of this message.
-    #[cfg(not(feature = "deserialized-message-map"))]
+    #[cfg(not(feature = "deserialized_message_map"))]
     pub fn as_packet_list(&self) -> &Vec<DeserializedPacket> {
         &self.packet_list
     }
 
     /// # Returns
     /// Ordered packet list of this message.
-    #[cfg(not(feature = "deserialized-message-map"))]
+    #[cfg(not(feature = "deserialized_message_map"))]
     pub fn to_packet_list(self) -> Vec<DeserializedPacket> {
         self.packet_list
     }
 
     /// # Returns
     /// Reference of mapped packets by they ids.
-    #[cfg(feature = "deserialized-message-map")]
+    #[cfg(feature = "deserialized_message_map")]
     pub fn as_packet_map(&self) -> &HashMap<u16, Vec<DeserializedPacket>> {
         &self.packet_map
     }
 
     /// # Returns
     /// Mapped packets by they ids.
-    #[cfg(feature = "deserialized-message-map")]
+    #[cfg(feature = "deserialized_message_map")]
     pub fn to_packet_map(self) -> HashMap<u16, Vec<DeserializedPacket>> {
         self.packet_map
     }

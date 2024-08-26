@@ -1,7 +1,7 @@
 macro_rules! cfg_rt_tokio {
     ($($item:item)*) => {
         $(
-            #[cfg(feature = "rt-tokio")]
+            #[cfg(feature = "rt_tokio")]
             $item
         )*
     }
@@ -10,7 +10,7 @@ macro_rules! cfg_rt_tokio {
 macro_rules! cfg_rt_bevy {
     ($($item:item)*) => {
         $(
-            #[cfg(feature = "rt-bevy")]
+            #[cfg(feature = "rt_bevy")]
             $item
         )*
     }

@@ -570,7 +570,7 @@ struct ServerInternal {
 
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
-    #[cfg(feature = "rt-tokio")]
+    #[cfg(feature = "rt_tokio")]
     /// The runtime for asynchronous operations.
     runtime: crate::rt::Runtime,
     /// Actual state of server periodic tick flow.
@@ -635,13 +635,13 @@ impl ServerInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        #[cfg(feature = "rt-tokio")]
+        #[cfg(feature = "rt_tokio")]
         {
             let _ = self
                 .tasks_keeper_sender
                 .try_send(spawn(&self.runtime,future));
         }
-        #[cfg(feature = "rt-bevy")]
+        #[cfg(feature = "rt_bevy")]
         {
             let _ = self
                 .tasks_keeper_sender
@@ -649,7 +649,7 @@ impl ServerInternal {
         }
     }
 
-    #[cfg(feature = "rt-tokio")]
+    #[cfg(feature = "rt_tokio")]
     async fn create_async_tasks_keeper(
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
@@ -657,7 +657,7 @@ impl ServerInternal {
             handle.await.unwrap();
         }
     }
-    #[cfg(feature = "rt-bevy")]
+    #[cfg(feature = "rt_bevy")]
     async fn create_async_tasks_keeper(
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
@@ -963,11 +963,11 @@ impl Server {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         server_properties: Arc<ServerProperties>,
-        #[cfg(feature = "rt-tokio")]
+        #[cfg(feature = "rt_tokio")]
         runtime: crate::rt::Runtime,
     ) -> TaskHandle<io::Result<BindResult>>
     {
-        #[cfg(feature = "rt-tokio")]
+        #[cfg(feature = "rt_tokio")]
         let runtime_exit = runtime.clone();
 
         let bind_result_body = async move {
@@ -992,12 +992,12 @@ impl Server {
                 async_channel::unbounded();
 
             let tasks_keeper_handle;
-            #[cfg(feature = "rt-tokio")]
+            #[cfg(feature = "rt_tokio")]
             {
                 tasks_keeper_handle = spawn(&runtime, ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
             }
             
-            #[cfg(feature = "rt-bevy")]
+            #[cfg(feature = "rt_bevy")]
             {
                 tasks_keeper_handle = spawn(ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
             }   
@@ -1017,7 +1017,7 @@ impl Server {
                 tasks_keeper_handle,
 
                 socket,
-                #[cfg(feature = "rt-tokio")]
+                #[cfg(feature = "rt_tokio")]
                 runtime,
                 tick_state: RwLock::new(ServerTickState::TickStartPending),
 
@@ -1078,7 +1078,7 @@ impl Server {
         };
 
         spawn(
-            #[cfg(feature = "rt-tokio")]
+            #[cfg(feature = "rt_tokio")]
             &runtime_exit, 
             bind_result_body)
     }

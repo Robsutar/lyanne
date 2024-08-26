@@ -11,9 +11,9 @@ quote = "^1.0.0"
 client = []
 server = []
 
-sd-bincode = []
+sd_bincode = []
 
-bevy-packet-schedules = []
+bevy_packet_schedules = []
 
 [lib]
 proc-macro = true

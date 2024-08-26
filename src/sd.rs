@@ -1,7 +1,7 @@
 macro_rules! cfg_sd_bincode {
     ($($item:item)*) => {
         $(
-            #[cfg(feature = "sd-bincode")]
+            #[cfg(feature = "sd_bincode")]
             $item
         )*
     }
@@ -10,7 +10,7 @@ macro_rules! cfg_sd_bincode {
 macro_rules! cfg_sd_none {
     ($($item:item)*) => {
         $(
-            #[cfg(all(not(feature = "sd-bincode")))]
+            #[cfg(all(not(feature = "sd_bincode")))]
             $item
         )*
     }

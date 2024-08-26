@@ -18,8 +18,8 @@ client = ["lyanne-derive/client"]
 server = ["lyanne-derive/server"]
 troubles_simulator = []
 
-rt-tokio = ["dep:tokio"]
-rt-bevy = [
+rt_tokio = ["dep:tokio"]
+rt_bevy = [
     "dep:bevy_tasks",
     "dep:async-net",
     "dep:async-lock",
@@ -27,16 +27,16 @@ rt-bevy = [
     "dep:futures-timer",
 ]
 
-sd-bincode = [
-    "lyanne-derive/sd-bincode",
+sd_bincode = [
+    "lyanne-derive/sd_bincode",
     "dep:serde",
     "dep:bincode",
     "dep:bincode",
 ]
 
-bevy-packet-schedules = ["lyanne-derive/bevy-packet-schedules", "dep:bevy_ecs"]
+bevy_packet_schedules = ["lyanne-derive/bevy_packet_schedules", "dep:bevy_ecs"]
 
-deserialized-message-map = []
+deserialized_message_map = []
 
 [dependencies]
 lyanne-derive = { path = "derive" }
@@ -50,12 +50,12 @@ async-channel = "^2.0.0"
 smol = { version = "^2.0.0", optional = true }
 async-std = { version = "^1.0.0", optional = true }
 
-# rt-bevy
+# rt_bevy
 tokio = { version = "^1.0.0", optional = true, features = [
     "net",
     "rt-multi-thread",
 ] }
-# rt-bevy
+# rt_bevy
 bevy_tasks = { version = "^0.14.0", optional = true }
 async-net = { version = "^2.0.0", optional = true }
 async-lock = { version = "^3.0.0", optional = true }
@@ -64,6 +64,6 @@ futures-timer = { version = "^3.0.0", optional = true }
 
 bevy_ecs = { version = "^0.14.0", optional = true }
 
-# sd-bincode
+# sd_bincode
 serde = { version = "^1.0.0", features = ["derive"], optional = true }
 bincode = { version = "^1.0.0", optional = true }

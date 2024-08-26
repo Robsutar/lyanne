@@ -538,7 +538,7 @@ struct ClientInternal {
     
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
-    #[cfg(feature = "rt-tokio")]
+    #[cfg(feature = "rt_tokio")]
     /// The runtime for asynchronous operations.
     runtime: crate::rt::Runtime,
     /// Actual state of client periodic tick flow.
@@ -569,13 +569,13 @@ impl ClientInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        #[cfg(feature = "rt-tokio")]
+        #[cfg(feature = "rt_tokio")]
         {
             let _ = self
                 .tasks_keeper_sender
                 .try_send(spawn(&self.runtime,future));
         }
-        #[cfg(feature = "rt-bevy")]
+        #[cfg(feature = "rt_bevy")]
         {
             let _ = self
                 .tasks_keeper_sender
@@ -583,7 +583,7 @@ impl ClientInternal {
         }
     }
 
-    #[cfg(feature = "rt-tokio")]
+    #[cfg(feature = "rt_tokio")]
     async fn create_async_tasks_keeper(
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
@@ -591,7 +591,7 @@ impl ClientInternal {
             handle.await.unwrap();
         }
     }
-    #[cfg(feature = "rt-bevy")]
+    #[cfg(feature = "rt_bevy")]
     async fn create_async_tasks_keeper(
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
@@ -719,11 +719,11 @@ impl Client {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        #[cfg(feature = "rt-tokio")]
+        #[cfg(feature = "rt_tokio")]
         runtime: crate::rt::Runtime,
         message: SerializedPacketList,
     ) -> TaskHandle<Result<ConnectResult, ConnectError>> {
-        #[cfg(feature = "rt-tokio")]
+        #[cfg(feature = "rt_tokio")]
         let runtime_exit = runtime.clone();
 
         let bind_result_body = async move {
@@ -787,7 +787,7 @@ impl Client {
                                     messaging_properties,
                                     read_handler_properties,
                                     client_properties,
-                                    #[cfg(feature = "rt-tokio")]
+                                    #[cfg(feature = "rt_tokio")]
                                     runtime,
                                     remote_addr,
                                     sent_time,
@@ -803,7 +803,7 @@ impl Client {
         };
         
         spawn(
-            #[cfg(feature = "rt-tokio")]
+            #[cfg(feature = "rt_tokio")]
             &runtime_exit, 
             bind_result_body)
     }
@@ -818,7 +818,7 @@ impl Client {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        #[cfg(feature = "rt-tokio")]
+        #[cfg(feature = "rt_tokio")]
         runtime: crate::rt::Runtime,
         remote_addr: SocketAddr,
         sent_time: Instant,
@@ -873,12 +873,12 @@ impl Client {
         });
 
         let tasks_keeper_handle;
-        #[cfg(feature = "rt-tokio")]
+        #[cfg(feature = "rt_tokio")]
         {
             tasks_keeper_handle = spawn(&runtime, ClientInternal::create_async_tasks_keeper(tasks_keeper_receiver));
         }
         
-        #[cfg(feature = "rt-bevy")]
+        #[cfg(feature = "rt_bevy")]
         {
             tasks_keeper_handle = spawn(ClientInternal::create_async_tasks_keeper(tasks_keeper_receiver));
         }  
@@ -892,7 +892,7 @@ impl Client {
                 reason_to_disconnect_receiver,
                 tasks_keeper_handle,
                 socket: Arc::clone(&socket),
-                #[cfg(feature = "rt-tokio")]
+                #[cfg(feature = "rt_tokio")]
                 runtime,
                 tick_state: RwLock::new(ClientTickState::TickStartPending),
                 packet_registry: packet_registry.clone(),
@@ -1158,7 +1158,7 @@ impl Client {
         message: Option<SerializedPacketList>,
     ) -> TaskHandle<ClientDisconnectResult> {
         spawn(
-            #[cfg(feature = "rt-tokio")]
+            #[cfg(feature = "rt_tokio")]
             &self.internal.runtime.clone(),
             async move {
             let sent_time = Instant::now();
