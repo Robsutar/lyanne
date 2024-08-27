@@ -204,17 +204,14 @@ pub struct NoCryptographyAuth {
 impl NoCryptographyAuth {
     async fn create_pending_auth_resend_handler(
         server: Weak<ServerInternal>,
+        auth_mode: Weak<NoCryptographyAuth>,
         pending_auth_resend_receiver: async_channel::Receiver<SocketAddr>,
     ) {
         'l1: while let Ok(addr) = pending_auth_resend_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
-                match &server.authenticator_mode {
-                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
-                        if let Some(mut context) = auth_mode.pending_auth.get_mut(&addr) {
-                            context.last_sent_time = Some(Instant::now());
-                            let _ = server.socket.send_to(&context.finished_bytes, addr).await;
-                        }
-                    },
+            if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
+                if let Some(mut context) = auth_mode.pending_auth.get_mut(&addr) {
+                    context.last_sent_time = Some(Instant::now());
+                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
                 }
             } else {
                 break 'l1;
@@ -224,17 +221,14 @@ impl NoCryptographyAuth {
 
     async fn create_pending_rejection_confirm_resend_handler(
         server: Weak<ServerInternal>,
+        auth_mode: Weak<NoCryptographyAuth>,
         pending_rejection_confirm_resend_receiver: async_channel::Receiver<SocketAddr>,
     ) {
         'l1: while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
-                match &server.authenticator_mode {
-                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
-                        if let Some(mut context) = auth_mode.pending_rejection_confirm.get_mut(&addr) {
-                            context.last_sent_time = Some(Instant::now());
-                            let _ = server.socket.send_to(&context.finished_bytes, addr).await;
-                        }
-                    }
+            if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
+                if let Some(mut context) = auth_mode.pending_rejection_confirm.get_mut(&addr) {
+                    context.last_sent_time = Some(Instant::now());
+                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
                 }
             } else {
                 break 'l1;
@@ -244,23 +238,20 @@ impl NoCryptographyAuth {
 
     async fn create_ignored_addrs_asking_reason_handler(
         server: Weak<ServerInternal>,
+        auth_mode: Weak<NoCryptographyAuth>,
         ignored_addrs_asking_reason_read_signal_receiver: async_channel::Receiver<()>,
     ) {
         'l1: while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
-                match &server.authenticator_mode {
-                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
-                        for addr in auth_mode.ignored_addrs_asking_reason.iter() {
-                            let ip = addr.key();
-                            if let Some(reason) = server.ignored_ips.get(&ip) {
-                                if let Some(finished_bytes) = &reason.finished_bytes {
-                                    let _ = server.socket.send_to(&finished_bytes, addr.clone()).await;
-                                }
-                            }
+            if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
+                for addr in auth_mode.ignored_addrs_asking_reason.iter() {
+                    let ip = addr.key();
+                    if let Some(reason) = server.ignored_ips.get(&ip) {
+                        if let Some(finished_bytes) = &reason.finished_bytes {
+                            let _ = server.socket.send_to(&finished_bytes, addr.clone()).await;
                         }
-                        auth_mode.ignored_addrs_asking_reason.clear();
                     }
                 }
+                auth_mode.ignored_addrs_asking_reason.clear();
             } else {
                 break 'l1;
             }
@@ -269,19 +260,16 @@ impl NoCryptographyAuth {
 
     async fn create_rejections_to_confirm_handler(
         server: Weak<ServerInternal>,
+        auth_mode: Weak<NoCryptographyAuth>,
         rejections_to_confirm_signal_receiver: async_channel::Receiver<()>,
     ) {
         let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
         'l1: while let Ok(_) = rejections_to_confirm_signal_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
-                match &server.authenticator_mode {
-                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
-                        for addr in auth_mode.rejections_to_confirm.iter() {
-                            let _ = server.socket.send_to(rejection_confirm_bytes, addr.clone()).await;
-                        }
-                        auth_mode.rejections_to_confirm.clear();
-                    }
+            if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
+                for addr in auth_mode.rejections_to_confirm.iter() {
+                    let _ = server.socket.send_to(rejection_confirm_bytes, addr.clone()).await;
                 }
+                auth_mode.rejections_to_confirm.clear();
             } else {
                 break 'l1;
             }
@@ -297,19 +285,21 @@ struct NoCryptographyAuthBuild {
 }
 
 enum AuthenticatorModeBuild {
-    NoCryptography(Option<NoCryptographyAuth>, NoCryptographyAuthBuild)
+    NoCryptography(Arc<NoCryptographyAuth>, NoCryptographyAuthBuild)
 }
 
 impl AuthenticatorModeBuild {
     fn take_authenticator_mode_internal(&mut self) -> AuthenticatorModeInternal {
         match self {
-            AuthenticatorModeBuild::NoCryptography(auth_mode, _) => AuthenticatorModeInternal::NoCryptography(auth_mode.take().unwrap()),
+            AuthenticatorModeBuild::NoCryptography(auth_mode, _) => {
+                AuthenticatorModeInternal::NoCryptography(Arc::clone(&auth_mode))
+            },
         }
     }
 }
 
 enum AuthenticatorModeInternal {
-    NoCryptography(NoCryptographyAuth),
+    NoCryptography(Arc<NoCryptographyAuth>),
 }
 
 pub enum AuthenticatorMode {
@@ -1071,7 +1061,7 @@ impl Server {
                         rejections_to_confirm_signal_receiver,
                     ) = async_channel::unbounded();
 
-                    AuthenticatorModeBuild::NoCryptography(Some(NoCryptographyAuth {
+                    AuthenticatorModeBuild::NoCryptography(Arc::new(NoCryptographyAuth {
                         ignored_addrs_asking_reason_read_signal_sender,
                         rejections_to_confirm_signal_sender,
                         pending_rejection_confirm_resend_sender,
@@ -1121,38 +1111,46 @@ impl Server {
             });
 
             match authenticator_mode_build {
-                AuthenticatorModeBuild::NoCryptography(_, auth_mode_build) => {
+                AuthenticatorModeBuild::NoCryptography(auth_mode, auth_mode_build) => {
                     let server_downgraded = Arc::downgrade(&server);
+                    let auth_mode_downgraded = Arc::downgrade(&auth_mode);
                     server.create_async_task(async move {
                         NoCryptographyAuth::create_pending_auth_resend_handler(
                             server_downgraded,
+                            auth_mode_downgraded,
                             auth_mode_build.pending_auth_resend_receiver,
                         )
                         .await;
                     });
         
                     let server_downgraded = Arc::downgrade(&server);
+                    let auth_mode_downgraded = Arc::downgrade(&auth_mode);
                     server.create_async_task(async move {
                         NoCryptographyAuth::create_pending_rejection_confirm_resend_handler(
                             server_downgraded,
+                            auth_mode_downgraded,
                             auth_mode_build.pending_rejection_confirm_resend_receiver,
                         )
                         .await;
                     });
         
                     let server_downgraded = Arc::downgrade(&server);
+                    let auth_mode_downgraded = Arc::downgrade(&auth_mode);
                     server.create_async_task(async move {
                         NoCryptographyAuth::create_ignored_addrs_asking_reason_handler(
                             server_downgraded,
+                            auth_mode_downgraded,
                             auth_mode_build.ignored_addrs_asking_reason_read_signal_receiver,
                         )
                         .await;
                     });
         
                     let server_downgraded = Arc::downgrade(&server);
+                    let auth_mode_downgraded = Arc::downgrade(&auth_mode);
                     server.create_async_task(async move {
                         NoCryptographyAuth::create_rejections_to_confirm_handler(
                             server_downgraded,
+                            auth_mode_downgraded,
                             auth_mode_build.rejections_to_confirm_signal_receiver,
                         )
                         .await;
