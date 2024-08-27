@@ -26,8 +26,7 @@ use crate::{
 };
 
 use super::{
-    JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties,
-    SentMessagePart, MESSAGE_CHANNEL_SIZE,
+    JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties, SentMessagePart, MESSAGE_CHANNEL_SIZE
 };
 
 /// Possible results when receiving bytes by clients.
@@ -61,6 +60,7 @@ enum ReadClientBytesResult {
     RecentClientDisconnectConfirm,
     /// The public key send operation is invalid.
     InvalidPublicKeySend,
+    TODO(&'static str),
 }
 
 /// Possible reasons to be disconnected from some client.
@@ -85,6 +85,9 @@ pub enum ClientDisconnectReason {
 }
 
 /// General properties for the server management.
+/// 
+/// # Warning
+/// The default version does not use cryptography.
 pub struct ServerProperties {
     pub max_ignored_addrs_asking_reason: usize,
     pub pending_auth_packet_loss_interpretation: Duration,
@@ -169,6 +172,148 @@ impl IgnoredAddrReason {
             finished_bytes: Some(finished_bytes),
         }
     }
+}
+
+pub struct NoCryptographyAuth {
+    /// Sender for signaling the reading of [`Server::ignored_addrs_asking_reason`]
+    ignored_addrs_asking_reason_read_signal_sender: async_channel::Sender<()>,
+    /// Sender for signaling the reading of [`Server::rejections_to_confirm`]
+    rejections_to_confirm_signal_sender: async_channel::Sender<()>,
+
+    /// Sender for resending pending rejection confirmations.
+    pending_rejection_confirm_resend_sender: async_channel::Sender<SocketAddr>,
+    /// Sender for resending authentication bytes, like the server public key.
+    pending_auth_resend_sender: async_channel::Sender<SocketAddr>,
+
+    /// Set of addresses in the authentication process.
+    addrs_in_auth: DashSet<SocketAddr>,
+    /// Map of pending authentication addresses.
+    pending_auth: DashMap<SocketAddr, AddrPendingAuthSend>,
+    /// Map of clients that were recently disconnected itself.
+    recently_disconnected: DashMap<SocketAddr, Instant>,
+
+    /// Map of pending rejection confirmations.
+    pending_rejection_confirm: DashMap<SocketAddr, JustifiedRejectionContext>,
+
+    /// Map of addresses asking for the reason they are ignored.
+    ignored_addrs_asking_reason: DashMap<IpAddr, SocketAddr>,
+    /// Set of addresses asking for the rejection confirm.
+    rejections_to_confirm: DashSet<SocketAddr>,
+}
+
+impl NoCryptographyAuth {
+    async fn create_pending_auth_resend_handler(
+        server: Weak<ServerInternal>,
+        pending_auth_resend_receiver: async_channel::Receiver<SocketAddr>,
+    ) {
+        'l1: while let Ok(addr) = pending_auth_resend_receiver.recv().await {
+            if let Some(server) = server.upgrade() {
+                match &server.authenticator_mode {
+                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                        if let Some(mut context) = auth_mode.pending_auth.get_mut(&addr) {
+                            context.last_sent_time = Some(Instant::now());
+                            let _ = server.socket.send_to(&context.finished_bytes, addr).await;
+                        }
+                    },
+                }
+            } else {
+                break 'l1;
+            }
+        }
+    }
+
+    async fn create_pending_rejection_confirm_resend_handler(
+        server: Weak<ServerInternal>,
+        pending_rejection_confirm_resend_receiver: async_channel::Receiver<SocketAddr>,
+    ) {
+        'l1: while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv().await {
+            if let Some(server) = server.upgrade() {
+                match &server.authenticator_mode {
+                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                        if let Some(mut context) = auth_mode.pending_rejection_confirm.get_mut(&addr) {
+                            context.last_sent_time = Some(Instant::now());
+                            let _ = server.socket.send_to(&context.finished_bytes, addr).await;
+                        }
+                    }
+                }
+            } else {
+                break 'l1;
+            }
+        }
+    }
+
+    async fn create_ignored_addrs_asking_reason_handler(
+        server: Weak<ServerInternal>,
+        ignored_addrs_asking_reason_read_signal_receiver: async_channel::Receiver<()>,
+    ) {
+        'l1: while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv().await {
+            if let Some(server) = server.upgrade() {
+                match &server.authenticator_mode {
+                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                        for addr in auth_mode.ignored_addrs_asking_reason.iter() {
+                            let ip = addr.key();
+                            if let Some(reason) = server.ignored_ips.get(&ip) {
+                                if let Some(finished_bytes) = &reason.finished_bytes {
+                                    let _ = server.socket.send_to(&finished_bytes, addr.clone()).await;
+                                }
+                            }
+                        }
+                        auth_mode.ignored_addrs_asking_reason.clear();
+                    }
+                }
+            } else {
+                break 'l1;
+            }
+        }
+    }
+
+    async fn create_rejections_to_confirm_handler(
+        server: Weak<ServerInternal>,
+        rejections_to_confirm_signal_receiver: async_channel::Receiver<()>,
+    ) {
+        let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
+        'l1: while let Ok(_) = rejections_to_confirm_signal_receiver.recv().await {
+            if let Some(server) = server.upgrade() {
+                match &server.authenticator_mode {
+                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                        for addr in auth_mode.rejections_to_confirm.iter() {
+                            let _ = server.socket.send_to(rejection_confirm_bytes, addr.clone()).await;
+                        }
+                        auth_mode.rejections_to_confirm.clear();
+                    }
+                }
+            } else {
+                break 'l1;
+            }
+        }
+    }
+}
+
+struct NoCryptographyAuthBuild {
+    pending_auth_resend_receiver: async_channel::Receiver<SocketAddr>,
+    pending_rejection_confirm_resend_receiver: async_channel::Receiver<SocketAddr>,
+    ignored_addrs_asking_reason_read_signal_receiver: async_channel::Receiver<()>,
+    rejections_to_confirm_signal_receiver: async_channel::Receiver<()>,
+}
+
+enum AuthenticatorModeBuild {
+    NoCryptography(Option<NoCryptographyAuth>, NoCryptographyAuthBuild)
+}
+
+impl AuthenticatorModeBuild {
+    fn take_authenticator_mode_internal(&mut self) -> AuthenticatorModeInternal {
+        match self {
+            AuthenticatorModeBuild::NoCryptography(auth_mode, _) => AuthenticatorModeInternal::NoCryptography(auth_mode.take().unwrap()),
+        }
+    }
+}
+
+enum AuthenticatorModeInternal {
+    NoCryptography(NoCryptographyAuth),
+}
+
+pub enum AuthenticatorMode {
+    NoCryptography,
 }
 
 /// Messaging fields of [`ConnectedClient`].
@@ -378,8 +523,12 @@ impl ConnectedClient {
                             } else if let Ok(message) =
                                 DeserializedMessage::deserialize_single_list(&bytes[1..], &server.packet_registry)
                             {
-                                server.recently_disconnected.insert(addr.clone(), Instant::now());
-                                server.rejections_to_confirm.insert(addr.clone());
+                                match &server.authenticator_mode {
+                                    AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                                        auth_mode.recently_disconnected.insert(addr.clone(), Instant::now());
+                                        auth_mode.rejections_to_confirm.insert(addr.clone());
+                                    },
+                                }
                                 let _ = server
                                     .clients_to_disconnect_sender
                                     .try_send((addr, (ClientDisconnectReason::DisconnectRequest(message), None)));
@@ -540,10 +689,6 @@ impl ConnectedClient {
 struct ServerInternal {
     /// Sender for make the spawned tasks keep alive.
     tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
-    /// Sender for signaling the reading of [`Server::ignored_addrs_asking_reason`]
-    ignored_addrs_asking_reason_read_signal_sender: async_channel::Sender<()>,
-    /// Sender for signaling the reading of [`Server::rejections_to_confirm`]
-    rejections_to_confirm_signal_sender: async_channel::Sender<()>,
     /// Sender for addresses to be authenticated.
     clients_to_auth_sender: async_channel::Sender<(SocketAddr, (AddrToAuth, DeserializedMessage))>,
     /// Sender for addresses to be disconnected.
@@ -551,10 +696,6 @@ struct ServerInternal {
         SocketAddr,
         (ClientDisconnectReason, Option<JustifiedRejectionContext>),
     )>,
-    /// Sender for resending pending rejection confirmations.
-    pending_rejection_confirm_resend_sender: async_channel::Sender<SocketAddr>,
-    /// Sender for resending authentication bytes, like the server public key.
-    pending_auth_resend_sender: async_channel::Sender<SocketAddr>,
 
     /// Receiver for addresses to be authenticated.
     clients_to_auth_receiver: async_channel::Receiver<(SocketAddr, (AddrToAuth, DeserializedMessage))>,
@@ -564,6 +705,8 @@ struct ServerInternal {
         SocketAddr,
         (ClientDisconnectReason, Option<JustifiedRejectionContext>),
     )>,
+
+    authenticator_mode: AuthenticatorModeInternal,
 
     /// Task handle of the receiver.
     tasks_keeper_handle: TaskHandle<()>,
@@ -592,22 +735,9 @@ struct ServerInternal {
     ignored_ips: DashMap<IpAddr, IgnoredAddrReason>,
     /// Map of temporarily ignored addresses with the time until they are ignored.
     temporary_ignored_ips: DashMap<IpAddr, Instant>,
-    /// Map of addresses asking for the reason they are ignored.
-    ignored_addrs_asking_reason: DashMap<IpAddr, SocketAddr>,
-    /// Set of addresses asking for the rejection confirm.
-    rejections_to_confirm: DashSet<SocketAddr>,
 
-    /// Set of addresses in the authentication process.
-    addrs_in_auth: DashSet<SocketAddr>,
     /// Lock-protected set of assigned addresses in authentication.
     assigned_addrs_in_auth: RwLock<HashSet<SocketAddr>>,
-    /// Map of pending authentication addresses.
-    pending_auth: DashMap<SocketAddr, AddrPendingAuthSend>,
-    /// Map of clients that were recently disconnected itself.
-    recently_disconnected: DashMap<SocketAddr, Instant>,
-
-    /// Map of pending rejection confirmations.
-    pending_rejection_confirm: DashMap<SocketAddr, JustifiedRejectionContext>,
 }
 
 impl ServerInternal {
@@ -663,76 +793,6 @@ impl ServerInternal {
     ) {
         while let Ok(handle) = tasks_keeper_receiver.recv().await {
             handle.await;
-        }
-    }
-
-    async fn create_pending_auth_resend_handler(
-        server: Weak<ServerInternal>,
-        pending_auth_resend_receiver: async_channel::Receiver<SocketAddr>,
-    ) {
-        'l1: while let Ok(addr) = pending_auth_resend_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
-                if let Some(mut context) = server.pending_auth.get_mut(&addr) {
-                    context.last_sent_time = Some(Instant::now());
-                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
-                }
-            } else {
-                break 'l1;
-            }
-        }
-    }
-
-    async fn create_pending_rejection_confirm_resend_handler(
-        server: Weak<ServerInternal>,
-        pending_rejection_confirm_resend_receiver: async_channel::Receiver<SocketAddr>,
-    ) {
-        'l1: while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
-                if let Some(mut context) = server.pending_rejection_confirm.get_mut(&addr) {
-                    context.last_sent_time = Some(Instant::now());
-                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
-                }
-            } else {
-                break 'l1;
-            }
-        }
-    }
-
-    async fn create_ignored_addrs_asking_reason_handler(
-        server: Weak<ServerInternal>,
-        ignored_addrs_asking_reason_read_signal_receiver: async_channel::Receiver<()>,
-    ) {
-        'l1: while let Ok(_) = ignored_addrs_asking_reason_read_signal_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
-                for addr in server.ignored_addrs_asking_reason.iter() {
-                    let ip = addr.key();
-                    if let Some(reason) = server.ignored_ips.get(&ip) {
-                        if let Some(finished_bytes) = &reason.finished_bytes {
-                            let _ = server.socket.send_to(&finished_bytes, addr.clone()).await;
-                        }
-                    }
-                }
-                server.ignored_addrs_asking_reason.clear();
-            } else {
-                break 'l1;
-            }
-        }
-    }
-
-    async fn create_rejections_to_confirm_handler(
-        server: Weak<ServerInternal>,
-        rejections_to_confirm_read_signal_receiver: async_channel::Receiver<()>,
-    ) {
-        let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
-        'l1: while let Ok(_) = rejections_to_confirm_read_signal_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
-                for addr in server.rejections_to_confirm.iter() {
-                    let _ = server.socket.send_to(rejection_confirm_bytes, addr.clone()).await;
-                }
-                server.rejections_to_confirm.clear();
-            } else {
-                break 'l1;
-            }
         }
     }
 
@@ -839,112 +899,117 @@ impl ServerInternal {
         tuple: (SocketAddr, Vec<u8>),
     ) -> ReadClientBytesResult {
         let (addr, bytes) = tuple;
-        let ip = match addr {
-            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-        };
         if bytes.len() < MESSAGE_CHANNEL_SIZE {
-            ReadClientBytesResult::InsufficientBytesLen
-        } else if self.pending_rejection_confirm.contains_key(&addr) {
-            if bytes[0] == MessageChannel::REJECTION_CONFIRM {
-                self.pending_rejection_confirm.remove(&addr);
-                ReadClientBytesResult::DoneDisconnectConfirm
-            } else {
-                ReadClientBytesResult::PendingDisconnectConfirm
-            }
-        } else if let Some(reason) = self.ignored_ips.get(&ip) {
-            if reason.finished_bytes.is_some()
-                && self.ignored_addrs_asking_reason.len()
-                    < self.server_properties.max_ignored_addrs_asking_reason
-            {
-                self.ignored_addrs_asking_reason.insert(ip, addr);
-            }
-            ReadClientBytesResult::IgnoredClientHandle
-        } else if let Some(client) = self.connected_clients.get(&addr) {
-            let mut messaging = client.messaging.lock().await;
-            // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
-            messaging.tick_bytes_len += bytes.len() + 8 + 20;
-            if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
-                ReadClientBytesResult::ClientMaxTickByteLenOverflow
-            } else {
-                let _ = client.receiving_bytes_sender.try_send(bytes);
-                ReadClientBytesResult::ClientReceivedBytes
-            }
-        } else if self.addrs_in_auth.contains(&addr) {
-            ReadClientBytesResult::AddrInAuth
-        } else if let Some((_, pending_auth_send)) = self.pending_auth.remove(&addr) {
-            if bytes[0] == MessageChannel::AUTH_MESSAGE {
-                // 32 for public key, and 1 for the smallest possible serialized packet
-                if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
-                    ReadClientBytesResult::AuthInsufficientBytesLen
-                } else {
-                    let message =
-                        DeserializedMessage::deserialize_single_list(&bytes[33..], &self.packet_registry);
-                    if let Ok(message) = message {
-                        let mut sent_server_public_key: [u8; 32] = [0; 32];
-                        sent_server_public_key.copy_from_slice(&bytes[1..33]);
-                        let sent_server_public_key = PublicKey::from(sent_server_public_key);
-
-                        if sent_server_public_key != pending_auth_send.server_public_key {
-                            ReadClientBytesResult::InvalidPendingAuth
+            return ReadClientBytesResult::InsufficientBytesLen;
+        }
+        match &self.authenticator_mode {
+            AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                let ip = match addr {
+                    SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+                    SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+                };
+                if auth_mode.pending_rejection_confirm.contains_key(&addr) {
+                    if bytes[0] == MessageChannel::REJECTION_CONFIRM {
+                        auth_mode.pending_rejection_confirm.remove(&addr);
+                        ReadClientBytesResult::DoneDisconnectConfirm
+                    } else {
+                        ReadClientBytesResult::PendingDisconnectConfirm
+                    }
+                } else if let Some(reason) = self.ignored_ips.get(&ip) {
+                    if reason.finished_bytes.is_some()
+                        && auth_mode.ignored_addrs_asking_reason.len()
+                            < self.server_properties.max_ignored_addrs_asking_reason
+                    {
+                        auth_mode.ignored_addrs_asking_reason.insert(ip, addr);
+                    }
+                    ReadClientBytesResult::IgnoredClientHandle
+                } else if let Some(client) = self.connected_clients.get(&addr) {
+                    let mut messaging = client.messaging.lock().await;
+                    // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
+                    messaging.tick_bytes_len += bytes.len() + 8 + 20;
+                    if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
+                        ReadClientBytesResult::ClientMaxTickByteLenOverflow
+                    } else {
+                        let _ = client.receiving_bytes_sender.try_send(bytes);
+                        ReadClientBytesResult::ClientReceivedBytes
+                    }
+                } else if auth_mode.addrs_in_auth.contains(&addr) {
+                    ReadClientBytesResult::AddrInAuth
+                } else if let Some((_, pending_auth_send)) = auth_mode.pending_auth.remove(&addr) {
+                    if bytes[0] == MessageChannel::AUTH_MESSAGE {
+                        // 32 for public key, and 1 for the smallest possible serialized packet
+                        if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
+                            ReadClientBytesResult::AuthInsufficientBytesLen
                         } else {
-                            self.addrs_in_auth.insert(addr.clone());
-                            let _ = self.clients_to_auth_sender.try_send((
-                                addr,
-                                (AddrToAuth {
-                                    shared_key: pending_auth_send
-                                        .server_private_key
-                                        .diffie_hellman(&pending_auth_send.addr_public_key),
-                                }, message),
-                            ));
-                            ReadClientBytesResult::DonePendingAuth
+                            let message =
+                                DeserializedMessage::deserialize_single_list(&bytes[33..], &self.packet_registry);
+                            if let Ok(message) = message {
+                                let mut sent_server_public_key: [u8; 32] = [0; 32];
+                                sent_server_public_key.copy_from_slice(&bytes[1..33]);
+                                let sent_server_public_key = PublicKey::from(sent_server_public_key);
+    
+                                if sent_server_public_key != pending_auth_send.server_public_key {
+                                    ReadClientBytesResult::InvalidPendingAuth
+                                } else {
+                                    auth_mode.addrs_in_auth.insert(addr.clone());
+                                    let _ = self.clients_to_auth_sender.try_send((
+                                        addr,
+                                        (AddrToAuth {
+                                            shared_key: pending_auth_send
+                                                .server_private_key
+                                                .diffie_hellman(&pending_auth_send.addr_public_key),
+                                        }, message),
+                                    ));
+                                    ReadClientBytesResult::DonePendingAuth
+                                }
+                            } else {
+                                self.ignore_ip_temporary(
+                                    ip,
+                                    IgnoredAddrReason::without_reason(),
+                                    Instant::now() + Duration::from_secs(5),
+                                );
+                                ReadClientBytesResult::InvalidPendingAuth
+                            }
                         }
                     } else {
-                        self.ignore_ip_temporary(
-                            ip,
-                            IgnoredAddrReason::without_reason(),
-                            Instant::now() + Duration::from_secs(5),
-                        );
-                        ReadClientBytesResult::InvalidPendingAuth
+                        auth_mode.pending_auth.insert(addr, pending_auth_send);
+                        ReadClientBytesResult::PendingPendingAuth
                     }
+                } else if bytes[0] == MessageChannel::REJECTION_JUSTIFICATION {
+                    if auth_mode.recently_disconnected.contains_key(&addr) {
+                        auth_mode.rejections_to_confirm.insert(addr);
+                        ReadClientBytesResult::RecentClientDisconnectConfirm
+                    } else {
+                        ReadClientBytesResult::InvalidPublicKeySend
+                    }
+                } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
+                    let mut client_public_key: [u8; 32] = [0; 32];
+                    client_public_key.copy_from_slice(&bytes[1..33]);
+                    let client_public_key = PublicKey::from(client_public_key);
+                    let server_private_key = EphemeralSecret::random_from_rng(OsRng);
+                    let server_public_key = PublicKey::from(&server_private_key);
+                    let server_public_key_bytes = server_public_key.as_bytes();
+    
+                    let mut finished_bytes = Vec::with_capacity(1 + server_public_key_bytes.len());
+                    finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
+                    finished_bytes.extend_from_slice(server_public_key_bytes);
+    
+                    auth_mode.pending_auth.insert(
+                        addr,
+                        AddrPendingAuthSend {
+                            received_time: Instant::now(),
+                            last_sent_time: None,
+                            server_private_key,
+                            server_public_key,
+                            addr_public_key: client_public_key,
+                            finished_bytes,
+                        },
+                    );
+                    ReadClientBytesResult::PublicKeySend
+                } else {
+                    ReadClientBytesResult::InvalidPublicKeySend
                 }
-            } else {
-                self.pending_auth.insert(addr, pending_auth_send);
-                ReadClientBytesResult::PendingPendingAuth
-            }
-        } else if bytes[0] == MessageChannel::REJECTION_JUSTIFICATION {
-            if self.recently_disconnected.contains_key(&addr) {
-                self.rejections_to_confirm.insert(addr);
-                ReadClientBytesResult::RecentClientDisconnectConfirm
-            } else {
-                ReadClientBytesResult::InvalidPublicKeySend
-            }
-        } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
-            let mut client_public_key: [u8; 32] = [0; 32];
-            client_public_key.copy_from_slice(&bytes[1..33]);
-            let client_public_key = PublicKey::from(client_public_key);
-            let server_private_key = EphemeralSecret::random_from_rng(OsRng);
-            let server_public_key = PublicKey::from(&server_private_key);
-            let server_public_key_bytes = server_public_key.as_bytes();
-
-            let mut finished_bytes = Vec::with_capacity(1 + server_public_key_bytes.len());
-            finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
-            finished_bytes.extend_from_slice(server_public_key_bytes);
-
-            self.pending_auth.insert(
-                addr,
-                AddrPendingAuthSend {
-                    received_time: Instant::now(),
-                    last_sent_time: None,
-                    server_private_key,
-                    server_public_key,
-                    addr_public_key: client_public_key,
-                    finished_bytes,
-                },
-            );
-            ReadClientBytesResult::PublicKeySend
-        } else {
-            ReadClientBytesResult::InvalidPublicKeySend
+            },
         }
     }
 }
@@ -963,6 +1028,7 @@ impl Server {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         server_properties: Arc<ServerProperties>,
+        authenticator_mode: AuthenticatorMode,
         #[cfg(feature = "rt_tokio")]
         runtime: crate::rt::Runtime,
     ) -> TaskHandle<io::Result<BindResult>>
@@ -974,18 +1040,6 @@ impl Server {
             let socket = Arc::new(UdpSocket::bind(addr).await?);
 
             let (tasks_keeper_sender, tasks_keeper_receiver) = async_channel::unbounded();
-            let (pending_auth_resend_sender, pending_auth_resend_receiver) =
-                async_channel::unbounded();
-            let (pending_rejection_confirm_resend_sender, pending_rejection_confirm_resend_receiver) =
-                async_channel::unbounded();
-                let (
-                    ignored_addrs_asking_reason_read_signal_sender,
-                    ignored_addrs_asking_reason_read_signal_receiver,
-                ) = async_channel::unbounded();
-                let (
-                    rejections_to_confirm_signal_sender,
-                    rejections_to_confirm_signal_receiver,
-                ) = async_channel::unbounded();
                     
             let (clients_to_auth_sender, clients_to_auth_receiver) = async_channel::unbounded();
             let (clients_to_disconnect_sender, clients_to_disconnect_receiver) =
@@ -1000,19 +1054,53 @@ impl Server {
             #[cfg(feature = "rt_bevy")]
             {
                 tasks_keeper_handle = spawn(ServerInternal::create_async_tasks_keeper(tasks_keeper_receiver));
-            }   
+            }
+
+            let mut authenticator_mode_build = match authenticator_mode {
+                AuthenticatorMode::NoCryptography => {
+                    let (pending_auth_resend_sender, pending_auth_resend_receiver) =
+                        async_channel::unbounded();
+                    let (pending_rejection_confirm_resend_sender, pending_rejection_confirm_resend_receiver) =
+                        async_channel::unbounded();
+                    let (
+                        ignored_addrs_asking_reason_read_signal_sender,
+                        ignored_addrs_asking_reason_read_signal_receiver,
+                    ) = async_channel::unbounded();
+                    let (
+                        rejections_to_confirm_signal_sender,
+                        rejections_to_confirm_signal_receiver,
+                    ) = async_channel::unbounded();
+
+                    AuthenticatorModeBuild::NoCryptography(Some(NoCryptographyAuth {
+                        ignored_addrs_asking_reason_read_signal_sender,
+                        rejections_to_confirm_signal_sender,
+                        pending_rejection_confirm_resend_sender,
+                        pending_auth_resend_sender,
+
+                        addrs_in_auth: DashSet::new(),
+                        pending_auth: DashMap::new(),
+                        recently_disconnected: DashMap::new(),
+                        pending_rejection_confirm: DashMap::new(),
+                        ignored_addrs_asking_reason: DashMap::new(),
+                        rejections_to_confirm: DashSet::new(),
+                    }), NoCryptographyAuthBuild { 
+                        pending_auth_resend_receiver, 
+                        pending_rejection_confirm_resend_receiver, 
+                        ignored_addrs_asking_reason_read_signal_receiver, 
+                        rejections_to_confirm_signal_receiver, 
+                    })
+                },
+            };
 
             let server = Arc::new(ServerInternal {
                 tasks_keeper_sender,
-                ignored_addrs_asking_reason_read_signal_sender,
-                rejections_to_confirm_signal_sender,
                 clients_to_auth_sender,
                 clients_to_disconnect_sender,
-                pending_rejection_confirm_resend_sender,
-                pending_auth_resend_sender,
 
                 clients_to_auth_receiver,
                 clients_to_disconnect_receiver,
+
+                authenticator_mode: authenticator_mode_build.take_authenticator_mode_internal(),
 
                 tasks_keeper_handle,
 
@@ -1029,50 +1117,48 @@ impl Server {
                 connected_clients: DashMap::new(),
                 ignored_ips: DashMap::new(),
                 temporary_ignored_ips: DashMap::new(),
-                ignored_addrs_asking_reason: DashMap::new(),
-                rejections_to_confirm: DashSet::new(),
-                addrs_in_auth: DashSet::new(),
                 assigned_addrs_in_auth: RwLock::new(HashSet::new()),
-                pending_auth: DashMap::new(),
-                recently_disconnected: DashMap::new(),
-                pending_rejection_confirm: DashMap::new(),
             });
 
-            let server_downgraded = Arc::downgrade(&server);
-            server.create_async_task(async move {
-                ServerInternal::create_pending_auth_resend_handler(
-                    server_downgraded,
-                    pending_auth_resend_receiver,
-                )
-                .await;
-            });
-
-            let server_downgraded = Arc::downgrade(&server);
-            server.create_async_task(async move {
-                ServerInternal::create_pending_rejection_confirm_resend_handler(
-                    server_downgraded,
-                    pending_rejection_confirm_resend_receiver,
-                )
-                .await;
-            });
-
-            let server_downgraded = Arc::downgrade(&server);
-            server.create_async_task(async move {
-                ServerInternal::create_ignored_addrs_asking_reason_handler(
-                    server_downgraded,
-                    ignored_addrs_asking_reason_read_signal_receiver,
-                )
-                .await;
-            });
-
-            let server_downgraded = Arc::downgrade(&server);
-            server.create_async_task(async move {
-                ServerInternal::create_rejections_to_confirm_handler(
-                    server_downgraded,
-                    rejections_to_confirm_signal_receiver,
-                )
-                .await;
-            });
+            match authenticator_mode_build {
+                AuthenticatorModeBuild::NoCryptography(_, auth_mode_build) => {
+                    let server_downgraded = Arc::downgrade(&server);
+                    server.create_async_task(async move {
+                        NoCryptographyAuth::create_pending_auth_resend_handler(
+                            server_downgraded,
+                            auth_mode_build.pending_auth_resend_receiver,
+                        )
+                        .await;
+                    });
+        
+                    let server_downgraded = Arc::downgrade(&server);
+                    server.create_async_task(async move {
+                        NoCryptographyAuth::create_pending_rejection_confirm_resend_handler(
+                            server_downgraded,
+                            auth_mode_build.pending_rejection_confirm_resend_receiver,
+                        )
+                        .await;
+                    });
+        
+                    let server_downgraded = Arc::downgrade(&server);
+                    server.create_async_task(async move {
+                        NoCryptographyAuth::create_ignored_addrs_asking_reason_handler(
+                            server_downgraded,
+                            auth_mode_build.ignored_addrs_asking_reason_read_signal_receiver,
+                        )
+                        .await;
+                    });
+        
+                    let server_downgraded = Arc::downgrade(&server);
+                    server.create_async_task(async move {
+                        NoCryptographyAuth::create_rejections_to_confirm_handler(
+                            server_downgraded,
+                            auth_mode_build.rejections_to_confirm_signal_receiver,
+                        )
+                        .await;
+                    });
+                },
+            }
 
             Ok(BindResult { server:Server{internal:server} })
         };
@@ -1138,31 +1224,40 @@ impl Server {
 
         let mut assigned_addrs_in_auth = internal.assigned_addrs_in_auth.write().unwrap();
         let dispatched_assigned_addrs_in_auth = std::mem::take(&mut *assigned_addrs_in_auth);
-        for addr in dispatched_assigned_addrs_in_auth {
-            internal.addrs_in_auth.remove(&addr).unwrap();
-        }
 
-        internal.pending_auth.retain(|_, pending_auth_send| {
-            now - pending_auth_send.received_time < internal.messaging_properties.timeout_interpretation
-        });
-        for context in internal.pending_auth.iter() {
-            if let Some(last_sent_time) = context.last_sent_time {
-                if now - last_sent_time
-                    < internal
-                        .server_properties
-                        .pending_auth_packet_loss_interpretation
-                {
-                    continue;
+        match &internal.authenticator_mode {
+            AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                for addr in dispatched_assigned_addrs_in_auth {
+                    auth_mode.addrs_in_auth.remove(&addr).unwrap();
                 }
             }
-            internal.pending_auth_resend_sender
-                .try_send(context.key().clone())
-                .unwrap();
         }
 
-        internal.recently_disconnected.retain(|_, received_time| {
-            now - *received_time < internal.messaging_properties.timeout_interpretation
-        });
+        match &internal.authenticator_mode {
+            AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                auth_mode.pending_auth.retain(|_, pending_auth_send| {
+                    now - pending_auth_send.received_time < internal.messaging_properties.timeout_interpretation
+                });
+                for context in auth_mode.pending_auth.iter() {
+                    if let Some(last_sent_time) = context.last_sent_time {
+                        if now - last_sent_time
+                            < internal
+                                .server_properties
+                                .pending_auth_packet_loss_interpretation
+                        {
+                            continue;
+                        }
+                    }
+                    auth_mode.pending_auth_resend_sender
+                        .try_send(context.key().clone())
+                        .unwrap();
+                }
+
+                auth_mode.recently_disconnected.retain(|_, received_time| {
+                    now - *received_time < internal.messaging_properties.timeout_interpretation
+                });
+            }
+        }
 
         internal.temporary_ignored_ips.retain(|addr, until_to| {
             if now < *until_to {
@@ -1256,37 +1351,51 @@ impl Server {
             }
         }
 
-        internal.pending_rejection_confirm.retain(|_, context| {
-            now - context.rejection_instant
-                < internal.messaging_properties.disconnect_reason_resend_cancel
-        });
-        for context in internal.pending_rejection_confirm.iter() {
-            if let Some(last_sent_time) = context.last_sent_time {
-                if now - last_sent_time < internal.messaging_properties.disconnect_reason_resend_delay {
-                    continue;
+
+        match &internal.authenticator_mode {
+            AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                auth_mode.pending_rejection_confirm.retain(|_, context| {
+                    now - context.rejection_instant
+                        < internal.messaging_properties.disconnect_reason_resend_cancel
+                });
+                for context in auth_mode.pending_rejection_confirm.iter() {
+                    if let Some(last_sent_time) = context.last_sent_time {
+                        if now - last_sent_time < internal.messaging_properties.disconnect_reason_resend_delay {
+                            continue;
+                        }
+                    }
+                    auth_mode.pending_rejection_confirm_resend_sender
+                        .try_send(context.key().clone())
+                        .unwrap();
                 }
             }
-            internal.pending_rejection_confirm_resend_sender
-                .try_send(context.key().clone())
-                .unwrap();
         }
 
-        for (addr, (reason, context)) in addrs_to_disconnect {
-            internal.connected_clients.remove(&addr).unwrap();
-            if let Some(context) = context {
-                internal.pending_rejection_confirm.insert(addr.clone(), context);
+
+        match &internal.authenticator_mode {
+            AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                for (addr, (reason, context)) in addrs_to_disconnect {
+                    internal.connected_clients.remove(&addr).unwrap();
+                    if let Some(context) = context {
+                        auth_mode.pending_rejection_confirm.insert(addr.clone(), context);
+                    }
+                    disconnected.insert(addr, reason);
+                }
             }
-            disconnected.insert(addr, reason);
         }
 
         for addr in to_auth.keys() {
             assigned_addrs_in_auth.insert(addr.clone());
         }
 
-        internal.ignored_addrs_asking_reason_read_signal_sender
-            .try_send(()).unwrap();
-        internal.rejections_to_confirm_signal_sender
-            .try_send(()).unwrap();
+        match &internal.authenticator_mode {
+            AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                auth_mode.ignored_addrs_asking_reason_read_signal_sender
+                    .try_send(()).unwrap();
+                auth_mode.rejections_to_confirm_signal_sender
+                    .try_send(()).unwrap();
+            }
+        }
 
         internal.try_check_read_handler();
 
@@ -1343,7 +1452,11 @@ impl Server {
         } else if !internal.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
             panic!("Addr was not marked to be authenticated in the last server tick.",)
         } else {
-            internal.addrs_in_auth.remove(&addr).unwrap();
+            match &internal.authenticator_mode {
+                AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                    auth_mode.addrs_in_auth.remove(&addr).unwrap();
+                }
+            }
 
             let (receiving_bytes_sender, receiving_bytes_receiver) = async_channel::unbounded();
             let (packets_to_send_sender, packets_to_send_receiver) = async_channel::unbounded();
@@ -1458,10 +1571,14 @@ impl Server {
         } else if !internal.assigned_addrs_in_auth.write().unwrap().remove(&addr) {
             panic!("Addr was not marked to be authenticated in the last server tick.",)
         } else {
-            internal.pending_rejection_confirm.insert(
-                addr,
-                JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
-            );
+            match &internal.authenticator_mode {
+                AuthenticatorModeInternal::NoCryptography(auth_mode) => {
+                    auth_mode.pending_rejection_confirm.insert(
+                        addr,
+                        JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
+                    );
+                }
+            }
         }
     }
 
