@@ -29,6 +29,9 @@ use super::{
     JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties, SentMessagePart, MESSAGE_CHANNEL_SIZE
 };
 
+#[cfg(feature = "auth_tls")]
+use super::auth_tls::AuthTlsServerProperties;
+
 /// Possible results when receiving bytes by clients.
 #[derive(Debug)]
 enum ReadClientBytesResult {
@@ -199,7 +202,6 @@ pub struct NoCryptographyAuth {
     /// Set of addresses asking for the rejection confirm.
     rejections_to_confirm: DashSet<SocketAddr>,
 }
-
 impl NoCryptographyAuth {
     async fn create_pending_auth_resend_handler(
         server: Weak<ServerInternal>,
@@ -275,7 +277,6 @@ impl NoCryptographyAuth {
         }
     }
 }
-
 struct NoCryptographyAuthBuild {
     pending_auth_resend_receiver: async_channel::Receiver<SocketAddr>,
     pending_rejection_confirm_resend_receiver: async_channel::Receiver<SocketAddr>,
@@ -283,8 +284,23 @@ struct NoCryptographyAuthBuild {
     rejections_to_confirm_signal_receiver: async_channel::Receiver<()>,
 }
 
+#[cfg(feature = "auth_tls")]
+pub struct RequireTLSAuth {
+    
+}
+#[cfg(feature = "auth_tls")]
+impl RequireTLSAuth {
+    
+}
+#[cfg(feature = "auth_tls")]
+struct RequireTlsAuthBuild {
+
+}
+
 enum AuthenticatorModeBuild {
-    NoCryptography(Arc<NoCryptographyAuth>, NoCryptographyAuthBuild)
+    NoCryptography(Arc<NoCryptographyAuth>, NoCryptographyAuthBuild),
+    #[cfg(feature = "auth_tls")]
+    RequireTLS(Arc<RequireTLSAuth>, RequireTlsAuthBuild)
 }
 
 impl AuthenticatorModeBuild {
@@ -293,16 +309,24 @@ impl AuthenticatorModeBuild {
             AuthenticatorModeBuild::NoCryptography(auth_mode, _) => {
                 AuthenticatorModeInternal::NoCryptography(Arc::clone(&auth_mode))
             },
+            #[cfg(feature = "auth_tls")]
+            AuthenticatorModeBuild::RequireTLS(auth_mode, _) => {
+                AuthenticatorModeInternal::RequireTLS(Arc::clone(&auth_mode))
+            },
         }
     }
 }
 
 enum AuthenticatorModeInternal {
     NoCryptography(Arc<NoCryptographyAuth>),
+    #[cfg(feature = "auth_tls")]
+    RequireTLS(Arc<RequireTLSAuth>),
 }
 
 pub enum AuthenticatorMode {
     NoCryptography,
+    #[cfg(feature = "auth_tls")]
+    RequireTLS(AuthTlsServerProperties)
 }
 
 /// Messaging fields of [`ConnectedClient`].
