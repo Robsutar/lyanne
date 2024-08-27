@@ -36,6 +36,7 @@ sd_bincode = [
 bevy_packet_schedules = ["lyanne-derive/bevy_packet_schedules", "dep:bevy_ecs"]
 deserialized_message_map = []
 troubles_simulator = []
+auth_tls = ["dep:tokio-rustls", "dep:futures-rustls", "dep:rustls-pemfile"]
 
 [dependencies]
 lyanne-derive = { path = "derive" }
@@ -66,3 +67,8 @@ bevy_ecs = { version = "^0.14.0", optional = true }
 # sd_bincode
 serde = { version = "^1.0.0", features = ["derive"], optional = true }
 bincode = { version = "^1.0.0", optional = true }
+
+#auth_tls
+futures-rustls = { version = "^0.26.0", optional = true }
+tokio-rustls = { version = "^0.26.0", optional = true }
+rustls-pemfile = { version = "^2.0.0", optional = true }

@@ -20,6 +20,9 @@ pub mod server;
 #[cfg(feature = "troubles_simulator")]
 pub mod troubles_simulator;
 
+#[cfg(feature = "auth_tls")]
+pub mod auth_tls;
+
 pub struct MessagingProperties {
     pub part_limit: usize,
     pub timeout_interpretation: Duration,
