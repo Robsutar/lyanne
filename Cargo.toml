@@ -16,7 +16,6 @@ edition = "2021"
 default = []
 client = ["lyanne-derive/client"]
 server = ["lyanne-derive/server"]
-troubles_simulator = []
 
 rt_tokio = ["dep:tokio"]
 rt_bevy = [
@@ -35,8 +34,8 @@ sd_bincode = [
 ]
 
 bevy_packet_schedules = ["lyanne-derive/bevy_packet_schedules", "dep:bevy_ecs"]
-
 deserialized_message_map = []
+troubles_simulator = []
 
 [dependencies]
 lyanne-derive = { path = "derive" }
