@@ -60,7 +60,6 @@ enum ReadClientBytesResult {
     RecentClientDisconnectConfirm,
     /// The public key send operation is invalid.
     InvalidPublicKeySend,
-    TODO(&'static str),
 }
 
 /// Possible reasons to be disconnected from some client.
