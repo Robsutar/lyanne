@@ -113,6 +113,23 @@ pub struct RootCertStoreProvider {
 
 #[cfg(feature = "client")]
 impl RootCertStoreProvider {
+    pub fn from_buf(cert: &mut dyn io::BufRead) -> io::Result<Self> {
+        let certs = certs_collected(cert)?;
+        let mut roots = RootCertStore::empty();
+        for cert in certs {
+            if let Err(e) = roots.add(cert) {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
+            }
+        }
+
+        Ok(Self {
+            roots: Arc::new(roots),
+        })
+    }
+    pub fn from_file<P: AsRef<std::path::Path>>(cert: P) -> io::Result<Self> {
+        RootCertStoreProvider::from_buf(&mut io::BufReader::new(&mut std::fs::File::open(cert)?))
+    }
+
     fn apply(
         &self,
         config: rustls::ConfigBuilder<ClientConfig, WantsVerifier>,
