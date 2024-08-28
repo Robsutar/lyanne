@@ -793,37 +793,45 @@ impl Client {
                     }
                 }
                 AuthenticatorMode::RequireTls(auth_mode) => {
-                    let server_name =
+                    match timeout(messaging_properties.timeout_interpretation, async {
+                        let server_name =
                         match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
                             Ok(server_name) => server_name,
                             Err(_) => return Err(ConnectError::InvalidDnsName),
                         };
-                    let config = Arc::new(auth_mode.new_client_config());
-                    let connector = TlsConnector::from(config);
-            
-                    let stream = TcpStream::connect(auth_mode.server_addr).await?;
-                    let mut tls_stream = connector.connect(server_name, stream).await?;
-                    tls_stream
-                        .write_all(&public_key_sent)
-                        .await?;
+                        let config = Arc::new(auth_mode.new_client_config());
+                        let connector = TlsConnector::from(config);
+                        
+                        let stream = TcpStream::connect(auth_mode.server_addr).await?;
+                        let mut tls_stream = connector.connect(server_name, stream).await?;
+                        tls_stream
+                            .write_all(&public_key_sent)
+                            .await?;
 
-                    let len = match tls_stream.read(&mut buf).await {
-                        Ok(0) => {
-                            return Err(ConnectError::InvalidProtocolCommunication)
+                        let len = match tls_stream.read(&mut buf).await {
+                            Ok(0) => {
+                                return Err(ConnectError::InvalidProtocolCommunication)
+                            }
+                            Ok(len) => {
+                                len
+                            }
+                            Err(e) => {
+                                return Err(ConnectError::IoError(e));
+                            }
+                        };
+    
+                        if len < MESSAGE_CHANNEL_SIZE {
+                            return Err(ConnectError::InvalidProtocolCommunication);
                         }
+    
+                        Ok(len)
+                    }).await {
                         Ok(len) => {
-                            len
-                        }
-                        Err(e) => {
-                            return Err(ConnectError::IoError(e));
-                        }
-                    };
-
-                    if len < MESSAGE_CHANNEL_SIZE {
-                        return Err(ConnectError::InvalidProtocolCommunication);
+                            len?
+                        },
+                        Err(_) => return Err(ConnectError::Timeout),
                     }
 
-                    len
                 },
             };
 
