@@ -241,8 +241,104 @@ pub struct RequireTLSAuth {
     
 }
 #[cfg(feature = "auth_tls")]
-impl RequireTLSAuth {
-    
+    async fn create_tls_handler(
+        server: Weak<ServerInternal>, 
+        auth_mode: Weak<RequireTlsAuth>,
+        listener: TcpListener,
+        tls_read_signal_receiver: async_channel::Receiver<()>,
+    ) {
+        'l1: while let Ok(_) = tls_read_signal_receiver.recv().await {
+            if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
+                loop {
+                    // TODO: use this
+                    let result = RequireTlsAuth::tls_handler_accept(&server, &auth_mode, &listener);
+                }
+            } else {
+                break 'l1;
+            }
+        }
+    }
+
+    async fn tls_handler_accept(server: &ServerInternal, auth_mode: &RequireTlsAuth, listener: &TcpListener) -> io::Result<ReadClientBytesResult> {
+        let accepted = timeout(server.read_handler_properties.timeout, listener.accept()).await;
+
+        let (stream, addr) = match accepted {
+            Ok(a) => a,
+            Err(_) => return Err(io::Error::new(io::ErrorKind::TimedOut, "Timed out")),
+        }?;
+
+
+        let config = Arc::new(auth_mode.properties.new_server_config()?);
+        let acceptor = TlsAcceptor::from(config);
+        let mut tls_stream = acceptor.accept(stream).await?;
+
+        let ip = match addr {
+            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+        };
+
+        if let Some(reason) = server.ignored_ips.get(&ip) {
+            if /*TODO:auth_mode.ignored_addrs_asking_reason.len()*/0usize
+                    < server.server_properties.max_ignored_addrs_asking_reason
+            {
+                if let Some(finished_bytes) = &reason.finished_bytes {
+                    tls_stream.write_all(finished_bytes).await?
+                }
+            }
+            Ok(ReadClientBytesResult::IgnoredClientHandle)
+        } else if server.connected_clients.contains_key(&addr) {
+            Ok(ReadClientBytesResult::AlreadyConnected)
+        } else if auth_mode.addrs_in_auth.contains(&ip) {
+            Ok(ReadClientBytesResult::AddrInAuth)
+        } else {
+            let mut buf = [0u8; 1024];
+
+            let bytes = match tls_stream.read(&mut buf).await {
+                Ok(0) => {
+                    return Err(io::Error::new(io::ErrorKind::ConnectionReset, "Connection closed by the client."));
+                }
+                Ok(n) => {
+                    &buf[..n]
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+
+            if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
+                let mut client_public_key: [u8; 32] = [0; 32];
+                client_public_key.copy_from_slice(&bytes[1..33]);
+                let client_public_key = PublicKey::from(client_public_key);
+
+                let mut server_private_key = EphemeralSecret::random_from_rng(OsRng);
+                let mut server_public_key = PublicKey::from(&server_private_key);
+                while auth_mode.pending_auth.contains_key(&server_public_key) {
+                    server_private_key = EphemeralSecret::random_from_rng(OsRng);
+                    server_public_key = PublicKey::from(&server_private_key);
+                }
+                let server_public_key_bytes = server_public_key.as_bytes();
+
+                let mut finished_bytes = Vec::with_capacity(1 + server_public_key_bytes.len());
+                finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
+                finished_bytes.extend_from_slice(server_public_key_bytes);
+
+                auth_mode.pending_auth.insert(
+                    server_public_key.clone(),
+                    AddrPendingAuthSend {
+                        received_time: Instant::now(),
+                        last_sent_time: None,
+                        server_private_key,
+                        server_public_key,
+                        addr_public_key: client_public_key,
+                        finished_bytes,
+                    },
+                );
+                Ok(ReadClientBytesResult::PublicKeySend)
+            } else {
+                Ok(ReadClientBytesResult::InvalidPublicKeySend)
+            }
+        }
+    }
 }
 #[cfg(feature = "auth_tls")]
 struct RequireTlsAuthBuild {
