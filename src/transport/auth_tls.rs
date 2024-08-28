@@ -3,8 +3,18 @@ use std::{io, sync::Arc};
 #[cfg(feature = "rt_tokio")]
 use tokio_rustls::rustls;
 
+#[cfg(feature = "rt_tokio")]
+pub use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(feature = "rt_tokio")]
+pub use tokio_rustls::TlsAcceptor;
+
 #[cfg(not(feature = "rt_tokio"))]
 pub use futures_rustls::rustls;
+
+#[cfg(not(feature = "rt_tokio"))]
+pub use futures::{AsyncReadExt, AsyncWriteExt};
+#[cfg(not(feature = "rt_tokio"))]
+pub use futures_rustls::TlsAcceptor;
 
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 #[cfg(feature = "client")]
