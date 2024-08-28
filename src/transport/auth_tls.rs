@@ -124,6 +124,7 @@ impl RootCertStoreProvider {
 #[cfg(feature = "client")]
 pub struct AuthTlsClientProperties {
     pub server_name: &'static str,
+    pub server_addr: SocketAddr,
     pub root_cert_store: RootCertStoreProvider,
 }
 
