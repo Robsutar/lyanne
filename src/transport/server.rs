@@ -1040,13 +1040,13 @@ impl ServerInternal {
             }
         }
 
+        let ip = match addr {
+            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+        };
 
         match &self.authenticator_mode {
             AuthenticatorModeInternal::NoCryptography(auth_mode) => {
-                let ip = match addr {
-                    SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-                    SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-                };
                 if let Some(reason) = self.ignored_ips.get(&ip) {
                     if reason.finished_bytes.is_some()
                         && auth_mode.ignored_addrs_asking_reason.len()
@@ -1135,6 +1135,71 @@ impl ServerInternal {
                     ReadClientBytesResult::InvalidPublicKeySend
                 }
             },
+            AuthenticatorModeInternal::RequireTls(auth_mode) => {
+                if let Some(client) = self.connected_clients.get(&addr) {
+                    let mut messaging = client.messaging.lock().await;
+                    // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
+                    messaging.tick_bytes_len += bytes.len() + 8 + 20;
+                    if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
+                        ReadClientBytesResult::ClientMaxTickByteLenOverflow
+                    } else {
+                        let _ = client.receiving_bytes_sender.try_send(bytes);
+                        ReadClientBytesResult::ClientReceivedBytes
+                    }
+                } else if auth_mode.addrs_in_auth.contains(&ip) {
+                    ReadClientBytesResult::AddrInAuth
+                } else if bytes[0] == MessageChannel::AUTH_MESSAGE {
+                    // 32 for public key, and 1 for the smallest possible serialized packet
+                    if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
+                        return ReadClientBytesResult::AuthInsufficientBytesLen;
+                    }
+
+                    let mut sent_server_public_key: [u8; 32] = [0; 32];
+                    sent_server_public_key.copy_from_slice(&bytes[1..33]);
+                    let sent_server_public_key = PublicKey::from(sent_server_public_key);
+
+                    if let Some((_, pending_auth_send)) = auth_mode.pending_auth.remove(&sent_server_public_key) {
+                        // 32 for public key, and 1 for the smallest possible serialized packet
+                        if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
+                            ReadClientBytesResult::AuthInsufficientBytesLen
+                        } else {
+                            let message =
+                                DeserializedMessage::deserialize_single_list(&bytes[33..], &self.packet_registry);
+                            if let Ok(message) = message {
+                                let mut sent_server_public_key: [u8; 32] = [0; 32];
+                                sent_server_public_key.copy_from_slice(&bytes[1..33]);
+                                let sent_server_public_key = PublicKey::from(sent_server_public_key);
+    
+                                if sent_server_public_key != pending_auth_send.server_public_key {
+                                    ReadClientBytesResult::InvalidPendingAuth
+                                } else {
+                                    auth_mode.addrs_in_auth.insert(ip.clone());
+                                    let _ = self.clients_to_auth_sender.try_send((
+                                        addr,
+                                        (AddrToAuth {
+                                            shared_key: pending_auth_send
+                                                .server_private_key
+                                                .diffie_hellman(&pending_auth_send.addr_public_key),
+                                        }, message),
+                                    ));
+                                    ReadClientBytesResult::DonePendingAuth
+                                }
+                            } else {
+                                self.ignore_ip_temporary(
+                                    ip,
+                                    IgnoredAddrReason::without_reason(),
+                                    Instant::now() + Duration::from_secs(5),
+                                );
+                                ReadClientBytesResult::InvalidPendingAuth
+                            }
+                        }
+                    } else {
+                        todo!("")
+                    }
+                } else {
+                    ReadClientBytesResult::PendingPendingAuth
+                }
+            },
         }
     }
 }
@@ -1209,6 +1274,20 @@ impl Server {
                         ignored_addrs_asking_reason_read_signal_receiver,
                     })
                 },
+                AuthenticatorMode::RequireTls(properties) => {
+                    let (
+                        tls_read_signal_sender,
+                        tls_read_signal_receiver,
+                    ) = async_channel::unbounded();
+                    AuthenticatorModeBuild::RequireTls(Arc::new(RequireTlsAuth{
+                        properties, 
+                        addrs_in_auth: DashSet::new(), 
+                        pending_auth: DashMap::new(),
+                        tls_read_signal_sender
+                    }), RequireTlsAuthBuild {
+                        tls_read_signal_receiver,
+                    })
+                },
             };
 
             let server = Arc::new(ServerInternal {
@@ -1265,6 +1344,20 @@ impl Server {
                             server_downgraded,
                             auth_mode_downgraded,
                             auth_mode_build.ignored_addrs_asking_reason_read_signal_receiver,
+                        )
+                        .await;
+                    });
+                },
+                AuthenticatorModeBuild::RequireTls(auth_mode, auth_mode_build) => {
+                    let server_downgraded = Arc::downgrade(&server);
+                    let auth_mode_downgraded = Arc::downgrade(&auth_mode);
+                    let listener = TcpListener::bind(auth_mode.properties.server_addr).await?;
+                    server.create_async_task(async move {
+                        RequireTlsAuth::create_tls_handler(
+                            server_downgraded, 
+                            auth_mode_downgraded, 
+                            listener, 
+                            auth_mode_build.tls_read_signal_receiver
                         )
                         .await;
                     });
@@ -1360,6 +1453,16 @@ impl Server {
                     auth_mode.addrs_in_auth.remove(&addr).unwrap();
                 }
             }
+            AuthenticatorModeInternal::RequireTls(auth_mode) => {
+                for addr in dispatched_assigned_addrs_in_auth {
+                    let ip = match addr {
+                        SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+                        SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+                    };
+
+                    auth_mode.addrs_in_auth.remove(&ip).unwrap();
+                }
+            }
         }
 
         match &internal.authenticator_mode {
@@ -1382,6 +1485,11 @@ impl Server {
                         .unwrap();
                 }
 
+            }
+            AuthenticatorModeInternal::RequireTls(auth_mode) => {
+                auth_mode.pending_auth.retain(|_, pending_auth_send| {
+                    now - pending_auth_send.received_time < internal.messaging_properties.timeout_interpretation
+                });
             }
         }
         
@@ -1514,6 +1622,9 @@ impl Server {
                 auth_mode.ignored_addrs_asking_reason_read_signal_sender
                     .try_send(()).unwrap();
             }
+            AuthenticatorModeInternal::RequireTls(auth_mode) => {
+                auth_mode.tls_read_signal_sender.try_send(()).unwrap();
+            },
         }
         internal.rejections_to_confirm_signal_sender
             .try_send(()).unwrap();
@@ -1576,6 +1687,14 @@ impl Server {
             match &internal.authenticator_mode {
                 AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                     auth_mode.addrs_in_auth.remove(&addr).unwrap();
+                }
+                AuthenticatorModeInternal::RequireTls(auth_mode) => {
+                    let ip = match addr {
+                        SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+                        SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+                    };
+                    
+                    auth_mode.addrs_in_auth.remove(&ip).unwrap();
                 }
             }
 
