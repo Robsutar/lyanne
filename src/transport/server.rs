@@ -30,7 +30,10 @@ use super::{
 };
 
 #[cfg(feature = "auth_tls")]
-use super::auth_tls::AuthTlsServerProperties;
+use super::auth_tls::{AuthTlsServerProperties, TlsAcceptor, AsyncReadExt, AsyncWriteExt};
+
+#[cfg(feature = "auth_tls")]
+use crate::rt::TcpListener;
 
 /// Possible results when receiving bytes by clients.
 #[derive(Debug)]
@@ -63,6 +66,8 @@ enum ReadClientBytesResult {
     RecentClientDisconnectConfirm,
     /// The public key send operation is invalid.
     InvalidPublicKeySend,
+    /// The client tried to authenticate, but it is already connected.
+    AlreadyConnected,
 }
 
 /// Possible reasons to be disconnected from some client.
@@ -131,6 +136,7 @@ pub struct ServerTickResult {
 struct AddrPendingAuthSend {
     /// The instant that the request was received.
     received_time: Instant,
+    // TODO: that field is not used in RequireTls
     /// The last instant that the bytes were sent.
     last_sent_time: Option<Instant>,
     /// Random private key created inside the server.
@@ -238,6 +244,14 @@ struct NoCryptographyAuthBuild {
 
 #[cfg(feature = "auth_tls")]
 pub struct RequireTlsAuth {
+    properties: AuthTlsServerProperties,
+
+    /// Set of ips in the authentication process.
+    addrs_in_auth: DashSet<IpAddr>,
+    /// Map of pending authentication addresses.
+    pending_auth: DashMap<PublicKey, AddrPendingAuthSend>,
+
+    tls_read_signal_sender: async_channel::Sender<()>,
 }
 #[cfg(feature = "auth_tls")]
 impl RequireTlsAuth {
@@ -342,7 +356,7 @@ impl RequireTlsAuth {
 }
 #[cfg(feature = "auth_tls")]
 struct RequireTlsAuthBuild {
-
+    tls_read_signal_receiver: async_channel::Receiver<()>,
 }
 
 enum AuthenticatorModeBuild {
