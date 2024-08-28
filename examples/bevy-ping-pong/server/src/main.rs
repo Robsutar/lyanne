@@ -7,7 +7,8 @@ use bevy::time::TimePlugin;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameConfig, PacketManagers};
 use lyanne::rt::TaskHandle;
-use lyanne::transport::server::Server;
+use lyanne::transport::auth_tls::{AuthTlsServerProperties, CertKey, ServerCertProvider};
+use lyanne::transport::server::{AuthenticatorMode, Server};
 use lyanne::transport::server::{BindResult, ServerProperties};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 
@@ -47,6 +48,17 @@ fn init(mut commands: Commands) {
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let server_properties = Arc::new(ServerProperties::default());
+    let authenticator_mode = AuthenticatorMode::RequireTls(AuthTlsServerProperties {
+        server_name: "localhost",
+        server_addr: "127.0.0.1:4443".parse().unwrap(),
+        server_cert: ServerCertProvider::SingleCert(
+            CertKey::from_file(
+                "examples/tls_certificates/server_cert.pem",
+                "examples/tls_certificates/server_key.pem",
+            )
+            .unwrap(),
+        ),
+    });
 
     let bind_handle = Server::bind(
         addr,
@@ -54,6 +66,7 @@ fn init(mut commands: Commands) {
         messaging_properties,
         read_handler_properties,
         server_properties,
+        authenticator_mode,
     );
 
     commands.spawn(ServerConnecting {
