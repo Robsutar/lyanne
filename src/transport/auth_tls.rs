@@ -1,4 +1,4 @@
-use std::{io, sync::Arc};
+use std::{io, net::SocketAddr, sync::Arc};
 
 #[cfg(feature = "rt_tokio")]
 use tokio_rustls::rustls;
@@ -90,6 +90,7 @@ impl ServerCertProvider {
 #[cfg(feature = "server")]
 pub struct AuthTlsServerProperties {
     pub server_name: &'static str,
+    pub server_addr: SocketAddr,
     pub server_cert: ServerCertProvider,
 }
 
