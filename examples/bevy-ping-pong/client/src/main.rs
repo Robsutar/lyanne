@@ -5,7 +5,10 @@ use std::sync::Arc;
 use bevy::{prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, PacketManagers};
 use lyanne::rt::TaskHandle;
-use lyanne::transport::client::{Client, ClientTickResult, ConnectError, ConnectResult};
+use lyanne::transport::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
+use lyanne::transport::client::{
+    AuthenticatorMode, Client, ClientTickResult, ConnectError, ConnectResult,
+};
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
 
@@ -40,6 +43,12 @@ fn init(mut commands: Commands) {
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
+    let authenticator_mode = AuthenticatorMode::RequireTls(AuthTlsClientProperties {
+        server_name: "localhost",
+        server_addr: "127.0.0.1:4443".parse().unwrap(),
+        root_cert_store: RootCertStoreProvider::from_file("examples/tls_certificates/ca_cert.pem")
+            .unwrap(),
+    });
 
     let authentication_packets =
         vec![packet_managers
@@ -54,6 +63,7 @@ fn init(mut commands: Commands) {
         messaging_properties,
         read_handler_properties,
         client_properties,
+        authenticator_mode,
         SerializedPacketList::create(authentication_packets),
     );
 
