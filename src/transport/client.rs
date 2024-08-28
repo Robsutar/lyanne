@@ -29,6 +29,12 @@ use super::{
     SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
 
+#[cfg(feature = "auth_tls")]
+use super::auth_tls::{AuthTlsClientProperties, TlsConnector, TcpStream, AsyncReadExt, AsyncWriteExt};
+
+#[cfg(feature = "auth_tls")]
+use super::auth_tls::rustls;
+
 /// Possible results when receiving bytes by the server
 #[derive(Debug)]
 pub enum ReadServerBytesResult {
@@ -95,6 +101,7 @@ enum ClientTickState {
 pub enum ConnectError {
     Timeout,
     InvalidProtocolCommunication,
+    InvalidDnsName,
     Ignored(DeserializedMessage),
     IoError(io::Error),
     Disconnected(ServerDisconnectReason),
@@ -106,7 +113,8 @@ impl fmt::Display for ConnectError {
             ConnectError::Timeout => write!(f, "Server took a long time to respond."),
             ConnectError::InvalidProtocolCommunication => {
                 write!(f, "Server did not communicate correctly.")
-            }
+            },
+            ConnectError::InvalidDnsName => write!(f, "Invalid dns name."),
             ConnectError::Ignored(message) => write!(
                 f,
                 "Client addr is ignored by the server, reason size: {}",
@@ -166,6 +174,8 @@ pub struct ClientDisconnectResult {
 
 pub enum AuthenticatorMode {
     NoCryptography,
+    #[cfg(feature = "auth_tls")]
+    RequireTls(AuthTlsClientProperties)
 }
 
 /// Messaging fields of [`ConnectedServer`]
@@ -742,12 +752,13 @@ impl Client {
             public_key_sent.push(MessageChannel::PUBLIC_KEY_SEND);
             public_key_sent.extend_from_slice(client_public_key_bytes);
 
+            let mut buf = [0u8; 1024];
+
             let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
             socket.connect(remote_addr).await?;
 
-            match authenticator_mode {
+            let len = match authenticator_mode {
                 AuthenticatorMode::NoCryptography => {
-                    let mut buf = [0u8; 1024];
                     loop {
                         let now = Instant::now();
                         if now - sent_time > messaging_properties.timeout_interpretation {
@@ -763,51 +774,95 @@ impl Client {
                         {
                             Ok(len) => {
                                 let len = len?;
-                                let bytes = &buf[..len];
-                                if bytes.len() < MESSAGE_CHANNEL_SIZE {
+                                if len < MESSAGE_CHANNEL_SIZE {
                                     return Err(ConnectError::InvalidProtocolCommunication);
                                 }
 
-                                match bytes[0] {
+                                match buf[0] {
                                     MessageChannel::IGNORED_REASON => {
-                                        // 4 for the minimal SerializedPacket
-                                        if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
-                                            return Err(ConnectError::InvalidProtocolCommunication);
-                                        } else if let Ok(message) =
-                                            DeserializedMessage::deserialize_single_list(&bytes[1..], &packet_registry)
-                                        {
-                                            return Err(ConnectError::Ignored(message));
-                                        } else {
-                                            return Err(ConnectError::InvalidProtocolCommunication);
-                                        }
+                                        break len;
                                     }
                                     MessageChannel::PUBLIC_KEY_SEND => {
-                                        if len != 33 {
-                                            return Err(ConnectError::InvalidProtocolCommunication);
-                                        }
-                                        return Client::connect_public_key_send_match_arm(
-                                            socket,
-                                            buf,
-                                            client_private_key,
-                                            message,
-                                            packet_registry,
-                                            messaging_properties,
-                                            read_handler_properties,
-                                            client_properties,
-                                            #[cfg(feature = "rt_tokio")]
-                                            runtime,
-                                            remote_addr,
-                                            sent_time,
-                                        )
-                                        .await;
+                                        break len;
                                     }
-                                    _ => (),
+                                    _ => ()
                                 }
                             }
                             _ => (),
                         }
                     }
+                }
+                AuthenticatorMode::RequireTls(auth_mode) => {
+                    let server_name =
+                        match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
+                            Ok(server_name) => server_name,
+                            Err(_) => return Err(ConnectError::InvalidDnsName),
+                        };
+                    let config = Arc::new(auth_mode.new_client_config());
+                    let connector = TlsConnector::from(config);
+            
+                    let stream = TcpStream::connect(auth_mode.server_addr).await?;
+                    let mut tls_stream = connector.connect(server_name, stream).await?;
+                    tls_stream
+                        .write_all(&public_key_sent)
+                        .await?;
+
+                    let len = match tls_stream.read(&mut buf).await {
+                        Ok(0) => {
+                            return Err(ConnectError::InvalidProtocolCommunication)
+                        }
+                        Ok(len) => {
+                            len
+                        }
+                        Err(e) => {
+                            return Err(ConnectError::IoError(e));
+                        }
+                    };
+
+                    if len < MESSAGE_CHANNEL_SIZE {
+                        return Err(ConnectError::InvalidProtocolCommunication);
+                    }
+
+                    len
                 },
+            };
+
+            let bytes = &buf[..len];
+            
+            match bytes[0] {
+                MessageChannel::IGNORED_REASON => {
+                    // 4 for the minimal SerializedPacket
+                    if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
+                        return Err(ConnectError::InvalidProtocolCommunication);
+                    } else if let Ok(message) =
+                        DeserializedMessage::deserialize_single_list(&bytes[1..], &packet_registry)
+                    {
+                        return Err(ConnectError::Ignored(message));
+                    } else {
+                        return Err(ConnectError::InvalidProtocolCommunication);
+                    }
+                }
+                MessageChannel::PUBLIC_KEY_SEND => {
+                    if len != 33 {
+                        return Err(ConnectError::InvalidProtocolCommunication);
+                    }
+                    return Client::connect_public_key_send_match_arm(
+                        socket,
+                        buf,
+                        client_private_key,
+                        message,
+                        packet_registry,
+                        messaging_properties,
+                        read_handler_properties,
+                        client_properties,
+                        #[cfg(feature = "rt_tokio")]
+                        runtime,
+                        remote_addr,
+                        sent_time,
+                    )
+                    .await;
+                }
+                _ => Err(ConnectError::InvalidProtocolCommunication),
             }
         };
         
