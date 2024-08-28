@@ -237,10 +237,10 @@ struct NoCryptographyAuthBuild {
 }
 
 #[cfg(feature = "auth_tls")]
-pub struct RequireTLSAuth {
-    
+pub struct RequireTlsAuth {
 }
 #[cfg(feature = "auth_tls")]
+impl RequireTlsAuth {
     async fn create_tls_handler(
         server: Weak<ServerInternal>, 
         auth_mode: Weak<RequireTlsAuth>,
@@ -348,7 +348,7 @@ struct RequireTlsAuthBuild {
 enum AuthenticatorModeBuild {
     NoCryptography(Arc<NoCryptographyAuth>, NoCryptographyAuthBuild),
     #[cfg(feature = "auth_tls")]
-    RequireTLS(Arc<RequireTLSAuth>, RequireTlsAuthBuild)
+    RequireTls(Arc<RequireTlsAuth>, RequireTlsAuthBuild)
 }
 
 impl AuthenticatorModeBuild {
@@ -358,8 +358,8 @@ impl AuthenticatorModeBuild {
                 AuthenticatorModeInternal::NoCryptography(Arc::clone(&auth_mode))
             },
             #[cfg(feature = "auth_tls")]
-            AuthenticatorModeBuild::RequireTLS(auth_mode, _) => {
-                AuthenticatorModeInternal::RequireTLS(Arc::clone(&auth_mode))
+            AuthenticatorModeBuild::RequireTls(auth_mode, _) => {
+                AuthenticatorModeInternal::RequireTls(Arc::clone(&auth_mode))
             },
         }
     }
@@ -368,13 +368,13 @@ impl AuthenticatorModeBuild {
 enum AuthenticatorModeInternal {
     NoCryptography(Arc<NoCryptographyAuth>),
     #[cfg(feature = "auth_tls")]
-    RequireTLS(Arc<RequireTLSAuth>),
+    RequireTls(Arc<RequireTlsAuth>),
 }
 
 pub enum AuthenticatorMode {
     NoCryptography,
     #[cfg(feature = "auth_tls")]
-    RequireTLS(AuthTlsServerProperties)
+    RequireTls(AuthTlsServerProperties)
 }
 
 /// Messaging fields of [`ConnectedClient`].
