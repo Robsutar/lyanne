@@ -4,17 +4,19 @@ use std::{io, net::SocketAddr, sync::Arc};
 use tokio_rustls::rustls;
 
 #[cfg(feature = "rt_tokio")]
-pub use tokio::io::{AsyncReadExt, AsyncWriteExt};
+pub use tokio::io::{AsyncReadExt, AsyncWriteExt, TcpStream};
 #[cfg(feature = "rt_tokio")]
-pub use tokio_rustls::TlsAcceptor;
+pub use tokio_rustls::{TlsAcceptor, TlsConnector, TlsStream};
 
 #[cfg(not(feature = "rt_tokio"))]
 pub use futures_rustls::rustls;
 
 #[cfg(not(feature = "rt_tokio"))]
+pub use async_net::TcpStream;
+#[cfg(not(feature = "rt_tokio"))]
 pub use futures::{AsyncReadExt, AsyncWriteExt};
 #[cfg(not(feature = "rt_tokio"))]
-pub use futures_rustls::TlsAcceptor;
+pub use futures_rustls::{TlsAcceptor, TlsConnector, TlsStream};
 
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 #[cfg(feature = "client")]
