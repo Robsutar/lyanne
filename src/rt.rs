@@ -22,6 +22,7 @@ pub(crate) use cfg_rt_tokio;
 cfg_rt_tokio! {
     pub type Runtime = tokio::runtime::Handle;
     pub type UdpSocket = tokio::net::UdpSocket;
+    pub type TcpListener = tokio::net::TcpListener;
     pub type TaskHandle<T> = tokio::task::JoinHandle<T>;
     pub type Mutex<T> = tokio::sync::Mutex<T>;
 
@@ -60,6 +61,7 @@ cfg_rt_tokio! {
 
 cfg_rt_bevy! {
     pub type UdpSocket = async_net::UdpSocket;
+    pub type TcpListener = async_net::TcpListener;
     pub type TaskHandle<T> = bevy_tasks::Task<T>;
     pub type Mutex<T> = async_lock::Mutex<T>;
 
