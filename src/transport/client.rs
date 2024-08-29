@@ -760,6 +760,7 @@ impl Client {
                 AuthenticatorMode::NoCryptography(auth_message) => {
                     (Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?, auth_message)
                 }
+                #[cfg(feature = "auth_tls")]
                 AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
                     (Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await?, auth_message)
                 },
@@ -852,7 +853,7 @@ impl Client {
         }
     }
 
-
+    #[cfg(feature = "auth_tls")]
     async fn connect_require_tls_match_arm(
         messaging_properties: &MessagingProperties,
         buf: &mut [u8; 1024],
