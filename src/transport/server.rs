@@ -338,11 +338,15 @@ impl RequireTlsAuth {
                         received_time: Instant::now(),
                         last_sent_time: None,
                         server_private_key,
-                        server_public_key,
+                        server_public_key: server_public_key.clone(),
                         addr_public_key: client_public_key,
                         finished_bytes,
                     },
                 );
+
+                let addr_pending_auth = auth_mode.pending_auth.get(&server_public_key).unwrap();
+                tls_stream.write_all(&addr_pending_auth.finished_bytes).await?;
+
                 Ok(ReadClientBytesResult::PublicKeySend)
             } else {
                 Ok(ReadClientBytesResult::InvalidPublicKeySend)
