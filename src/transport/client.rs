@@ -176,10 +176,18 @@ pub struct AuthMessage {
     pub message: SerializedPacketList
 }
 
+#[cfg(feature = "auth_tls")]
+pub struct OptionalTlsAuthMessage {
+    pub require_tls_message: SerializedPacketList,
+    pub no_cryptography_message: SerializedPacketList
+}
+
 pub enum AuthenticatorMode {
     NoCryptography(AuthMessage),
     #[cfg(feature = "auth_tls")]
-    RequireTls(AuthMessage, AuthTlsClientProperties)
+    RequireTls(AuthMessage, AuthTlsClientProperties),
+    #[cfg(feature = "auth_tls")]
+    OptionalTls(OptionalTlsAuthMessage, AuthTlsClientProperties)
 }
 
 /// Messaging fields of [`ConnectedServer`]
@@ -762,11 +770,22 @@ impl Client {
 
             let (len, auth_message) = match authenticator_mode {
                 AuthenticatorMode::NoCryptography(auth_message) => {
-                    (Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?, auth_message)
+                    (Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?, auth_message.message)
                 }
                 #[cfg(feature = "auth_tls")]
                 AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
-                    (Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await?, auth_message)
+                    (Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await?, auth_message.message)
+                },
+                #[cfg(feature = "auth_tls")]
+                AuthenticatorMode::OptionalTls(auth_message, auth_mode) => {
+                    match Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await {
+                        Ok(len) => {
+                            (len, auth_message.require_tls_message)
+                        },
+                        Err(_) => {
+                            (Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?, auth_message.no_cryptography_message)
+                        },
+                    }
                 },
             };
 
@@ -793,7 +812,7 @@ impl Client {
                         socket,
                         buf,
                         client_private_key,
-                        auth_message.message,
+                        auth_message,
                         packet_registry,
                         messaging_properties,
                         read_handler_properties,
