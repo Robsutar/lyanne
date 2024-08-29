@@ -48,17 +48,24 @@ fn init(mut commands: Commands) {
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let server_properties = Arc::new(ServerProperties::default());
-    let authenticator_mode = AuthenticatorMode::RequireTls(AuthTlsServerProperties {
-        server_name: "localhost",
-        server_addr: "127.0.0.1:4443".parse().unwrap(),
-        server_cert: ServerCertProvider::SingleCert(
-            CertKey::from_file(
-                "examples/tls_certificates/server_cert.pem",
-                "examples/tls_certificates/server_key.pem",
-            )
-            .unwrap(),
-        ),
-    });
+
+    let authenticator_mode = {
+        if true {
+            AuthenticatorMode::RequireTls(AuthTlsServerProperties {
+                server_name: "localhost",
+                server_addr: "127.0.0.1:4443".parse().unwrap(),
+                server_cert: ServerCertProvider::SingleCert(
+                    CertKey::from_file(
+                        "examples/tls_certificates/server_cert.pem",
+                        "examples/tls_certificates/server_key.pem",
+                    )
+                    .unwrap(),
+                ),
+            })
+        } else {
+            AuthenticatorMode::NoCryptography
+        }
+    };
 
     let bind_handle = Server::bind(
         addr,

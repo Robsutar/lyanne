@@ -7,7 +7,8 @@ use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, Pa
 use lyanne::rt::TaskHandle;
 use lyanne::transport::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
 use lyanne::transport::client::{
-    AuthenticatorMode, Client, ClientTickResult, ConnectError, ConnectResult,
+    AuthMessage, AuthenticatorMode, Client, ClientTickResult, ConnectError, ConnectResult,
+    OptionalTlsAuthMessage,
 };
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
@@ -43,19 +44,28 @@ fn init(mut commands: Commands) {
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
-    let authenticator_mode = AuthenticatorMode::RequireTls(AuthTlsClientProperties {
-        server_name: "localhost",
-        server_addr: "127.0.0.1:4443".parse().unwrap(),
-        root_cert_store: RootCertStoreProvider::from_file("examples/tls_certificates/ca_cert.pem")
+    let authenticator_mode = AuthenticatorMode::OptionalTls(
+        OptionalTlsAuthMessage {
+            require_tls_message: SerializedPacketList::create(vec![packet_managers
+                .packet_registry
+                .serialize(&AuthenticationPacket {
+                    player_name: my_name(),
+                })]),
+            no_cryptography_message: SerializedPacketList::create(vec![packet_managers
+                .packet_registry
+                .serialize(&AuthenticationPacket {
+                    player_name: format!("[X] {}", my_name()),
+                })]),
+        },
+        AuthTlsClientProperties {
+            server_name: "localhost",
+            server_addr: "127.0.0.1:4443".parse().unwrap(),
+            root_cert_store: RootCertStoreProvider::from_file(
+                "examples/tls_certificates/ca_cert.pem",
+            )
             .unwrap(),
-    });
-
-    let authentication_packets =
-        vec![packet_managers
-            .packet_registry
-            .serialize(&AuthenticationPacket {
-                player_name: my_name(),
-            })];
+        },
+    );
 
     let connect_handle = Client::connect(
         remote_addr,
@@ -64,7 +74,6 @@ fn init(mut commands: Commands) {
         read_handler_properties,
         client_properties,
         authenticator_mode,
-        SerializedPacketList::create(authentication_packets),
     );
 
     commands.spawn(ClientConnecting {
