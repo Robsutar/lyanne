@@ -30,7 +30,7 @@ use super::{
 };
 
 #[cfg(feature = "auth_tls")]
-use super::auth_tls::{AuthTlsServerProperties, TlsAcceptor, AsyncReadExt, AsyncWriteExt};
+use super::auth_tls::{AuthTlsServerProperties, TlsAcceptor, AsyncReadExt, AsyncWriteExt, TcpStream};
 
 #[cfg(feature = "auth_tls")]
 use crate::rt::TcpListener;
@@ -263,9 +263,13 @@ impl RequireTlsAuth {
     ) {
         'l1: while let Ok(_) = tls_read_signal_receiver.recv().await {
             if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
-                loop {
+                let accepted = timeout(server.read_handler_properties.timeout, listener.accept()).await;
+                
+                if let Ok(accepted) = accepted {
+                    if let Ok((stream, addr)) = accepted {
                     // TODO: use this
-                    let result = RequireTlsAuth::tls_handler_accept(&server, &auth_mode, &listener);
+                        let result = RequireTlsAuth::tls_handler_accept(&server, &auth_mode, addr, stream).await;
+                    }
                 }
             } else {
                 break 'l1;
@@ -273,15 +277,7 @@ impl RequireTlsAuth {
         }
     }
 
-    async fn tls_handler_accept(server: &ServerInternal, auth_mode: &RequireTlsAuth, listener: &TcpListener) -> io::Result<ReadClientBytesResult> {
-        let accepted = timeout(server.read_handler_properties.timeout, listener.accept()).await;
-
-        let (stream, addr) = match accepted {
-            Ok(a) => a,
-            Err(_) => return Err(io::Error::new(io::ErrorKind::TimedOut, "Timed out")),
-        }?;
-
-
+    async fn tls_handler_accept(server: &ServerInternal, auth_mode: &RequireTlsAuth, addr: SocketAddr, stream: TcpStream) -> io::Result<ReadClientBytesResult> {
         let config = Arc::new(auth_mode.properties.new_server_config()?);
         let acceptor = TlsAcceptor::from(config);
         let mut tls_stream = acceptor.accept(stream).await?;
@@ -1275,10 +1271,11 @@ impl Server {
                     })
                 },
                 AuthenticatorMode::RequireTls(properties) => {
+                    // TODO: configure that 5
                     let (
                         tls_read_signal_sender,
                         tls_read_signal_receiver,
-                    ) = async_channel::unbounded();
+                    ) = async_channel::bounded(5);
                     AuthenticatorModeBuild::RequireTls(Arc::new(RequireTlsAuth{
                         properties, 
                         addrs_in_auth: DashSet::new(), 
@@ -1623,7 +1620,7 @@ impl Server {
                     .try_send(()).unwrap();
             }
             AuthenticatorModeInternal::RequireTls(auth_mode) => {
-                auth_mode.tls_read_signal_sender.try_send(()).unwrap();
+                let _ = auth_mode.tls_read_signal_sender.try_send(());
             },
         }
         internal.rejections_to_confirm_signal_sender
