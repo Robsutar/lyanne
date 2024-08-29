@@ -172,10 +172,14 @@ pub struct ClientDisconnectResult {
     pub state: ClientDisconnectState
 }
 
+pub struct AuthMessage {
+    pub message: SerializedPacketList
+}
+
 pub enum AuthenticatorMode {
-    NoCryptography(SerializedPacketList),
+    NoCryptography(AuthMessage),
     #[cfg(feature = "auth_tls")]
-    RequireTls(SerializedPacketList, AuthTlsClientProperties)
+    RequireTls(AuthMessage, AuthTlsClientProperties)
 }
 
 /// Messaging fields of [`ConnectedServer`]
@@ -789,7 +793,7 @@ impl Client {
                         socket,
                         buf,
                         client_private_key,
-                        auth_message,
+                        auth_message.message,
                         packet_registry,
                         messaging_properties,
                         read_handler_properties,
