@@ -758,79 +758,10 @@ impl Client {
 
             let (len, auth_message) = match authenticator_mode {
                 AuthenticatorMode::NoCryptography(auth_message) => {
-                    loop {
-                        let now = Instant::now();
-                        if now - sent_time > messaging_properties.timeout_interpretation {
-                            return Err(ConnectError::Timeout);
-                        }
-
-                        socket.send(&public_key_sent).await?;
-                        match timeout(
-                            client_properties.auth_packet_loss_interpretation,
-                            socket.recv(&mut buf),
-                        )
-                        .await
-                        {
-                            Ok(len) => {
-                                let len = len?;
-                                if len < MESSAGE_CHANNEL_SIZE {
-                                    return Err(ConnectError::InvalidProtocolCommunication);
-                                }
-
-                                match buf[0] {
-                                    MessageChannel::IGNORED_REASON => {
-                                        break (len, auth_message);
-                                    }
-                                    MessageChannel::PUBLIC_KEY_SEND => {
-                                        break (len, auth_message);
-                                    }
-                                    _ => ()
-                                }
-                            }
-                            _ => (),
-                        }
-                    }
+                    (Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?, auth_message)
                 }
                 AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
-                    match timeout(messaging_properties.timeout_interpretation, async {
-                        let server_name =
-                        match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
-                            Ok(server_name) => server_name,
-                            Err(_) => return Err(ConnectError::InvalidDnsName),
-                        };
-                        let config = Arc::new(auth_mode.new_client_config());
-                        let connector = TlsConnector::from(config);
-                        
-                        let stream = TcpStream::connect(auth_mode.server_addr).await?;
-                        let mut tls_stream = connector.connect(server_name, stream).await?;
-                        tls_stream
-                            .write_all(&public_key_sent)
-                            .await?;
-
-                        let len = match tls_stream.read(&mut buf).await {
-                            Ok(0) => {
-                                return Err(ConnectError::InvalidProtocolCommunication)
-                            }
-                            Ok(len) => {
-                                len
-                            }
-                            Err(e) => {
-                                return Err(ConnectError::IoError(e));
-                            }
-                        };
-    
-                        if len < MESSAGE_CHANNEL_SIZE {
-                            return Err(ConnectError::InvalidProtocolCommunication);
-                        }
-    
-                        Ok((len, auth_message))
-                    }).await {
-                        Ok(len) => {
-                            len?
-                        },
-                        Err(_) => return Err(ConnectError::Timeout),
-                    }
-
+                    (Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await?, auth_message)
                 },
             };
 
@@ -879,7 +810,95 @@ impl Client {
             bind_result_body)
     }
 
-    /// Just to reduce [`Client::connect`] nesting.
+    async fn connect_no_cryptography_match_arm(
+        messaging_properties: &MessagingProperties,
+        client_properties: &ClientProperties,
+        sent_time: Instant,
+        socket: &UdpSocket,
+        buf: &mut [u8; 1024],
+        public_key_sent: &Vec<u8>
+    ) -> Result<usize, ConnectError> {
+        loop {
+            let now = Instant::now();
+            if now - sent_time > messaging_properties.timeout_interpretation {
+                return Err(ConnectError::Timeout);
+            }
+
+            socket.send(&public_key_sent).await?;
+            match timeout(
+                client_properties.auth_packet_loss_interpretation,
+                socket.recv(buf),
+            )
+            .await
+            {
+                Ok(len) => {
+                    let len = len?;
+                    if len < MESSAGE_CHANNEL_SIZE {
+                        return Err(ConnectError::InvalidProtocolCommunication);
+                    }
+
+                    match buf[0] {
+                        MessageChannel::IGNORED_REASON => {
+                            break Ok(len);
+                        }
+                        MessageChannel::PUBLIC_KEY_SEND => {
+                            break Ok(len);
+                        }
+                        _ => ()
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
+
+    async fn connect_require_tls_match_arm(
+        messaging_properties: &MessagingProperties,
+        buf: &mut [u8; 1024],
+        public_key_sent: &Vec<u8>,
+        auth_mode: AuthTlsClientProperties,
+    ) -> Result<usize, ConnectError> {
+        match timeout(messaging_properties.timeout_interpretation, async {
+            let server_name =
+            match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
+                Ok(server_name) => server_name,
+                Err(_) => return Err(ConnectError::InvalidDnsName),
+            };
+            let config = Arc::new(auth_mode.new_client_config());
+            let connector = TlsConnector::from(config);
+            
+            let stream = TcpStream::connect(auth_mode.server_addr).await?;
+            let mut tls_stream = connector.connect(server_name, stream).await?;
+            tls_stream
+                .write_all(&public_key_sent)
+                .await?;
+
+            let len = match tls_stream.read(buf).await {
+                Ok(0) => {
+                    return Err(ConnectError::InvalidProtocolCommunication)
+                }
+                Ok(len) => {
+                    len
+                }
+                Err(e) => {
+                    return Err(ConnectError::IoError(e));
+                }
+            };
+
+            if len < MESSAGE_CHANNEL_SIZE {
+                return Err(ConnectError::InvalidProtocolCommunication);
+            }
+
+            Ok(len)
+        }).await {
+            Ok(len) => {
+                len
+            },
+            Err(_) => return Err(ConnectError::Timeout),
+        }
+    }
+
     async fn connect_public_key_send_match_arm(
         socket: Arc<UdpSocket>,
         buf: [u8; 1024],
@@ -1061,7 +1080,7 @@ impl Client {
             }
         }
     }
-
+    
     /// Packet Registry getter.
     pub fn packet_registry(&self) -> &PacketRegistry {
         &self.internal.packet_registry
