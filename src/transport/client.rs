@@ -173,9 +173,9 @@ pub struct ClientDisconnectResult {
 }
 
 pub enum AuthenticatorMode {
-    NoCryptography,
+    NoCryptography(SerializedPacketList),
     #[cfg(feature = "auth_tls")]
-    RequireTls(AuthTlsClientProperties)
+    RequireTls(SerializedPacketList, AuthTlsClientProperties)
 }
 
 /// Messaging fields of [`ConnectedServer`]
@@ -736,7 +736,6 @@ impl Client {
         authenticator_mode: AuthenticatorMode,
         #[cfg(feature = "rt_tokio")]
         runtime: crate::rt::Runtime,
-        message: SerializedPacketList,
     ) -> TaskHandle<Result<ConnectResult, ConnectError>> {
         #[cfg(feature = "rt_tokio")]
         let runtime_exit = runtime.clone();
@@ -757,8 +756,8 @@ impl Client {
             let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
             socket.connect(remote_addr).await?;
 
-            let len = match authenticator_mode {
-                AuthenticatorMode::NoCryptography => {
+            let (len, auth_message) = match authenticator_mode {
+                AuthenticatorMode::NoCryptography(auth_message) => {
                     loop {
                         let now = Instant::now();
                         if now - sent_time > messaging_properties.timeout_interpretation {
@@ -780,10 +779,10 @@ impl Client {
 
                                 match buf[0] {
                                     MessageChannel::IGNORED_REASON => {
-                                        break len;
+                                        break (len, auth_message);
                                     }
                                     MessageChannel::PUBLIC_KEY_SEND => {
-                                        break len;
+                                        break (len, auth_message);
                                     }
                                     _ => ()
                                 }
@@ -792,7 +791,7 @@ impl Client {
                         }
                     }
                 }
-                AuthenticatorMode::RequireTls(auth_mode) => {
+                AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
                     match timeout(messaging_properties.timeout_interpretation, async {
                         let server_name =
                         match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
@@ -824,7 +823,7 @@ impl Client {
                             return Err(ConnectError::InvalidProtocolCommunication);
                         }
     
-                        Ok(len)
+                        Ok((len, auth_message))
                     }).await {
                         Ok(len) => {
                             len?
@@ -858,7 +857,7 @@ impl Client {
                         socket,
                         buf,
                         client_private_key,
-                        message,
+                        auth_message,
                         packet_registry,
                         messaging_properties,
                         read_handler_properties,
