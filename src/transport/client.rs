@@ -32,7 +32,10 @@ use super::{
 #[cfg(feature = "auth_tls")]
 use super::auth_tls::{AuthTlsClientProperties, TlsConnector};
 
-#[cfg(feature = "auth_tls")]
+#[cfg(feature = "auth_tcp")]
+use super::auth_tcp::{AuthTcpClientProperties};
+
+#[cfg(any(feature = "auth_tls", feature = "auth_tcp"))]
 use crate::rt::{TcpStream, AsyncReadExt, AsyncWriteExt};
 
 #[cfg(feature = "auth_tls")]
@@ -189,6 +192,9 @@ pub enum AuthenticatorMode {
     NoCryptography(AuthMessage),
     #[cfg(feature = "auth_tls")]
     RequireTls(AuthMessage, AuthTlsClientProperties),
+    // TODO: ~90% duplicated code of RequireTls
+    #[cfg(feature = "auth_tcp")]
+    RequireTcp(AuthMessage, AuthTcpClientProperties),
     #[cfg(feature = "auth_tls")]
     OptionalTls(OptionalTlsAuthMessage, AuthTlsClientProperties)
 }
@@ -779,6 +785,10 @@ impl Client {
                 AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
                     (Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await?, auth_message.message)
                 },
+                #[cfg(feature = "auth_tcp")]
+                AuthenticatorMode::RequireTcp(auth_message, auth_mode) => {
+                    (Client::connect_require_tcp_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await?, auth_message.message)
+                },
                 #[cfg(feature = "auth_tls")]
                 AuthenticatorMode::OptionalTls(auth_message, auth_mode) => {
                     match Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await {
@@ -902,6 +912,44 @@ impl Client {
                 .await?;
 
             let len = match tls_stream.read(buf).await {
+                Ok(0) => {
+                    return Err(ConnectError::InvalidProtocolCommunication)
+                }
+                Ok(len) => {
+                    len
+                }
+                Err(e) => {
+                    return Err(ConnectError::IoError(e));
+                }
+            };
+
+            if len < MESSAGE_CHANNEL_SIZE {
+                return Err(ConnectError::InvalidProtocolCommunication);
+            }
+
+            Ok(len)
+        }).await {
+            Ok(len) => {
+                len
+            },
+            Err(_) => return Err(ConnectError::Timeout),
+        }
+    }
+
+    #[cfg(feature = "auth_tcp")]
+    async fn connect_require_tcp_match_arm(
+        messaging_properties: &MessagingProperties,
+        buf: &mut [u8; 1024],
+        public_key_sent: &Vec<u8>,
+        auth_mode: AuthTcpClientProperties,
+    ) -> Result<usize, ConnectError> {
+        match timeout(messaging_properties.timeout_interpretation, async {
+            let mut tcp_stream = TcpStream::connect(auth_mode.server_addr).await?;
+            tcp_stream
+                .write_all(&public_key_sent)
+                .await?;
+
+            let len = match tcp_stream.read(buf).await {
                 Ok(0) => {
                     return Err(ConnectError::InvalidProtocolCommunication)
                 }
