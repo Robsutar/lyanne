@@ -1212,6 +1212,10 @@ impl Client {
         &self.internal.client_properties
     }
 
+    /// Client Properties getter.
+    pub fn connected_server(&self) -> &ConnectedServer {
+        &self.internal.connected_server
+    }
 
     /// Client periodic tick start.
     ///
