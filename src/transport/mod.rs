@@ -23,6 +23,9 @@ pub mod troubles_simulator;
 #[cfg(feature = "auth_tls")]
 pub mod auth_tls;
 
+#[cfg(feature = "auth_tcp")]
+pub mod auth_tcp;
+
 pub struct MessagingProperties {
     pub part_limit: usize,
     pub timeout_interpretation: Duration,
