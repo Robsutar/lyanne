@@ -180,17 +180,18 @@ pub struct ClientDisconnectResult {
     pub state: ClientDisconnectState
 }
 
-pub struct AuthMessage {
-    pub message: SerializedPacketList
+pub struct AuthenticationProperties {
+    pub message: SerializedPacketList,
+    pub timeout: Duration
 }
 
 pub enum AuthenticatorMode {
-    NoCryptography(AuthMessage),
+    NoCryptography(AuthenticationProperties),
     #[cfg(feature = "auth_tls")]
-    RequireTls(AuthMessage, AuthTlsClientProperties),
+    RequireTls(AuthenticationProperties, AuthTlsClientProperties),
     // TODO: ~90% duplicated code of RequireTls
     #[cfg(feature = "auth_tcp")]
-    RequireTcp(AuthMessage, AuthTcpClientProperties),
+    RequireTcp(AuthenticationProperties, AuthTcpClientProperties),
     AttemptList(Vec<AuthenticatorMode>),
 }
 
@@ -784,7 +785,7 @@ impl Client {
             let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
             socket.connect(remote_addr).await?;
 
-            let (len, auth_message, connected_authentication_mode) = Client::connect_auth_mode_match_arm(authenticator_mode, &messaging_properties, &client_properties, &socket, &mut buf, &public_key_sent).await?;
+            let (len, auth_message, connected_authentication_mode) = Client::connect_auth_mode_match_arm(authenticator_mode, &client_properties, &socket, &mut buf, &public_key_sent).await?;
 
             let bytes = &buf[..len];
             
@@ -833,48 +834,45 @@ impl Client {
 
     async fn connect_auth_mode_match_arm(
         authenticator_mode: AuthenticatorMode,
-        messaging_properties: &MessagingProperties,
         client_properties: &ClientProperties,
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
     ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         Ok(match authenticator_mode {
-            AuthenticatorMode::NoCryptography(auth_message) => {
-                Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, &socket, buf, &public_key_sent, auth_message.message).await?
+            AuthenticatorMode::NoCryptography(props) => {
+                Client::connect_no_cryptography_match_arm(&socket, buf, &public_key_sent, props).await?
             }
             #[cfg(feature = "auth_tls")]
-            AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
-                Client::connect_require_tls_match_arm(&messaging_properties, buf, &public_key_sent, auth_mode, auth_message.message).await?
+            AuthenticatorMode::RequireTls(props, auth_mode) => {
+                Client::connect_require_tls_match_arm(buf, &public_key_sent, auth_mode, props).await?
             },
             #[cfg(feature = "auth_tcp")]
-            AuthenticatorMode::RequireTcp(auth_message, auth_mode) => {
-                Client::connect_require_tcp_match_arm(&messaging_properties, buf, &public_key_sent, auth_mode, auth_message.message).await?
+            AuthenticatorMode::RequireTcp(props, auth_mode) => {
+                Client::connect_require_tcp_match_arm(buf, &public_key_sent, auth_mode, props).await?
             },
             AuthenticatorMode::AttemptList(modes) => {
-                Box::pin(Client::connect_attempt_list_match_arm(&messaging_properties, &client_properties, &socket, buf, &public_key_sent, modes)).await?
+                Box::pin(Client::connect_attempt_list_match_arm(&client_properties, &socket, buf, &public_key_sent, modes)).await?
             },
         })
     }
 
     async fn connect_no_cryptography_match_arm(
-        messaging_properties: &MessagingProperties,
-        client_properties: &ClientProperties,
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
-        message: SerializedPacketList,
+        props: AuthenticationProperties,
     ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         let sent_time = Instant::now();
         loop {
             let now = Instant::now();
-            if now - sent_time > messaging_properties.timeout_interpretation {
+            if now - sent_time > props.timeout {
                 return Err(ConnectError::Timeout);
             }
 
             socket.send(&public_key_sent).await?;
             match timeout(
-                client_properties.auth_packet_loss_interpretation,
+                props.timeout,
                 socket.recv(buf),
             )
             .await
@@ -887,10 +885,10 @@ impl Client {
 
                     match buf[0] {
                         MessageChannel::IGNORED_REASON => {
-                            break Ok((len, message, ConnectedAuthenticatorMode::NoCryptography));
+                            break Ok((len, props.message, ConnectedAuthenticatorMode::NoCryptography));
                         }
                         MessageChannel::PUBLIC_KEY_SEND => {
-                            break Ok((len, message, ConnectedAuthenticatorMode::NoCryptography));
+                            break Ok((len, props.message, ConnectedAuthenticatorMode::NoCryptography));
                         }
                         _ => ()
                     }
@@ -902,13 +900,12 @@ impl Client {
 
     #[cfg(feature = "auth_tls")]
     async fn connect_require_tls_match_arm(
-        messaging_properties: &MessagingProperties,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTlsClientProperties,
-        message: SerializedPacketList,
+        props: AuthenticationProperties,
     ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
-        match timeout(messaging_properties.timeout_interpretation, async {
+        match timeout(props.timeout, async {
             let server_name =
             match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
                 Ok(server_name) => server_name,
@@ -942,7 +939,7 @@ impl Client {
             Ok(len)
         }).await {
             Ok(len) => {
-                Ok((len?, message, ConnectedAuthenticatorMode::RequireTls))
+                Ok((len?, props.message, ConnectedAuthenticatorMode::RequireTls))
             },
             Err(_) => return Err(ConnectError::Timeout),
         }
@@ -950,13 +947,12 @@ impl Client {
 
     #[cfg(feature = "auth_tcp")]
     async fn connect_require_tcp_match_arm(
-        messaging_properties: &MessagingProperties,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTcpClientProperties,
-        message: SerializedPacketList,
+        props: AuthenticationProperties,
     ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
-        match timeout(messaging_properties.timeout_interpretation, async {
+        match timeout(props.timeout, async {
             let mut tcp_stream = TcpStream::connect(auth_mode.server_addr).await?;
             tcp_stream
                 .write_all(&public_key_sent)
@@ -981,14 +977,13 @@ impl Client {
             Ok(len)
         }).await {
             Ok(len) => {
-                Ok((len?, message, ConnectedAuthenticatorMode::RequireTcp))
+                Ok((len?, props.message, ConnectedAuthenticatorMode::RequireTcp))
             },
             Err(_) => return Err(ConnectError::Timeout),
         }
     }
 
     async fn connect_attempt_list_match_arm(
-        messaging_properties: &MessagingProperties,
         client_properties: &ClientProperties,
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
@@ -997,7 +992,7 @@ impl Client {
     ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         let mut errors = Vec::<ConnectError>::new();
         for mode in modes {
-            match Client::connect_auth_mode_match_arm(mode, &messaging_properties, &client_properties, &socket, buf, &public_key_sent).await {
+            match Client::connect_auth_mode_match_arm(mode, &client_properties, &socket, buf, &public_key_sent).await {
                 Ok(result) => return Ok(result),
                 Err(e) => errors.push(e),
             }
