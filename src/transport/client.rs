@@ -194,6 +194,14 @@ pub enum AuthenticatorMode {
     AttemptList(Vec<AuthenticatorMode>),
 }
 
+pub enum ConnectedAuthenticatorMode {
+    NoCryptography,
+    #[cfg(feature = "auth_tls")]
+    RequireTls,
+    #[cfg(feature = "auth_tcp")]
+    RequireTcp,
+}
+
 /// Messaging fields of [`ConnectedServer`]
 ///
 /// Intended to be used with [`Mutex`].
@@ -238,6 +246,8 @@ pub struct ConnectedServer {
 
     /// The socket address of the connected server.
     addr: SocketAddr,
+    /// The socket address of the connected server.
+    auth_mode: ConnectedAuthenticatorMode,
 
     /// Messaging-related properties wrapped in an `Arc` and `RwLock`.
     messaging: Mutex<ConnectedServerMessaging>,
@@ -254,6 +264,10 @@ impl ConnectedServer {
     /// The remove server address.
     pub fn addr(&self) -> &SocketAddr {
         &self.addr
+    }
+    
+    pub fn auth_mode(&self) -> &ConnectedAuthenticatorMode {
+        &self.auth_mode
     }
 
     /// # Returns
@@ -770,7 +784,7 @@ impl Client {
             let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
             socket.connect(remote_addr).await?;
 
-            let (len, auth_message) = Client::connect_auth_mode_match_arm(authenticator_mode, &messaging_properties, &client_properties, &socket, &mut buf, &public_key_sent).await?;
+            let (len, auth_message, connected_authentication_mode) = Client::connect_auth_mode_match_arm(authenticator_mode, &messaging_properties, &client_properties, &socket, &mut buf, &public_key_sent).await?;
 
             let bytes = &buf[..len];
             
@@ -803,6 +817,7 @@ impl Client {
                         #[cfg(feature = "rt_tokio")]
                         runtime,
                         remote_addr,
+                        connected_authentication_mode
                     )
                     .await;
                 }
@@ -823,7 +838,7 @@ impl Client {
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
-    ) -> Result<(usize, SerializedPacketList), ConnectError> {
+    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         Ok(match authenticator_mode {
             AuthenticatorMode::NoCryptography(auth_message) => {
                 Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, &socket, buf, &public_key_sent, auth_message.message).await?
@@ -849,7 +864,7 @@ impl Client {
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         message: SerializedPacketList,
-    ) -> Result<(usize, SerializedPacketList), ConnectError> {
+    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         let sent_time = Instant::now();
         loop {
             let now = Instant::now();
@@ -872,10 +887,10 @@ impl Client {
 
                     match buf[0] {
                         MessageChannel::IGNORED_REASON => {
-                            break Ok((len, message));
+                            break Ok((len, message, ConnectedAuthenticatorMode::NoCryptography));
                         }
                         MessageChannel::PUBLIC_KEY_SEND => {
-                            break Ok((len, message));
+                            break Ok((len, message, ConnectedAuthenticatorMode::NoCryptography));
                         }
                         _ => ()
                     }
@@ -892,7 +907,7 @@ impl Client {
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTlsClientProperties,
         message: SerializedPacketList,
-    ) -> Result<(usize, SerializedPacketList), ConnectError> {
+    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         match timeout(messaging_properties.timeout_interpretation, async {
             let server_name =
             match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
@@ -927,7 +942,7 @@ impl Client {
             Ok(len)
         }).await {
             Ok(len) => {
-                Ok((len?, message))
+                Ok((len?, message, ConnectedAuthenticatorMode::RequireTls))
             },
             Err(_) => return Err(ConnectError::Timeout),
         }
@@ -940,7 +955,7 @@ impl Client {
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTcpClientProperties,
         message: SerializedPacketList,
-    ) -> Result<(usize, SerializedPacketList), ConnectError> {
+    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         match timeout(messaging_properties.timeout_interpretation, async {
             let mut tcp_stream = TcpStream::connect(auth_mode.server_addr).await?;
             tcp_stream
@@ -966,7 +981,7 @@ impl Client {
             Ok(len)
         }).await {
             Ok(len) => {
-                Ok((len?, message))
+                Ok((len?, message, ConnectedAuthenticatorMode::RequireTcp))
             },
             Err(_) => return Err(ConnectError::Timeout),
         }
@@ -979,7 +994,7 @@ impl Client {
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         modes: Vec<AuthenticatorMode>,
-    ) -> Result<(usize, SerializedPacketList), ConnectError> {
+    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         let mut errors = Vec::<ConnectError>::new();
         for mode in modes {
             match Client::connect_auth_mode_match_arm(mode, &messaging_properties, &client_properties, &socket, buf, &public_key_sent).await {
@@ -1004,6 +1019,7 @@ impl Client {
         #[cfg(feature = "rt_tokio")]
         runtime: crate::rt::Runtime,
         remote_addr: SocketAddr,
+        connected_auth_mode: ConnectedAuthenticatorMode,
     ) -> Result<ConnectResult, ConnectError> {
         let mut server_public_key: [u8; 32] = [0; 32];
         server_public_key.copy_from_slice(&buf[1..33]);
@@ -1048,6 +1064,7 @@ impl Client {
             message_part_confirmation_sender,
             shared_socket_bytes_send_sender,
             addr: remote_addr,
+            auth_mode: connected_auth_mode,
             messaging,
             last_messaging_write: RwLock::new(Instant::now()),
             average_latency: RwLock::new(messaging_properties.initial_latency),
