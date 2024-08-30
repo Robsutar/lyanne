@@ -9,6 +9,7 @@ use lyanne::transport::auth_tcp::AuthTcpClientProperties;
 use lyanne::transport::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
 use lyanne::transport::client::{
     AuthMessage, AuthenticatorMode, Client, ClientTickResult, ConnectError, ConnectResult,
+    ConnectedAuthenticatorMode,
 };
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
@@ -51,7 +52,7 @@ fn init(mut commands: Commands) {
                 message: SerializedPacketList::create(vec![packet_managers
                     .packet_registry
                     .serialize(&AuthenticationPacket {
-                        player_name: format!("[TLS]{}", my_name()),
+                        player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTls),
                     })]),
             },
             AuthTlsClientProperties {
@@ -68,7 +69,7 @@ fn init(mut commands: Commands) {
                 message: SerializedPacketList::create(vec![packet_managers
                     .packet_registry
                     .serialize(&AuthenticationPacket {
-                        player_name: format!("[TCP]{}", my_name()),
+                        player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTcp),
                     })]),
             },
             AuthTcpClientProperties {
@@ -78,7 +79,7 @@ fn init(mut commands: Commands) {
         AuthenticatorMode::NoCryptography(AuthMessage {
             message: SerializedPacketList::create(vec![packet_managers.packet_registry.serialize(
                 &AuthenticationPacket {
-                    player_name: format!("[NOC]{}", my_name()),
+                    player_name: my_name_of(&ConnectedAuthenticatorMode::NoCryptography),
                 },
             )]),
         }),
@@ -143,6 +144,8 @@ fn client_tick(
 
                         client.tick_after_message();
 
+                        let my_name = my_name_of(client.connected_server().auth_mode());
+
                         let game = game::Game::start(
                             packet.config,
                             &mut commands,
@@ -151,7 +154,7 @@ fn client_tick(
                             client,
                             Arc::new(client_connected.bevy_caller.take().unwrap()),
                             packet.owned_type,
-                            my_name(),
+                            my_name,
                             packet.enemy_name,
                         );
 
@@ -190,4 +193,12 @@ fn my_name() -> String {
 #[cfg(feature = "player-2")]
 fn my_name() -> String {
     "Player 2".to_owned()
+}
+
+fn my_name_of(auth_mode: &ConnectedAuthenticatorMode) -> String {
+    match auth_mode {
+        ConnectedAuthenticatorMode::NoCryptography => format!("NOC-{}", my_name()),
+        ConnectedAuthenticatorMode::RequireTls => format!("TLS-{}", my_name()),
+        ConnectedAuthenticatorMode::RequireTcp => format!("TCP-{}", my_name()),
+    }
 }
