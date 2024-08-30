@@ -25,6 +25,7 @@ cfg_rt_tokio! {
     pub use tokio::net::TcpListener;
     pub use tokio::task::JoinHandle as TaskHandle;
     pub use tokio::sync::Mutex;
+    pub use tokio::io::{AsyncReadExt, AsyncWriteExt, TcpStream};
 
     pub fn spawn<T>(runtime: &Runtime, future: impl std::future::Future<Output = T> + Send + 'static) -> TaskHandle<T>
     where
@@ -64,6 +65,8 @@ cfg_rt_bevy! {
     pub use async_net::TcpListener;
     pub use bevy_tasks::Task as TaskHandle;
     pub use async_lock::Mutex;
+    pub use async_net::TcpStream;
+    pub use futures::{AsyncReadExt, AsyncWriteExt};
 
     pub fn spawn<T>(future: impl std::future::Future<Output = T> + Send + 'static) -> TaskHandle<T>
     where

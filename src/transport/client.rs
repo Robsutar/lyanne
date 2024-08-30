@@ -30,7 +30,10 @@ use super::{
 };
 
 #[cfg(feature = "auth_tls")]
-use super::auth_tls::{AuthTlsClientProperties, TlsConnector, TcpStream, AsyncReadExt, AsyncWriteExt};
+use super::auth_tls::{AuthTlsClientProperties, TlsConnector};
+
+#[cfg(feature = "auth_tls")]
+use crate::rt::{TcpStream, AsyncReadExt, AsyncWriteExt};
 
 #[cfg(feature = "auth_tls")]
 use super::auth_tls::rustls;

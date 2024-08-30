@@ -30,10 +30,10 @@ use super::{
 };
 
 #[cfg(feature = "auth_tls")]
-use super::auth_tls::{AuthTlsServerProperties, TlsAcceptor, AsyncReadExt, AsyncWriteExt, TcpStream};
+use super::auth_tls::{AuthTlsServerProperties, TlsAcceptor};
 
 #[cfg(feature = "auth_tls")]
-use crate::rt::TcpListener;
+use crate::rt::{TcpListener, AsyncReadExt, AsyncWriteExt, TcpStream};
 
 /// Possible results when receiving bytes by clients.
 #[derive(Debug)]
