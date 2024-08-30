@@ -1,6 +1,7 @@
 pub mod game;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use bevy::{prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, PacketManagers};
@@ -8,8 +9,8 @@ use lyanne::rt::TaskHandle;
 use lyanne::transport::auth_tcp::AuthTcpClientProperties;
 use lyanne::transport::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
 use lyanne::transport::client::{
-    AuthMessage, AuthenticatorMode, Client, ClientTickResult, ConnectError, ConnectResult,
-    ConnectedAuthenticatorMode,
+    AuthenticationProperties, AuthenticatorMode, Client, ClientTickResult, ConnectError,
+    ConnectResult, ConnectedAuthenticatorMode,
 };
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
@@ -48,12 +49,13 @@ fn init(mut commands: Commands) {
 
     let authenticator_mode = AuthenticatorMode::AttemptList(vec![
         AuthenticatorMode::RequireTls(
-            AuthMessage {
+            AuthenticationProperties {
                 message: SerializedPacketList::create(vec![packet_managers
                     .packet_registry
                     .serialize(&AuthenticationPacket {
                         player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTls),
                     })]),
+                timeout: Duration::from_secs(3),
             },
             AuthTlsClientProperties {
                 server_name: "localhost",
@@ -65,23 +67,25 @@ fn init(mut commands: Commands) {
             },
         ),
         AuthenticatorMode::RequireTcp(
-            AuthMessage {
+            AuthenticationProperties {
                 message: SerializedPacketList::create(vec![packet_managers
                     .packet_registry
                     .serialize(&AuthenticationPacket {
                         player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTcp),
                     })]),
+                timeout: Duration::from_secs(3),
             },
             AuthTcpClientProperties {
                 server_addr: "127.0.0.1:4443".parse().unwrap(),
             },
         ),
-        AuthenticatorMode::NoCryptography(AuthMessage {
+        AuthenticatorMode::NoCryptography(AuthenticationProperties {
             message: SerializedPacketList::create(vec![packet_managers.packet_registry.serialize(
                 &AuthenticationPacket {
                     player_name: my_name_of(&ConnectedAuthenticatorMode::NoCryptography),
                 },
             )]),
+            timeout: Duration::from_secs(3),
         }),
     ]);
 
