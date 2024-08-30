@@ -9,7 +9,6 @@ use lyanne::transport::auth_tcp::AuthTcpClientProperties;
 use lyanne::transport::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
 use lyanne::transport::client::{
     AuthMessage, AuthenticatorMode, Client, ClientTickResult, ConnectError, ConnectResult,
-    OptionalTlsAuthMessage,
 };
 use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
 use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
@@ -46,46 +45,44 @@ fn init(mut commands: Commands) {
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
 
-    let auth_message = SerializedPacketList::create(vec![packet_managers
-        .packet_registry
-        .serialize(&AuthenticationPacket {
-            player_name: my_name(),
-        })]);
-    let authenticator_mode = {
-        if false {
-            AuthenticatorMode::OptionalTls(
-                OptionalTlsAuthMessage {
-                    require_tls_message: auth_message,
-                    no_cryptography_message: SerializedPacketList::create(vec![packet_managers
-                        .packet_registry
-                        .serialize(&AuthenticationPacket {
-                            player_name: format!("[X] {}", my_name()),
-                        })]),
+    let authenticator_mode = AuthenticatorMode::AttemptList(vec![
+        AuthenticatorMode::RequireTls(
+            AuthMessage {
+                message: SerializedPacketList::create(vec![packet_managers
+                    .packet_registry
+                    .serialize(&AuthenticationPacket {
+                        player_name: format!("[TLS]{}", my_name()),
+                    })]),
+            },
+            AuthTlsClientProperties {
+                server_name: "localhost",
+                server_addr: "127.0.0.1:4443".parse().unwrap(),
+                root_cert_store: RootCertStoreProvider::from_file(
+                    "examples/tls_certificates/ca_cert.pem",
+                )
+                .unwrap(),
+            },
+        ),
+        AuthenticatorMode::RequireTcp(
+            AuthMessage {
+                message: SerializedPacketList::create(vec![packet_managers
+                    .packet_registry
+                    .serialize(&AuthenticationPacket {
+                        player_name: format!("[TCP]{}", my_name()),
+                    })]),
+            },
+            AuthTcpClientProperties {
+                server_addr: "127.0.0.1:4443".parse().unwrap(),
+            },
+        ),
+        AuthenticatorMode::NoCryptography(AuthMessage {
+            message: SerializedPacketList::create(vec![packet_managers.packet_registry.serialize(
+                &AuthenticationPacket {
+                    player_name: format!("[NOC]{}", my_name()),
                 },
-                AuthTlsClientProperties {
-                    server_name: "localhost",
-                    server_addr: "127.0.0.1:4443".parse().unwrap(),
-                    root_cert_store: RootCertStoreProvider::from_file(
-                        "examples/tls_certificates/ca_cert.pem",
-                    )
-                    .unwrap(),
-                },
-            )
-        } else if true {
-            AuthenticatorMode::RequireTcp(
-                AuthMessage {
-                    message: auth_message,
-                },
-                AuthTcpClientProperties {
-                    server_addr: "127.0.0.1:4443".parse().unwrap(),
-                },
-            )
-        } else {
-            AuthenticatorMode::NoCryptography(AuthMessage {
-                message: auth_message,
-            })
-        }
-    };
+            )]),
+        }),
+    ]);
 
     let connect_handle = Client::connect(
         remote_addr,
