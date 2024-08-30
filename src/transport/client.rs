@@ -111,6 +111,7 @@ pub enum ConnectError {
     Ignored(DeserializedMessage),
     IoError(io::Error),
     Disconnected(ServerDisconnectReason),
+    AllAttemptsFailed(Vec<ConnectError>),
 }
 
 impl fmt::Display for ConnectError {
@@ -128,6 +129,7 @@ impl fmt::Display for ConnectError {
             ),
             ConnectError::IoError(ref err) => write!(f, "IO error: {}", err),
             ConnectError::Disconnected(reason) => write!(f, "Disconnected: {:?}", reason),
+            Self::AllAttemptsFailed(errors) => write!(f, "All attempts failed: {:?}", errors)
         }
     }
 }
@@ -182,12 +184,6 @@ pub struct AuthMessage {
     pub message: SerializedPacketList
 }
 
-#[cfg(feature = "auth_tls")]
-pub struct OptionalTlsAuthMessage {
-    pub require_tls_message: SerializedPacketList,
-    pub no_cryptography_message: SerializedPacketList
-}
-
 pub enum AuthenticatorMode {
     NoCryptography(AuthMessage),
     #[cfg(feature = "auth_tls")]
@@ -195,8 +191,7 @@ pub enum AuthenticatorMode {
     // TODO: ~90% duplicated code of RequireTls
     #[cfg(feature = "auth_tcp")]
     RequireTcp(AuthMessage, AuthTcpClientProperties),
-    #[cfg(feature = "auth_tls")]
-    OptionalTls(OptionalTlsAuthMessage, AuthTlsClientProperties)
+    AttemptList(Vec<AuthenticatorMode>),
 }
 
 /// Messaging fields of [`ConnectedServer`]
@@ -777,30 +772,7 @@ impl Client {
             let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
             socket.connect(remote_addr).await?;
 
-            let (len, auth_message) = match authenticator_mode {
-                AuthenticatorMode::NoCryptography(auth_message) => {
-                    (Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?, auth_message.message)
-                }
-                #[cfg(feature = "auth_tls")]
-                AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
-                    (Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await?, auth_message.message)
-                },
-                #[cfg(feature = "auth_tcp")]
-                AuthenticatorMode::RequireTcp(auth_message, auth_mode) => {
-                    (Client::connect_require_tcp_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await?, auth_message.message)
-                },
-                #[cfg(feature = "auth_tls")]
-                AuthenticatorMode::OptionalTls(auth_message, auth_mode) => {
-                    match Client::connect_require_tls_match_arm(&messaging_properties, &mut buf, &public_key_sent, auth_mode).await {
-                        Ok(len) => {
-                            (len, auth_message.require_tls_message)
-                        },
-                        Err(_) => {
-                            (Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?, auth_message.no_cryptography_message)
-                        },
-                    }
-                },
-            };
+            let (len, auth_message) = Client::connect_auth_mode_match_arm(authenticator_mode, &messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?;
 
             let bytes = &buf[..len];
             
@@ -847,14 +819,42 @@ impl Client {
             bind_result_body)
     }
 
+    async fn connect_auth_mode_match_arm(
+        authenticator_mode: AuthenticatorMode,
+        messaging_properties: &MessagingProperties,
+        client_properties: &ClientProperties,
+        sent_time: Instant,
+        socket: &UdpSocket,
+        buf: &mut [u8; 1024],
+        public_key_sent: &Vec<u8>,
+    ) -> Result<(usize, SerializedPacketList), ConnectError> {
+        Ok(match authenticator_mode {
+            AuthenticatorMode::NoCryptography(auth_message) => {
+                Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, buf, &public_key_sent, auth_message.message).await?
+            }
+            #[cfg(feature = "auth_tls")]
+            AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
+                Client::connect_require_tls_match_arm(&messaging_properties, buf, &public_key_sent, auth_mode, auth_message.message).await?
+            },
+            #[cfg(feature = "auth_tcp")]
+            AuthenticatorMode::RequireTcp(auth_message, auth_mode) => {
+                Client::connect_require_tcp_match_arm(&messaging_properties, buf, &public_key_sent, auth_mode, auth_message.message).await?
+            },
+            AuthenticatorMode::AttemptList(modes) => {
+                Box::pin(Client::connect_attempt_list_match_arm(&messaging_properties, &client_properties, sent_time, &socket, buf, &public_key_sent, modes)).await?
+            },
+        })
+    }
+
     async fn connect_no_cryptography_match_arm(
         messaging_properties: &MessagingProperties,
         client_properties: &ClientProperties,
         sent_time: Instant,
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
-        public_key_sent: &Vec<u8>
-    ) -> Result<usize, ConnectError> {
+        public_key_sent: &Vec<u8>,
+        message: SerializedPacketList,
+    ) -> Result<(usize, SerializedPacketList), ConnectError> {
         loop {
             let now = Instant::now();
             if now - sent_time > messaging_properties.timeout_interpretation {
@@ -876,10 +876,10 @@ impl Client {
 
                     match buf[0] {
                         MessageChannel::IGNORED_REASON => {
-                            break Ok(len);
+                            break Ok((len, message));
                         }
                         MessageChannel::PUBLIC_KEY_SEND => {
-                            break Ok(len);
+                            break Ok((len, message));
                         }
                         _ => ()
                     }
@@ -895,7 +895,8 @@ impl Client {
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTlsClientProperties,
-    ) -> Result<usize, ConnectError> {
+        message: SerializedPacketList,
+    ) -> Result<(usize, SerializedPacketList), ConnectError> {
         match timeout(messaging_properties.timeout_interpretation, async {
             let server_name =
             match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
@@ -930,7 +931,7 @@ impl Client {
             Ok(len)
         }).await {
             Ok(len) => {
-                len
+                Ok((len?, message))
             },
             Err(_) => return Err(ConnectError::Timeout),
         }
@@ -942,7 +943,8 @@ impl Client {
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTcpClientProperties,
-    ) -> Result<usize, ConnectError> {
+        message: SerializedPacketList,
+    ) -> Result<(usize, SerializedPacketList), ConnectError> {
         match timeout(messaging_properties.timeout_interpretation, async {
             let mut tcp_stream = TcpStream::connect(auth_mode.server_addr).await?;
             tcp_stream
@@ -968,10 +970,31 @@ impl Client {
             Ok(len)
         }).await {
             Ok(len) => {
-                len
+                Ok((len?, message))
             },
             Err(_) => return Err(ConnectError::Timeout),
         }
+    }
+
+    async fn connect_attempt_list_match_arm(
+        messaging_properties: &MessagingProperties,
+        client_properties: &ClientProperties,
+        sent_time: Instant,
+        socket: &UdpSocket,
+        buf: &mut [u8; 1024],
+        public_key_sent: &Vec<u8>,
+        modes: Vec<AuthenticatorMode>,
+    ) -> Result<(usize, SerializedPacketList), ConnectError> {
+        let mut errors = Vec::<ConnectError>::new();
+        for mode in modes {
+            match Client::connect_auth_mode_match_arm(mode, &messaging_properties, &client_properties, sent_time, &socket, buf, &public_key_sent).await {
+                Ok(result) => return Ok(result),
+                Err(e) => errors.push(e),
+            }
+            
+        }
+
+        Err(ConnectError::AllAttemptsFailed(errors))
     }
 
     async fn connect_public_key_send_match_arm(
