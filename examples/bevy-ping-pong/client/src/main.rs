@@ -5,6 +5,7 @@ use std::sync::Arc;
 use bevy::{prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, PacketManagers};
 use lyanne::rt::TaskHandle;
+use lyanne::transport::auth_tcp::AuthTcpClientProperties;
 use lyanne::transport::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
 use lyanne::transport::client::{
     AuthMessage, AuthenticatorMode, Client, ClientTickResult, ConnectError, ConnectResult,
@@ -44,28 +45,47 @@ fn init(mut commands: Commands) {
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
-    let authenticator_mode = AuthenticatorMode::OptionalTls(
-        OptionalTlsAuthMessage {
-            require_tls_message: SerializedPacketList::create(vec![packet_managers
-                .packet_registry
-                .serialize(&AuthenticationPacket {
-                    player_name: my_name(),
-                })]),
-            no_cryptography_message: SerializedPacketList::create(vec![packet_managers
-                .packet_registry
-                .serialize(&AuthenticationPacket {
-                    player_name: format!("[X] {}", my_name()),
-                })]),
-        },
-        AuthTlsClientProperties {
-            server_name: "localhost",
-            server_addr: "127.0.0.1:4443".parse().unwrap(),
-            root_cert_store: RootCertStoreProvider::from_file(
-                "examples/tls_certificates/ca_cert.pem",
+
+    let auth_message = SerializedPacketList::create(vec![packet_managers
+        .packet_registry
+        .serialize(&AuthenticationPacket {
+            player_name: my_name(),
+        })]);
+    let authenticator_mode = {
+        if false {
+            AuthenticatorMode::OptionalTls(
+                OptionalTlsAuthMessage {
+                    require_tls_message: auth_message,
+                    no_cryptography_message: SerializedPacketList::create(vec![packet_managers
+                        .packet_registry
+                        .serialize(&AuthenticationPacket {
+                            player_name: format!("[X] {}", my_name()),
+                        })]),
+                },
+                AuthTlsClientProperties {
+                    server_name: "localhost",
+                    server_addr: "127.0.0.1:4443".parse().unwrap(),
+                    root_cert_store: RootCertStoreProvider::from_file(
+                        "examples/tls_certificates/ca_cert.pem",
+                    )
+                    .unwrap(),
+                },
             )
-            .unwrap(),
-        },
-    );
+        } else if true {
+            AuthenticatorMode::RequireTcp(
+                AuthMessage {
+                    message: auth_message,
+                },
+                AuthTcpClientProperties {
+                    server_addr: "127.0.0.1:4443".parse().unwrap(),
+                },
+            )
+        } else {
+            AuthenticatorMode::NoCryptography(AuthMessage {
+                message: auth_message,
+            })
+        }
+    };
 
     let connect_handle = Client::connect(
         remote_addr,

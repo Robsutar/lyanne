@@ -7,6 +7,7 @@ use bevy::time::TimePlugin;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameConfig, PacketManagers};
 use lyanne::rt::TaskHandle;
+use lyanne::transport::auth_tcp::AuthTcpServerProperties;
 use lyanne::transport::auth_tls::{AuthTlsServerProperties, CertKey, ServerCertProvider};
 use lyanne::transport::server::{AuthenticatorMode, Server};
 use lyanne::transport::server::{BindResult, ServerProperties};
@@ -50,7 +51,7 @@ fn init(mut commands: Commands) {
     let server_properties = Arc::new(ServerProperties::default());
 
     let authenticator_mode = {
-        if true {
+        if false {
             AuthenticatorMode::RequireTls(AuthTlsServerProperties {
                 server_name: "localhost",
                 server_addr: "127.0.0.1:4443".parse().unwrap(),
@@ -61,6 +62,10 @@ fn init(mut commands: Commands) {
                     )
                     .unwrap(),
                 ),
+            })
+        } else if true {
+            AuthenticatorMode::RequireTcp(AuthTcpServerProperties {
+                server_addr: "127.0.0.1:4443".parse().unwrap(),
             })
         } else {
             AuthenticatorMode::NoCryptography
