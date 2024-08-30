@@ -761,8 +761,6 @@ impl Client {
             let client_public_key = PublicKey::from(&client_private_key);
             let client_public_key_bytes = client_public_key.as_bytes();
 
-            let sent_time = Instant::now();
-
             let mut public_key_sent = Vec::with_capacity(1 + client_public_key_bytes.len());
             public_key_sent.push(MessageChannel::PUBLIC_KEY_SEND);
             public_key_sent.extend_from_slice(client_public_key_bytes);
@@ -772,7 +770,7 @@ impl Client {
             let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
             socket.connect(remote_addr).await?;
 
-            let (len, auth_message) = Client::connect_auth_mode_match_arm(authenticator_mode, &messaging_properties, &client_properties, sent_time, &socket, &mut buf, &public_key_sent).await?;
+            let (len, auth_message) = Client::connect_auth_mode_match_arm(authenticator_mode, &messaging_properties, &client_properties, &socket, &mut buf, &public_key_sent).await?;
 
             let bytes = &buf[..len];
             
@@ -805,7 +803,6 @@ impl Client {
                         #[cfg(feature = "rt_tokio")]
                         runtime,
                         remote_addr,
-                        sent_time,
                     )
                     .await;
                 }
@@ -823,14 +820,13 @@ impl Client {
         authenticator_mode: AuthenticatorMode,
         messaging_properties: &MessagingProperties,
         client_properties: &ClientProperties,
-        sent_time: Instant,
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
     ) -> Result<(usize, SerializedPacketList), ConnectError> {
         Ok(match authenticator_mode {
             AuthenticatorMode::NoCryptography(auth_message) => {
-                Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, sent_time, &socket, buf, &public_key_sent, auth_message.message).await?
+                Client::connect_no_cryptography_match_arm(&messaging_properties, &client_properties, &socket, buf, &public_key_sent, auth_message.message).await?
             }
             #[cfg(feature = "auth_tls")]
             AuthenticatorMode::RequireTls(auth_message, auth_mode) => {
@@ -841,7 +837,7 @@ impl Client {
                 Client::connect_require_tcp_match_arm(&messaging_properties, buf, &public_key_sent, auth_mode, auth_message.message).await?
             },
             AuthenticatorMode::AttemptList(modes) => {
-                Box::pin(Client::connect_attempt_list_match_arm(&messaging_properties, &client_properties, sent_time, &socket, buf, &public_key_sent, modes)).await?
+                Box::pin(Client::connect_attempt_list_match_arm(&messaging_properties, &client_properties, &socket, buf, &public_key_sent, modes)).await?
             },
         })
     }
@@ -849,12 +845,12 @@ impl Client {
     async fn connect_no_cryptography_match_arm(
         messaging_properties: &MessagingProperties,
         client_properties: &ClientProperties,
-        sent_time: Instant,
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         message: SerializedPacketList,
     ) -> Result<(usize, SerializedPacketList), ConnectError> {
+        let sent_time = Instant::now();
         loop {
             let now = Instant::now();
             if now - sent_time > messaging_properties.timeout_interpretation {
@@ -979,7 +975,6 @@ impl Client {
     async fn connect_attempt_list_match_arm(
         messaging_properties: &MessagingProperties,
         client_properties: &ClientProperties,
-        sent_time: Instant,
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
@@ -987,7 +982,7 @@ impl Client {
     ) -> Result<(usize, SerializedPacketList), ConnectError> {
         let mut errors = Vec::<ConnectError>::new();
         for mode in modes {
-            match Client::connect_auth_mode_match_arm(mode, &messaging_properties, &client_properties, sent_time, &socket, buf, &public_key_sent).await {
+            match Client::connect_auth_mode_match_arm(mode, &messaging_properties, &client_properties, &socket, buf, &public_key_sent).await {
                 Ok(result) => return Ok(result),
                 Err(e) => errors.push(e),
             }
@@ -1009,7 +1004,6 @@ impl Client {
         #[cfg(feature = "rt_tokio")]
         runtime: crate::rt::Runtime,
         remote_addr: SocketAddr,
-        sent_time: Instant,
     ) -> Result<ConnectResult, ConnectError> {
         let mut server_public_key: [u8; 32] = [0; 32];
         server_public_key.copy_from_slice(&buf[1..33]);
@@ -1141,6 +1135,8 @@ impl Client {
             )
             .await;
         });
+
+        let sent_time = Instant::now();
 
         loop {
             let now = Instant::now();
