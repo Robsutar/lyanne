@@ -20,11 +20,11 @@ pub(crate) use cfg_rt_bevy;
 pub(crate) use cfg_rt_tokio;
 
 cfg_rt_tokio! {
-    pub type Runtime = tokio::runtime::Handle;
-    pub type UdpSocket = tokio::net::UdpSocket;
-    pub type TcpListener = tokio::net::TcpListener;
-    pub type TaskHandle<T> = tokio::task::JoinHandle<T>;
-    pub type Mutex<T> = tokio::sync::Mutex<T>;
+    pub use tokio::runtime::Handle;
+    pub use tokio::net::UdpSocket;
+    pub use tokio::net::TcpListener;
+    pub use tokio::task::JoinHandle as TaskHandle;
+    pub use tokio::sync::Mutex;
 
     pub fn spawn<T>(runtime: &Runtime, future: impl std::future::Future<Output = T> + Send + 'static) -> TaskHandle<T>
     where
@@ -60,10 +60,10 @@ cfg_rt_tokio! {
 }
 
 cfg_rt_bevy! {
-    pub type UdpSocket = async_net::UdpSocket;
-    pub type TcpListener = async_net::TcpListener;
-    pub type TaskHandle<T> = bevy_tasks::Task<T>;
-    pub type Mutex<T> = async_lock::Mutex<T>;
+    pub use async_net::UdpSocket;
+    pub use async_net::TcpListener;
+    pub use bevy_tasks::Task as TaskHandle;
+    pub use async_lock::Mutex;
 
     pub fn spawn<T>(future: impl std::future::Future<Output = T> + Send + 'static) -> TaskHandle<T>
     where
