@@ -4,13 +4,13 @@ use std::{io, net::SocketAddr, sync::Arc};
 use tokio_rustls::rustls;
 
 #[cfg(feature = "rt_tokio")]
-pub use tokio_rustls::{TlsAcceptor, TlsConnector, TlsStream};
+pub use tokio_rustls::{server::TlsStream, TlsAcceptor, TlsConnector};
 
 #[cfg(not(feature = "rt_tokio"))]
 pub use futures_rustls::rustls;
 
 #[cfg(not(feature = "rt_tokio"))]
-pub use futures_rustls::{TlsAcceptor, TlsConnector, TlsStream};
+pub use futures_rustls::{server::TlsStream, TlsAcceptor, TlsConnector};
 
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 #[cfg(feature = "client")]
