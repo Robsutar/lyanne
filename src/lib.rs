@@ -43,6 +43,7 @@ pub struct MessagingProperties {
     pub initial_next_message_part_id: MessagePartId,
     pub initial_latency: Duration,
     pub packet_loss_rtt_properties: RttProperties,
+    // TODO: rename that field, it is also used by the client.
     pub max_client_tick_bytes_len: usize,
 }
 
