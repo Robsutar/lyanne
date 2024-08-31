@@ -382,22 +382,17 @@ impl ServerInternal {
             }
         }
 
-        let ip = match addr {
-            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-        };
-
         match &self.authenticator_mode {
             AuthenticatorModeInternal::NoCryptography(auth_mode) => {
-                NoCryptographyAuth::read_next_bytes(&self, addr, bytes, ip, auth_mode).await
+                NoCryptographyAuth::read_next_bytes(&self, addr, bytes, auth_mode).await
             }
             #[cfg(feature = "auth_tcp")]
             AuthenticatorModeInternal::RequireTcp(auth_mode) => {
-                auth_mode.read_next_bytes(&self, addr, bytes, ip).await
+                auth_mode.read_next_bytes(&self, addr, bytes).await
             }
             #[cfg(feature = "auth_tls")]
             AuthenticatorModeInternal::RequireTls(auth_mode) => {
-                auth_mode.read_next_bytes(&self, addr, bytes, ip).await
+                auth_mode.read_next_bytes(&self, addr, bytes).await
             }
         }
     }

@@ -77,8 +77,8 @@ impl IgnoredAddrReason {
 }
 
 pub(super) struct AuthMode {
-    /// Set of ips in the authentication process.
-    pub addrs_in_auth: DashSet<IpAddr>,
+    /// Set of addrs in the authentication process.
+    pub addrs_in_auth: DashSet<SocketAddr>,
     /// Map of pending authentication addresses.
     pub pending_auth: DashMap<PublicKey, AddrPendingAuthSend>,
 }
@@ -86,12 +86,8 @@ pub(super) struct AuthMode {
 pub(super) trait AuthModeHandler {
     fn base(&self) -> &AuthMode;
 
-    fn remove_from_auth(&self, addr: &SocketAddr) -> Option<IpAddr> {
-        let ip = match addr {
-            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-        };
-        self.base().addrs_in_auth.remove(&ip)
+    fn remove_from_auth(&self, addr: &SocketAddr) -> Option<SocketAddr> {
+        self.base().addrs_in_auth.remove(addr)
     }
 
     fn tick_start(
@@ -101,12 +97,7 @@ pub(super) trait AuthModeHandler {
         dispatched_assigned_addrs_in_auth: HashSet<SocketAddr>,
     ) {
         for addr in dispatched_assigned_addrs_in_auth {
-            let ip = match addr {
-                SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-                SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-            };
-
-            self.base().addrs_in_auth.remove(&ip).unwrap();
+            self.base().addrs_in_auth.remove(&addr).unwrap();
         }
 
         self.retain_pending_auth(internal, now);
@@ -123,13 +114,10 @@ pub(super) struct NoCryptographyAuth {
     /// Sender for resending authentication bytes, like the server public key.
     pub pending_auth_resend_sender: async_channel::Sender<SocketAddr>,
 
-    /// Set of addresses in the authentication process.
-    pub addrs_in_auth: DashSet<SocketAddr>,
-    /// Map of pending authentication addresses.
-    pub pending_auth: DashMap<SocketAddr, AddrPendingAuthSend>,
-
     /// Map of addresses asking for the reason they are ignored.
     pub ignored_addrs_asking_reason: DashMap<IpAddr, SocketAddr>,
+
+    pub base: AuthMode,
 }
 impl NoCryptographyAuth {
     async fn create_pending_auth_resend_handler(
@@ -139,7 +127,7 @@ impl NoCryptographyAuth {
     ) {
         'l1: while let Ok(addr) = pending_auth_resend_receiver.recv().await {
             if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
-                if let Some(mut context) = auth_mode.pending_auth.get_mut(&addr) {
+                if let Some(mut context) = auth_mode.base().pending_auth.get_mut(&addr) {
                     context.last_sent_time = Some(Instant::now());
                     let _ = server.socket.send_to(&context.finished_bytes, addr).await;
                 }
@@ -178,9 +166,13 @@ impl NoCryptographyAuth {
         internal: &ServerInternal,
         addr: SocketAddr,
         bytes: Vec<u8>,
-        ip: IpAddr,
         auth_mode: &NoCryptographyAuth,
     ) -> ReadClientBytesResult {
+        let ip = match addr {
+            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+        };
+
         if let Some(reason) = internal.ignored_ips.get(&ip) {
             if reason.finished_bytes.is_some()
                 && auth_mode.ignored_addrs_asking_reason.len()
@@ -199,9 +191,9 @@ impl NoCryptographyAuth {
                 let _ = client.receiving_bytes_sender.try_send(bytes);
                 ReadClientBytesResult::ClientReceivedBytes
             }
-        } else if auth_mode.addrs_in_auth.contains(&addr) {
+        } else if auth_mode.base().addrs_in_auth.contains(&addr) {
             ReadClientBytesResult::AddrInAuth
-        } else if let Some((_, pending_auth_send)) = auth_mode.pending_auth.remove(&addr) {
+        } else if let Some((_, pending_auth_send)) = auth_mode.base().pending_auth.remove(&addr) {
             if bytes[0] == MessageChannel::AUTH_MESSAGE {
                 // 32 for public key, and 1 for the smallest possible serialized packet
                 if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
@@ -219,7 +211,7 @@ impl NoCryptographyAuth {
                         if sent_server_public_key != pending_auth_send.server_public_key {
                             ReadClientBytesResult::InvalidPendingAuth
                         } else {
-                            auth_mode.addrs_in_auth.insert(addr.clone());
+                            auth_mode.base().addrs_in_auth.insert(addr.clone());
                             let _ = internal.clients_to_auth_sender.try_send((
                                 addr,
                                 (
@@ -243,7 +235,10 @@ impl NoCryptographyAuth {
                     }
                 }
             } else {
-                auth_mode.pending_auth.insert(addr, pending_auth_send);
+                auth_mode
+                    .base()
+                    .pending_auth
+                    .insert(addr, pending_auth_send);
                 ReadClientBytesResult::PendingPendingAuth
             }
         } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
@@ -258,7 +253,7 @@ impl NoCryptographyAuth {
             finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
             finished_bytes.extend_from_slice(server_public_key_bytes);
 
-            auth_mode.pending_auth.insert(
+            auth_mode.base().pending_auth.insert(
                 addr,
                 AddrPendingAuthSend {
                     received_time: Instant::now(),
@@ -277,15 +272,15 @@ impl NoCryptographyAuth {
 }
 impl AuthModeHandler for NoCryptographyAuth {
     fn base(&self) -> &AuthMode {
-        todo!()
+        &self.base
     }
 
     fn retain_pending_auth(&self, internal: &ServerInternal, now: Instant) {
-        self.pending_auth.retain(|_, pending_auth_send| {
+        self.base().pending_auth.retain(|_, pending_auth_send| {
             now - pending_auth_send.received_time
                 < internal.messaging_properties.timeout_interpretation
         });
-        for context in self.pending_auth.iter() {
+        for context in self.base().pending_auth.iter() {
             if let Some(last_sent_time) = context.last_sent_time {
                 if now - last_sent_time
                     < internal
@@ -377,7 +372,7 @@ where
             Ok(ReadClientBytesResult::IgnoredClientHandle)
         } else if server.connected_clients.contains_key(&addr) {
             Ok(ReadClientBytesResult::AlreadyConnected)
-        } else if self.tcp_based_base().base.addrs_in_auth.contains(&ip) {
+        } else if self.tcp_based_base().base.addrs_in_auth.contains(&addr) {
             Ok(ReadClientBytesResult::AddrInAuth)
         } else {
             let mut buf = [0u8; 1024];
@@ -451,8 +446,12 @@ where
         internal: &ServerInternal,
         addr: SocketAddr,
         bytes: Vec<u8>,
-        ip: IpAddr,
     ) -> ReadClientBytesResult {
+        let ip = match addr {
+            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
+            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
+        };
+
         if let Some(client) = internal.connected_clients.get(&addr) {
             let mut messaging = client.messaging.lock().await;
             // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
@@ -463,7 +462,7 @@ where
                 let _ = client.receiving_bytes_sender.try_send(bytes);
                 ReadClientBytesResult::ClientReceivedBytes
             }
-        } else if self.tcp_based_base().base.addrs_in_auth.contains(&ip) {
+        } else if self.tcp_based_base().base.addrs_in_auth.contains(&addr) {
             ReadClientBytesResult::AddrInAuth
         } else if bytes[0] == MessageChannel::AUTH_MESSAGE {
             // 32 for public key, and 1 for the smallest possible serialized packet
@@ -497,7 +496,10 @@ where
                         if sent_server_public_key != pending_auth_send.server_public_key {
                             ReadClientBytesResult::InvalidPendingAuth
                         } else {
-                            self.tcp_based_base().base.addrs_in_auth.insert(ip.clone());
+                            self.tcp_based_base()
+                                .base
+                                .addrs_in_auth
+                                .insert(addr.clone());
                             let _ = internal.clients_to_auth_sender.try_send((
                                 addr,
                                 (
@@ -717,10 +719,12 @@ impl AuthenticatorMode {
                     Arc::new(NoCryptographyAuth {
                         ignored_addrs_asking_reason_read_signal_sender,
                         pending_auth_resend_sender,
-
-                        addrs_in_auth: DashSet::new(),
-                        pending_auth: DashMap::new(),
                         ignored_addrs_asking_reason: DashMap::new(),
+
+                        base: AuthMode {
+                            addrs_in_auth: DashSet::new(),
+                            pending_auth: DashMap::new(),
+                        },
                     }),
                     NoCryptographyAuthBuild {
                         pending_auth_resend_receiver,
