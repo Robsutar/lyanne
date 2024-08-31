@@ -177,6 +177,7 @@ pub mod server {
                             }
                         }
                         MessageChannel::AUTH_MESSAGE => {
+                            // TODO: check if server actually send that channel, if do, update the doc below.
                             // Client probably multiple authentication packets before being authenticated
                         }
                         _ => {
