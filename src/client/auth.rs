@@ -449,7 +449,7 @@ pub(super) mod connecting {
             match pre_read_next_bytes_result {
                 Ok(result) => {
                     //TODO: use this
-                    let read_result = internal.read_next_bytes(result).await;
+                    let _read_result = internal.read_next_bytes(result).await;
                 }
                 Err(_) => {
                     if now - sent_time > messaging_properties.timeout_interpretation {

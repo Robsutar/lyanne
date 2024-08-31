@@ -367,7 +367,7 @@ pub mod client {
                                 }
 
                                 //TODO: use this
-                                let read_result = client.read_next_bytes(result).await;
+                                let _read_result = client.read_next_bytes(result).await;
                             }
                             Err(_) => {
                                 if was_used {

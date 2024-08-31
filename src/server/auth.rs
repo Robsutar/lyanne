@@ -267,7 +267,7 @@ impl RequireTlsAuth {
                 if let Ok(accepted) = accepted {
                     if let Ok((stream, addr)) = accepted {
                         // TODO: use this
-                        let result =
+                        let _result =
                             RequireTlsAuth::tls_handler_accept(&server, &auth_mode, addr, stream)
                                 .await;
                     }
@@ -475,7 +475,7 @@ impl RequireTcpAuth {
                 if let Ok(accepted) = accepted {
                     if let Ok((tcp_stream, addr)) = accepted {
                         // TODO: use this
-                        let result = RequireTcpAuth::tcp_handler_accept(
+                        let _result = RequireTcpAuth::tcp_handler_accept(
                             &server, &auth_mode, addr, tcp_stream,
                         )
                         .await;

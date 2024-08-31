@@ -419,7 +419,7 @@ pub mod server {
                                 }
 
                                 //TODO: use this
-                                let read_result = server.read_next_bytes(result).await;
+                                let _read_result = server.read_next_bytes(result).await;
                             }
                             Err(_) => {
                                 if was_used {
