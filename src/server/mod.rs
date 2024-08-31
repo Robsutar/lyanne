@@ -391,13 +391,13 @@ impl ServerInternal {
             AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                 NoCryptographyAuth::read_next_bytes(&self, addr, bytes, ip, auth_mode).await
             }
-            #[cfg(feature = "auth_tls")]
-            AuthenticatorModeInternal::RequireTls(auth_mode) => {
-                RequireTlsAuth::read_next_bytes(&self, addr, bytes, ip, auth_mode).await
-            }
             #[cfg(feature = "auth_tcp")]
             AuthenticatorModeInternal::RequireTcp(auth_mode) => {
                 RequireTcpAuth::read_next_bytes(&self, addr, bytes, ip, auth_mode).await
+            }
+            #[cfg(feature = "auth_tls")]
+            AuthenticatorModeInternal::RequireTls(auth_mode) => {
+                RequireTlsAuth::read_next_bytes(&self, addr, bytes, ip, auth_mode).await
             }
         }
     }
@@ -584,8 +584,8 @@ impl Server {
                     auth_mode.addrs_in_auth.remove(&addr).unwrap();
                 }
             }
-            #[cfg(feature = "auth_tls")]
-            AuthenticatorModeInternal::RequireTls(auth_mode) => {
+            #[cfg(feature = "auth_tcp")]
+            AuthenticatorModeInternal::RequireTcp(auth_mode) => {
                 for addr in dispatched_assigned_addrs_in_auth {
                     let ip = match addr {
                         SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
@@ -595,8 +595,8 @@ impl Server {
                     auth_mode.addrs_in_auth.remove(&ip).unwrap();
                 }
             }
-            #[cfg(feature = "auth_tcp")]
-            AuthenticatorModeInternal::RequireTcp(auth_mode) => {
+            #[cfg(feature = "auth_tls")]
+            AuthenticatorModeInternal::RequireTls(auth_mode) => {
                 for addr in dispatched_assigned_addrs_in_auth {
                     let ip = match addr {
                         SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
@@ -630,15 +630,15 @@ impl Server {
                         .unwrap();
                 }
             }
-            #[cfg(feature = "auth_tls")]
-            AuthenticatorModeInternal::RequireTls(auth_mode) => {
+            #[cfg(feature = "auth_tcp")]
+            AuthenticatorModeInternal::RequireTcp(auth_mode) => {
                 auth_mode.pending_auth.retain(|_, pending_auth_send| {
                     now - pending_auth_send.received_time
                         < internal.messaging_properties.timeout_interpretation
                 });
             }
-            #[cfg(feature = "auth_tcp")]
-            AuthenticatorModeInternal::RequireTcp(auth_mode) => {
+            #[cfg(feature = "auth_tls")]
+            AuthenticatorModeInternal::RequireTls(auth_mode) => {
                 auth_mode.pending_auth.retain(|_, pending_auth_send| {
                     now - pending_auth_send.received_time
                         < internal.messaging_properties.timeout_interpretation
@@ -783,13 +783,13 @@ impl Server {
                     .try_send(())
                     .unwrap();
             }
-            #[cfg(feature = "auth_tls")]
-            AuthenticatorModeInternal::RequireTls(auth_mode) => {
-                let _ = auth_mode.tls_read_signal_sender.try_send(());
-            }
             #[cfg(feature = "auth_tcp")]
             AuthenticatorModeInternal::RequireTcp(auth_mode) => {
                 let _ = auth_mode.tcp_read_signal_sender.try_send(());
+            }
+            #[cfg(feature = "auth_tls")]
+            AuthenticatorModeInternal::RequireTls(auth_mode) => {
+                let _ = auth_mode.tls_read_signal_sender.try_send(());
             }
         }
         internal
@@ -859,8 +859,8 @@ impl Server {
                 AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                     auth_mode.addrs_in_auth.remove(&addr).unwrap();
                 }
-                #[cfg(feature = "auth_tls")]
-                AuthenticatorModeInternal::RequireTls(auth_mode) => {
+                #[cfg(feature = "auth_tcp")]
+                AuthenticatorModeInternal::RequireTcp(auth_mode) => {
                     let ip = match addr {
                         SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
                         SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
@@ -868,8 +868,8 @@ impl Server {
 
                     auth_mode.addrs_in_auth.remove(&ip).unwrap();
                 }
-                #[cfg(feature = "auth_tcp")]
-                AuthenticatorModeInternal::RequireTcp(auth_mode) => {
+                #[cfg(feature = "auth_tls")]
+                AuthenticatorModeInternal::RequireTls(auth_mode) => {
                     let ip = match addr {
                         SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
                         SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),

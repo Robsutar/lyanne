@@ -20,17 +20,17 @@ use crate::{MessageChannel, MessagingProperties, ReadHandlerProperties, MESSAGE_
 
 use super::*;
 
-#[cfg(feature = "auth_tls")]
-use crate::auth_tls::{AuthTlsClientProperties, TlsConnector};
-
 #[cfg(feature = "auth_tcp")]
 use crate::auth_tcp::AuthTcpClientProperties;
 
-#[cfg(any(feature = "auth_tls", feature = "auth_tcp"))]
-use crate::rt::{AsyncReadExt, AsyncWriteExt, TcpStream};
+#[cfg(feature = "auth_tls")]
+use crate::auth_tls::{AuthTlsClientProperties, TlsConnector};
 
 #[cfg(feature = "auth_tls")]
 use crate::auth_tls::rustls;
+
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+use crate::rt::{AsyncReadExt, AsyncWriteExt, TcpStream};
 
 pub struct AuthenticationProperties {
     pub message: SerializedPacketList,
@@ -39,20 +39,20 @@ pub struct AuthenticationProperties {
 
 pub enum AuthenticatorMode {
     NoCryptography(AuthenticationProperties),
-    #[cfg(feature = "auth_tls")]
-    RequireTls(AuthenticationProperties, AuthTlsClientProperties),
     // TODO: ~90% duplicated code of RequireTls
     #[cfg(feature = "auth_tcp")]
     RequireTcp(AuthenticationProperties, AuthTcpClientProperties),
+    #[cfg(feature = "auth_tls")]
+    RequireTls(AuthenticationProperties, AuthTlsClientProperties),
     AttemptList(Vec<AuthenticatorMode>),
 }
 
 pub enum ConnectedAuthenticatorMode {
     NoCryptography,
-    #[cfg(feature = "auth_tls")]
-    RequireTls,
     #[cfg(feature = "auth_tcp")]
     RequireTcp,
+    #[cfg(feature = "auth_tls")]
+    RequireTls,
 }
 
 /// Result when calling [`Client::connect`]
@@ -121,13 +121,13 @@ pub(super) mod connecting {
             AuthenticatorMode::NoCryptography(props) => {
                 connect_no_cryptography_match_arm(&socket, buf, &public_key_sent, props).await?
             }
-            #[cfg(feature = "auth_tls")]
-            AuthenticatorMode::RequireTls(props, auth_mode) => {
-                connect_require_tls_match_arm(buf, &public_key_sent, auth_mode, props).await?
-            }
             #[cfg(feature = "auth_tcp")]
             AuthenticatorMode::RequireTcp(props, auth_mode) => {
                 connect_require_tcp_match_arm(buf, &public_key_sent, auth_mode, props).await?
+            }
+            #[cfg(feature = "auth_tls")]
+            AuthenticatorMode::RequireTls(props, auth_mode) => {
+                connect_require_tls_match_arm(buf, &public_key_sent, auth_mode, props).await?
             }
             AuthenticatorMode::AttemptList(modes) => {
                 Box::pin(connect_attempt_list_match_arm(
@@ -186,6 +186,38 @@ pub(super) mod connecting {
         }
     }
 
+    #[cfg(feature = "auth_tcp")]
+    pub async fn connect_require_tcp_match_arm(
+        buf: &mut [u8; 1024],
+        public_key_sent: &Vec<u8>,
+        auth_mode: AuthTcpClientProperties,
+        props: AuthenticationProperties,
+    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
+        match timeout(props.timeout, async {
+            let mut tcp_stream = TcpStream::connect(auth_mode.server_addr).await?;
+            tcp_stream.write_all(&public_key_sent).await?;
+
+            let len = match tcp_stream.read(buf).await {
+                Ok(0) => return Err(ConnectError::InvalidProtocolCommunication),
+                Ok(len) => len,
+                Err(e) => {
+                    return Err(ConnectError::IoError(e));
+                }
+            };
+
+            if len < MESSAGE_CHANNEL_SIZE {
+                return Err(ConnectError::InvalidProtocolCommunication);
+            }
+
+            Ok(len)
+        })
+        .await
+        {
+            Ok(len) => Ok((len?, props.message, ConnectedAuthenticatorMode::RequireTcp)),
+            Err(_) => return Err(ConnectError::Timeout),
+        }
+    }
+
     #[cfg(feature = "auth_tls")]
     pub async fn connect_require_tls_match_arm(
         buf: &mut [u8; 1024],
@@ -222,38 +254,6 @@ pub(super) mod connecting {
         .await
         {
             Ok(len) => Ok((len?, props.message, ConnectedAuthenticatorMode::RequireTls)),
-            Err(_) => return Err(ConnectError::Timeout),
-        }
-    }
-
-    #[cfg(feature = "auth_tcp")]
-    pub async fn connect_require_tcp_match_arm(
-        buf: &mut [u8; 1024],
-        public_key_sent: &Vec<u8>,
-        auth_mode: AuthTcpClientProperties,
-        props: AuthenticationProperties,
-    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
-        match timeout(props.timeout, async {
-            let mut tcp_stream = TcpStream::connect(auth_mode.server_addr).await?;
-            tcp_stream.write_all(&public_key_sent).await?;
-
-            let len = match tcp_stream.read(buf).await {
-                Ok(0) => return Err(ConnectError::InvalidProtocolCommunication),
-                Ok(len) => len,
-                Err(e) => {
-                    return Err(ConnectError::IoError(e));
-                }
-            };
-
-            if len < MESSAGE_CHANNEL_SIZE {
-                return Err(ConnectError::InvalidProtocolCommunication);
-            }
-
-            Ok(len)
-        })
-        .await
-        {
-            Ok(len) => Ok((len?, props.message, ConnectedAuthenticatorMode::RequireTcp)),
             Err(_) => return Err(ConnectError::Timeout),
         }
     }
