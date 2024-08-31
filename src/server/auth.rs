@@ -335,18 +335,30 @@ where
         read_signal_receiver: async_channel::Receiver<()>,
     ) {
         'l1: while let Ok(_) = read_signal_receiver.recv().await {
-            if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
-                let accepted =
-                    timeout(server.read_handler_properties.timeout, listener.accept()).await;
+            let mut ignored_reason_justified_count: usize = 0;
+            'l2: loop {
+                if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
+                    let accepted =
+                        timeout(server.read_handler_properties.timeout, listener.accept()).await;
 
-                if let Ok(accepted) = accepted {
-                    if let Ok((stream, addr)) = accepted {
-                        // TODO: use this
-                        let _result = auth_mode.handler_accept(&server, addr, stream).await;
+                    if let Ok(accepted) = accepted {
+                        if let Ok((stream, addr)) = accepted {
+                            // TODO: use this
+                            let _result = auth_mode
+                                .handler_accept(
+                                    &server,
+                                    addr,
+                                    stream,
+                                    &mut ignored_reason_justified_count,
+                                )
+                                .await;
+                        }
+                    } else {
+                        break 'l2;
                     }
+                } else {
+                    break 'l1;
                 }
-            } else {
-                break 'l1;
             }
         }
     }
@@ -358,6 +370,7 @@ where
         server: &ServerInternal,
         addr: SocketAddr,
         raw_stream: TcpStream,
+        ignored_reason_justified_count: &mut usize,
     ) -> io::Result<ReadClientBytesResult> {
         let mut bound_stream = self.bound_stream(raw_stream).await?;
 
@@ -367,10 +380,11 @@ where
         };
 
         if let Some(reason) = server.ignored_ips.get(&ip) {
-            if
-            /*TODO:auth_mode.ignored_addrs_asking_reason.len()*/
-            0usize < server.server_properties.max_ignored_addrs_asking_reason {
+            if *ignored_reason_justified_count
+                < server.server_properties.max_ignored_addrs_asking_reason
+            {
                 if let Some(finished_bytes) = &reason.finished_bytes {
+                    *ignored_reason_justified_count += 1;
                     bound_stream.write_all(finished_bytes).await?
                 }
             }
