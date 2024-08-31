@@ -3,23 +3,15 @@ use std::{
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
-    sync::{Arc, RwLock, Weak},
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
-use chacha20poly1305::{
-    aead::{Aead, AeadCore, KeyInit},
-    ChaCha20Poly1305, ChaChaPoly1305, Key, Nonce,
-};
+use chacha20poly1305::{aead::KeyInit, ChaCha20Poly1305, ChaChaPoly1305, Key};
 use dashmap::{DashMap, DashSet};
-use rand::rngs::OsRng;
-use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 use crate::{
-    messages::{
-        DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap,
-        MessagePartMapTryInsertResult, MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE,
-    },
+    messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
     packets::{
         Packet, PacketRegistry, SerializedPacket, SerializedPacketList, ServerTickEndPacket,
     },
@@ -33,7 +25,6 @@ use crate::{
 };
 
 pub use auth::*;
-use init::*;
 
 mod auth;
 mod init;

@@ -1,34 +1,28 @@
 use std::{
     collections::BTreeMap,
-    fmt,
-    future::Future,
-    io,
-    net::SocketAddr,
-    sync::{Arc, RwLock, Weak},
-    time::{Duration, Instant},
+    sync::{Arc, Weak},
+    time::Instant,
 };
 
 use chacha20poly1305::{
-    aead::{Aead, AeadCore, KeyInit},
-    ChaCha20Poly1305, ChaChaPoly1305, Key, Nonce,
+    aead::AeadCore,
+    ChaCha20Poly1305, Nonce,
 };
 use rand::rngs::OsRng;
-use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
     messages::{
-        DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap,
+        DeserializedMessage, MessageId, MessagePart, MessagePartId,
         MessagePartMapTryInsertResult, MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE,
     },
     packets::{
-        ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
+        SerializedPacket, SerializedPacketList,
     },
-    rt::{cancel, spawn, timeout, try_lock, Mutex, TaskHandle, UdpSocket},
-    utils::{DurationMonitor, RttCalculator},
+    rt::TaskHandle,
 };
 
 use crate::{
-    JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties,
+    MessageChannel,
     SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
 
