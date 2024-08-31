@@ -25,14 +25,9 @@ use crate::auth_tls::{AuthTlsServerProperties, TlsAcceptor, TlsStream};
 use crate::rt::{AsyncReadExt, AsyncWriteExt, TcpListener, TcpStream};
 
 /// Pending auth properties of a addr that is trying to connect.
-///
-/// Intended to use used inside [`Server#pending_auth`].
 pub(super) struct AddrPendingAuthSend {
     /// The instant that the request was received.
     pub received_time: Instant,
-    // pub TODO: that field is not used in RequireTls
-    /// The last instant that the bytes were sent.
-    pub last_sent_time: Option<Instant>,
     /// Random private key created inside the server.
     pub server_private_key: EphemeralSecret,
     /// Random public key created inside the server. Sent to the addr.
@@ -79,8 +74,6 @@ impl IgnoredAddrReason {
 pub(super) struct AuthMode {
     /// Set of addrs in the authentication process.
     pub addrs_in_auth: DashSet<SocketAddr>,
-    /// Map of pending authentication addresses.
-    pub pending_auth: DashMap<PublicKey, AddrPendingAuthSend>,
 }
 
 pub(super) trait AuthModeHandler {
@@ -117,6 +110,9 @@ pub(super) struct NoCryptographyAuth {
     /// Map of addresses asking for the reason they are ignored.
     pub ignored_addrs_asking_reason: DashMap<IpAddr, SocketAddr>,
 
+    /// Map of pending authentication addresses.
+    pub pending_auth: DashMap<SocketAddr, (AddrPendingAuthSend, Option<Instant>)>,
+
     pub base: AuthMode,
 }
 impl NoCryptographyAuth {
@@ -127,8 +123,9 @@ impl NoCryptographyAuth {
     ) {
         'l1: while let Ok(addr) = pending_auth_resend_receiver.recv().await {
             if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
-                if let Some(mut context) = auth_mode.base().pending_auth.get_mut(&addr) {
-                    context.last_sent_time = Some(Instant::now());
+                if let Some(mut tuple) = auth_mode.pending_auth.get_mut(&addr) {
+                    let (context, last_sent_time) = &mut *tuple;
+                    *last_sent_time = Some(Instant::now());
                     let _ = server.socket.send_to(&context.finished_bytes, addr).await;
                 }
             } else {
@@ -193,7 +190,9 @@ impl NoCryptographyAuth {
             }
         } else if auth_mode.base().addrs_in_auth.contains(&addr) {
             ReadClientBytesResult::AddrInAuth
-        } else if let Some((_, pending_auth_send)) = auth_mode.base().pending_auth.remove(&addr) {
+        } else if let Some((_, (pending_auth_send, last_sent_time))) =
+            auth_mode.pending_auth.remove(&addr)
+        {
             if bytes[0] == MessageChannel::AUTH_MESSAGE {
                 // 32 for public key, and 1 for the smallest possible serialized packet
                 if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
@@ -236,9 +235,8 @@ impl NoCryptographyAuth {
                 }
             } else {
                 auth_mode
-                    .base()
                     .pending_auth
-                    .insert(addr, pending_auth_send);
+                    .insert(addr, (pending_auth_send, last_sent_time));
                 ReadClientBytesResult::PendingPendingAuth
             }
         } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
@@ -253,16 +251,18 @@ impl NoCryptographyAuth {
             finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
             finished_bytes.extend_from_slice(server_public_key_bytes);
 
-            auth_mode.base().pending_auth.insert(
+            auth_mode.pending_auth.insert(
                 addr,
-                AddrPendingAuthSend {
-                    received_time: Instant::now(),
-                    last_sent_time: None,
-                    server_private_key,
-                    server_public_key,
-                    addr_public_key: client_public_key,
-                    finished_bytes,
-                },
+                (
+                    AddrPendingAuthSend {
+                        received_time: Instant::now(),
+                        server_private_key,
+                        server_public_key,
+                        addr_public_key: client_public_key,
+                        finished_bytes,
+                    },
+                    None,
+                ),
             );
             ReadClientBytesResult::PublicKeySend
         } else {
@@ -276,12 +276,14 @@ impl AuthModeHandler for NoCryptographyAuth {
     }
 
     fn retain_pending_auth(&self, internal: &ServerInternal, now: Instant) {
-        self.base().pending_auth.retain(|_, pending_auth_send| {
+        self.pending_auth.retain(|_, (pending_auth_send, _)| {
             now - pending_auth_send.received_time
                 < internal.messaging_properties.timeout_interpretation
         });
-        for context in self.base().pending_auth.iter() {
-            if let Some(last_sent_time) = context.last_sent_time {
+        for tuple in self.pending_auth.iter() {
+            let addr = tuple.key();
+            let (_, last_sent_time) = *tuple.value();
+            if let Some(last_sent_time) = last_sent_time {
                 if now - last_sent_time
                     < internal
                         .server_properties
@@ -291,7 +293,7 @@ impl AuthModeHandler for NoCryptographyAuth {
                 }
             }
             self.pending_auth_resend_sender
-                .try_send(context.key().clone())
+                .try_send(addr.clone())
                 .unwrap();
         }
     }
@@ -309,9 +311,12 @@ pub(super) struct NoCryptographyAuthBuild {
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 pub(super) struct RequireTcpBasedAuth {
-    pub base: AuthMode,
-
     pub read_signal_sender: async_channel::Sender<()>,
+
+    /// Map of pending authentication addresses.
+    pub pending_auth: DashMap<PublicKey, AddrPendingAuthSend>,
+
+    pub base: AuthMode,
 }
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
@@ -399,7 +404,6 @@ where
                 let mut server_public_key = PublicKey::from(&server_private_key);
                 while self
                     .tcp_based_base()
-                    .base
                     .pending_auth
                     .contains_key(&server_public_key)
                 {
@@ -412,11 +416,10 @@ where
                 finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
                 finished_bytes.extend_from_slice(server_public_key_bytes);
 
-                self.tcp_based_base().base.pending_auth.insert(
+                self.tcp_based_base().pending_auth.insert(
                     server_public_key.clone(),
                     AddrPendingAuthSend {
                         received_time: Instant::now(),
-                        last_sent_time: None,
                         server_private_key,
                         server_public_key: server_public_key.clone(),
                         addr_public_key: client_public_key,
@@ -426,7 +429,6 @@ where
 
                 let addr_pending_auth = self
                     .tcp_based_base()
-                    .base
                     .pending_auth
                     .get(&server_public_key)
                     .unwrap();
@@ -476,7 +478,6 @@ where
 
             if let Some((_, pending_auth_send)) = self
                 .tcp_based_base()
-                .base
                 .pending_auth
                 .remove(&sent_server_public_key)
             {
@@ -539,10 +540,12 @@ macro_rules! require_tcp_based_auth_handler_impl_for_auth_mode {
         }
 
         fn retain_pending_auth(&self, internal: &ServerInternal, now: Instant) {
-            self.base().pending_auth.retain(|_, pending_auth_send| {
-                now - pending_auth_send.received_time
-                    < internal.messaging_properties.timeout_interpretation
-            });
+            self.tcp_based_base()
+                .pending_auth
+                .retain(|_, pending_auth_send| {
+                    now - pending_auth_send.received_time
+                        < internal.messaging_properties.timeout_interpretation
+                });
         }
 
         fn call_tick_start_signal(&self) {
@@ -720,10 +723,9 @@ impl AuthenticatorMode {
                         ignored_addrs_asking_reason_read_signal_sender,
                         pending_auth_resend_sender,
                         ignored_addrs_asking_reason: DashMap::new(),
-
+                        pending_auth: DashMap::new(),
                         base: AuthMode {
                             addrs_in_auth: DashSet::new(),
-                            pending_auth: DashMap::new(),
                         },
                     }),
                     NoCryptographyAuthBuild {
@@ -741,9 +743,9 @@ impl AuthenticatorMode {
                         properties,
                         tcp_based_base: RequireTcpBasedAuth {
                             read_signal_sender,
+                            pending_auth: DashMap::new(),
                             base: AuthMode {
                                 addrs_in_auth: DashSet::new(),
-                                pending_auth: DashMap::new(),
                             },
                         },
                     }),
@@ -761,9 +763,9 @@ impl AuthenticatorMode {
                         properties,
                         tcp_based_base: RequireTcpBasedAuth {
                             read_signal_sender,
+                            pending_auth: DashMap::new(),
                             base: AuthMode {
                                 addrs_in_auth: DashSet::new(),
-                                pending_auth: DashMap::new(),
                             },
                         },
                     }),
