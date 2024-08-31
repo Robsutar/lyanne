@@ -51,7 +51,11 @@ fn init(mut commands: Commands) {
     let server_properties = Arc::new(ServerProperties::default());
 
     let authenticator_mode = {
-        if false {
+        if true {
+            AuthenticatorMode::RequireTcp(AuthTcpServerProperties {
+                server_addr: "127.0.0.1:4443".parse().unwrap(),
+            })
+        } else if false {
             AuthenticatorMode::RequireTls(AuthTlsServerProperties {
                 server_name: "localhost",
                 server_addr: "127.0.0.1:4443".parse().unwrap(),
@@ -62,10 +66,6 @@ fn init(mut commands: Commands) {
                     )
                     .unwrap(),
                 ),
-            })
-        } else if true {
-            AuthenticatorMode::RequireTcp(AuthTcpServerProperties {
-                server_addr: "127.0.0.1:4443".parse().unwrap(),
             })
         } else {
             AuthenticatorMode::NoCryptography

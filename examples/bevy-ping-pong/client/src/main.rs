@@ -202,7 +202,7 @@ fn my_name() -> String {
 fn my_name_of(auth_mode: &ConnectedAuthenticatorMode) -> String {
     match auth_mode {
         ConnectedAuthenticatorMode::NoCryptography => format!("NOC-{}", my_name()),
-        ConnectedAuthenticatorMode::RequireTls => format!("TLS-{}", my_name()),
         ConnectedAuthenticatorMode::RequireTcp => format!("TCP-{}", my_name()),
+        ConnectedAuthenticatorMode::RequireTls => format!("TLS-{}", my_name()),
     }
 }
