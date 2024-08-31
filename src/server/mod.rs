@@ -32,36 +32,59 @@ mod init;
 /// Possible results when receiving bytes by clients.
 #[derive(Debug)]
 pub enum ReadClientBytesResult {
-    /// The received byte length is insufficient.
-    InsufficientBytesLen,
     /// Disconnect confirmation from the client is done.
     DoneDisconnectConfirm,
-    /// Disconnect confirmation from the client is pending.
-    PendingDisconnectConfirm,
     /// Client handle is ignored.
     IgnoredClientHandle,
+    /// Bytes were successfully received from the client.
+    ClientReceivedBytes,
+    /// Pending authentication is completed.
+    DonePendingAuth,
+    /// The public key has been successfully sent.
+    PublicKeySend,
+    /// Some client that was disconnected itself recently is resending the disconnect justification.
+    RecentClientDisconnectConfirm,
+
+    /// The received byte length is insufficient.
+    InsufficientBytesLen,
+    /// Disconnect confirmation from the client is pending.
+    PendingDisconnectConfirm,
     /// Address is in the authentication process.
     AddrInAuth,
     /// The byte length for authentication is insufficient.
     AuthInsufficientBytesLen,
     /// The client has exceeded the maximum tick byte length.
     ClientMaxTickByteLenOverflow,
-    /// Bytes were successfully received from the client.
-    ClientReceivedBytes,
-    /// Pending authentication is completed.
-    DonePendingAuth,
     /// The pending authentication is invalid.
     InvalidPendingAuth,
     /// The pending authentication is still in process.
     PendingPendingAuth,
-    /// The public key has been successfully sent.
-    PublicKeySend,
-    /// Some client that was disconnected itself recently is resending the disconnect justification.
-    RecentClientDisconnectConfirm,
     /// The public key send operation is invalid.
     InvalidPublicKeySend,
     /// The client tried to authenticate, but it is already connected.
     AlreadyConnected,
+}
+
+impl ReadClientBytesResult {
+    pub fn is_unexpected(&self) -> bool {
+        match self {
+            ReadClientBytesResult::DoneDisconnectConfirm => false,
+            ReadClientBytesResult::IgnoredClientHandle => false,
+            ReadClientBytesResult::ClientReceivedBytes => false,
+            ReadClientBytesResult::DonePendingAuth => false,
+            ReadClientBytesResult::PublicKeySend => false,
+            ReadClientBytesResult::RecentClientDisconnectConfirm => false,
+            ReadClientBytesResult::InsufficientBytesLen => true,
+            ReadClientBytesResult::PendingDisconnectConfirm => true,
+            ReadClientBytesResult::AddrInAuth => true,
+            ReadClientBytesResult::AuthInsufficientBytesLen => true,
+            ReadClientBytesResult::ClientMaxTickByteLenOverflow => true,
+            ReadClientBytesResult::InvalidPendingAuth => true,
+            ReadClientBytesResult::PendingPendingAuth => true,
+            ReadClientBytesResult::InvalidPublicKeySend => true,
+            ReadClientBytesResult::AlreadyConnected => true,
+        }
+    }
 }
 
 /// Possible reasons to be disconnected from some client.
