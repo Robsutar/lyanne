@@ -8,7 +8,7 @@ use bevy_ping_pong::{
 };
 use lyanne::{
     packets::{SerializedPacket, SerializedPacketList, ServerPacketResource},
-    transport::server::Server,
+    server::Server,
 };
 use rand::{thread_rng, Rng};
 

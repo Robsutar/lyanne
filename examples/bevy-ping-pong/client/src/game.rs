@@ -6,8 +6,8 @@ use bevy::{
 };
 use bevy_ping_pong::*;
 use lyanne::{
+    client::{Client, ClientTickResult},
     packets::ClientPacketResource,
-    transport::client::{Client, ClientTickResult},
 };
 use rand::{thread_rng, Rng};
 

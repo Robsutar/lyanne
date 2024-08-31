@@ -6,12 +6,12 @@ use std::{io, sync::Arc, time::Duration};
 use bevy::time::TimePlugin;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameConfig, PacketManagers};
+use lyanne::auth_tcp::AuthTcpServerProperties;
+use lyanne::auth_tls::{AuthTlsServerProperties, CertKey, ServerCertProvider};
 use lyanne::rt::TaskHandle;
-use lyanne::transport::auth_tcp::AuthTcpServerProperties;
-use lyanne::transport::auth_tls::{AuthTlsServerProperties, CertKey, ServerCertProvider};
-use lyanne::transport::server::{AuthenticatorMode, Server};
-use lyanne::transport::server::{BindResult, ServerProperties};
-use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
+use lyanne::server::{AuthenticatorMode, Server};
+use lyanne::server::{BindResult, ServerProperties};
+use lyanne::{MessagingProperties, ReadHandlerProperties};
 
 #[derive(Component)]
 struct ServerConnecting {

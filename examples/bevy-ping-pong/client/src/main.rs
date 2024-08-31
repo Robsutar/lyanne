@@ -5,15 +5,15 @@ use std::time::Duration;
 
 use bevy::{prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, PacketManagers};
-use lyanne::rt::TaskHandle;
-use lyanne::transport::auth_tcp::AuthTcpClientProperties;
-use lyanne::transport::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
-use lyanne::transport::client::{
+use lyanne::auth_tcp::AuthTcpClientProperties;
+use lyanne::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
+use lyanne::client::{
     AuthenticationProperties, AuthenticatorMode, Client, ClientTickResult, ConnectError,
     ConnectResult, ConnectedAuthenticatorMode,
 };
-use lyanne::transport::{MessagingProperties, ReadHandlerProperties};
-use lyanne::{packets::SerializedPacketList, transport::client::ClientProperties};
+use lyanne::rt::TaskHandle;
+use lyanne::{client::ClientProperties, packets::SerializedPacketList};
+use lyanne::{MessagingProperties, ReadHandlerProperties};
 
 #[derive(Component)]
 struct ClientConnecting {
