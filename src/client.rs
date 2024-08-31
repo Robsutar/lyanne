@@ -33,7 +33,7 @@ use super::{
 use super::auth_tls::{AuthTlsClientProperties, TlsConnector};
 
 #[cfg(feature = "auth_tcp")]
-use super::auth_tcp::{AuthTcpClientProperties};
+use super::auth_tcp::AuthTcpClientProperties;
 
 #[cfg(any(feature = "auth_tls", feature = "auth_tcp"))]
 use crate::rt::{TcpStream, AsyncReadExt, AsyncWriteExt};

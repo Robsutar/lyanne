@@ -1,11 +1,8 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    io,
-};
+use std::{collections::BTreeMap, io};
 
 use crate::{
-    packets::{DeserializedPacket, PacketId, PacketRegistry},
-    transport::MessagingProperties,
+    packets::{DeserializedPacket, PacketRegistry},
+    MessagingProperties,
 };
 
 pub type MessageId = u16;
