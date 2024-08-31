@@ -736,8 +736,7 @@ impl AuthenticatorMode {
             }
             #[cfg(feature = "auth_tcp")]
             AuthenticatorMode::RequireTcp(properties) => {
-                // TODO: configure that 5
-                let (read_signal_sender, read_signal_receiver) = async_channel::bounded(5);
+                let (read_signal_sender, read_signal_receiver) = async_channel::bounded(2);
                 AuthenticatorModeBuild::RequireTcp(
                     Arc::new(RequireTcpAuth {
                         properties,
@@ -756,8 +755,7 @@ impl AuthenticatorMode {
             }
             #[cfg(feature = "auth_tls")]
             AuthenticatorMode::RequireTls(properties) => {
-                // TODO: configure that 5
-                let (read_signal_sender, read_signal_receiver) = async_channel::bounded(5);
+                let (read_signal_sender, read_signal_receiver) = async_channel::bounded(2);
                 AuthenticatorModeBuild::RequireTls(
                     Arc::new(RequireTlsAuth {
                         properties,
