@@ -33,11 +33,12 @@ sd_bincode = [
     "dep:bincode",
 ]
 
+auth_tcp = []
+auth_tls = ["dep:tokio-rustls", "dep:futures-rustls", "dep:rustls-pemfile"]
+
 bevy_packet_schedules = ["lyanne-derive/bevy_packet_schedules", "dep:bevy_ecs"]
 deserialized_message_map = []
 troubles_simulator = []
-auth_tcp = []
-auth_tls = ["dep:tokio-rustls", "dep:futures-rustls", "dep:rustls-pemfile"]
 
 [dependencies]
 lyanne-derive = { path = "derive" }
