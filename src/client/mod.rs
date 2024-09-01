@@ -782,9 +782,4 @@ impl Client {
             None
         }
     }
-
-    /// TODO:
-    pub fn disconnect_detached(self) {
-        todo!();
-    }
 }
