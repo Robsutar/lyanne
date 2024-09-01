@@ -34,12 +34,6 @@ mod init;
 /// Possible results when receiving bytes by the server
 #[derive(Debug)]
 pub enum ReadServerBytesResult {
-    /// Disconnect confirmation from the server is done.
-    DoneDisconnectConfirm,
-    /// Disconnect confirmation from the server is pending.
-    PendingDisconnectConfirm,
-    /// The byte length for authentication is insufficient.
-    AuthInsufficientBytesLen,
     /// The server has exceeded the maximum tick byte length.
     ServerMaxTickByteLenOverflow,
     /// Bytes were successfully received from the server.
