@@ -40,7 +40,7 @@ Adding lyanne dependency in client:
 ```toml
 [dependencies]
 lyanne = { version = "0.2.0", features = [
-    ...
+    # ...
     "client", # Same as the server, but using "client" instead "server".
 ] }
 ```
