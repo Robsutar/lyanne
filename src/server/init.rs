@@ -384,7 +384,6 @@ pub mod server {
         }
     }
 
-
     #[cfg(feature = "store_unexpected")]
     pub async fn create_store_unexpected_error_list_handler(
         server: Weak<ServerInternal>,

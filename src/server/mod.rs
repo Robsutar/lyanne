@@ -160,6 +160,26 @@ struct StoreUnexpectedErrors {
     create_list_signal_sender: async_channel::Sender<()>,
 }
 
+#[cfg(feature = "store_unexpected")]
+impl StoreUnexpectedErrors {
+    pub fn new() -> (StoreUnexpectedErrors, async_channel::Receiver<()>) {
+        let (error_sender, error_receiver) = async_channel::unbounded();
+        let (error_list_sender, error_list_receiver) = async_channel::unbounded();
+        let (create_list_signal_sender, create_list_signal_receiver) = async_channel::unbounded();
+
+        (
+            StoreUnexpectedErrors {
+                error_sender,
+                error_receiver,
+                error_list_sender,
+                error_list_receiver,
+                create_list_signal_sender,
+            },
+            create_list_signal_receiver,
+        )
+    }
+}
+
 /// Result when calling [`Server::tick_start`].
 pub struct ServerTickResult {
     pub received_messages: HashMap<SocketAddr, Vec<DeserializedMessage>>,
@@ -476,23 +496,8 @@ impl Server {
             }
 
             #[cfg(feature = "store_unexpected")]
-            let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) = {
-                let (error_sender, error_receiver) = async_channel::unbounded();
-                let (error_list_sender, error_list_receiver) = async_channel::unbounded();
-                let (create_list_signal_sender, create_list_signal_receiver) =
-                    async_channel::unbounded();
-
-                (
-                    StoreUnexpectedErrors {
-                        error_sender,
-                        error_receiver,
-                        error_list_sender,
-                        error_list_receiver,
-                        create_list_signal_sender,
-                    },
-                    create_list_signal_receiver,
-                )
-            };
+            let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) =
+                StoreUnexpectedErrors::new();
 
             let mut authenticator_mode_build = authenticator_mode.build();
 
