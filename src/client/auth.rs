@@ -61,13 +61,20 @@ pub struct ConnectResult {
 }
 
 #[derive(Debug)]
+pub struct DisconnectedConnectError {
+    reason: ServerDisconnectReason,
+    #[cfg(feature = "store_unexpected")]
+    unexpected_errors: Vec<UnexpectedError>,
+}
+
+#[derive(Debug)]
 pub enum ConnectError {
     Timeout,
     InvalidProtocolCommunication,
     InvalidDnsName,
     Ignored(DeserializedMessage),
     IoError(io::Error),
-    Disconnected(ServerDisconnectReason),
+    Disconnected(DisconnectedConnectError),
     AllAttemptsFailed(Vec<ConnectError>),
 }
 
@@ -107,6 +114,8 @@ impl From<io::Error> for ConnectError {
 }
 
 pub(super) mod connecting {
+    use client::store_unexpected_error_list_pick;
+
     use super::*;
 
     pub async fn connect_auth_mode_match_arm(
@@ -361,6 +370,10 @@ pub(super) mod connecting {
             tasks_keeper_handle = spawn(client::create_async_tasks_keeper(tasks_keeper_receiver));
         }
 
+        #[cfg(feature = "store_unexpected")]
+        let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) =
+            StoreUnexpectedErrors::new();
+
         let tasks_keeper_handle = Mutex::new(Some(tasks_keeper_handle));
 
         let client = Client {
@@ -368,6 +381,9 @@ pub(super) mod connecting {
                 tasks_keeper_sender,
                 reason_to_disconnect_sender,
                 reason_to_disconnect_receiver,
+                #[cfg(feature = "store_unexpected")]
+                store_unexpected_errors,
+
                 tasks_keeper_handle,
                 socket: Arc::clone(&socket),
                 #[cfg(feature = "rt_tokio")]
@@ -436,6 +452,18 @@ pub(super) mod connecting {
             .await;
         });
 
+        #[cfg(feature = "store_unexpected")]
+        {
+            let client_downgraded = Arc::downgrade(&internal);
+            internal.create_async_task(async move {
+                init::client::create_store_unexpected_error_list_handler(
+                    client_downgraded,
+                    store_unexpected_errors_create_list_signal_receiver,
+                )
+                .await;
+            });
+        }
+
         let sent_time = Instant::now();
 
         loop {
@@ -448,8 +476,16 @@ pub(super) mod connecting {
 
             match pre_read_next_bytes_result {
                 Ok(result) => {
-                    //TODO: use this
                     let _read_result = internal.read_next_bytes(result).await;
+
+                    #[cfg(feature = "store_unexpected")]
+                    if _read_result.is_unexpected() {
+                        let _ = internal
+                            .store_unexpected_errors
+                            .error_sender
+                            .send(UnexpectedError::OfReadServerBytes(_read_result))
+                            .await;
+                    }
                 }
                 Err(_) => {
                     if now - sent_time > messaging_properties.timeout_interpretation {
@@ -459,16 +495,24 @@ pub(super) mod connecting {
             }
 
             match client.tick_start() {
-                ClientTickResult::ReceivedMessage(message) => {
+                ClientTickResult::ReceivedMessage(tick_result) => {
                     internal.try_check_read_handler();
                     client.tick_after_message();
-                    return Ok(ConnectResult { client, message });
+                    return Ok(ConnectResult {
+                        client,
+                        message: tick_result.message,
+                    });
                 }
                 ClientTickResult::PendingMessage => (),
                 ClientTickResult::Disconnected => {
-                    return Err(ConnectError::Disconnected(
-                        client.take_disconnect_reason().unwrap(),
-                    ))
+                    #[cfg(feature = "store_unexpected")]
+                    let unexpected_errors =
+                        store_unexpected_error_list_pick(&client.internal).await;
+                    return Err(ConnectError::Disconnected(DisconnectedConnectError {
+                        reason: client.take_disconnect_reason().unwrap(),
+                        #[cfg(feature = "store_unexpected")]
+                        unexpected_errors,
+                    }));
                 }
                 ClientTickResult::WriteLocked => (),
             }

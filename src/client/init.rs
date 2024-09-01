@@ -335,6 +335,33 @@ pub mod client {
         }
     }
 
+    #[cfg(feature = "store_unexpected")]
+    pub async fn store_unexpected_error_list_pick(client: &ClientInternal) -> Vec<UnexpectedError> {
+        let mut list = Vec::<UnexpectedError>::new();
+        while let Ok(error_list) = client.store_unexpected_errors.error_list_receiver.try_recv() {
+            list.extend(error_list);
+        }
+        while let Ok(error) = client.store_unexpected_errors.error_receiver.try_recv() {
+            list.push(error);
+        }
+
+        list
+    }
+
+    #[cfg(feature = "store_unexpected")]
+    pub async fn create_store_unexpected_error_list_handler(
+        client: Weak<ClientInternal>,
+        create_list_signal_receiver: async_channel::Receiver<()>,
+    ) {
+        'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
+            if let Some(client) = client.upgrade() {                
+                let _ = client.store_unexpected_errors.error_list_sender.send(store_unexpected_error_list_pick(&client).await).await;
+            } else {
+                break 'l1;
+            }
+        }
+    }
+
     pub async fn create_read_handler(weak_client: Weak<ClientInternal>) {
         let mut was_used = false;
         'l1: loop {
@@ -367,8 +394,12 @@ pub mod client {
                                     *surplus_count -= 1;
                                 }
 
-                                //TODO: use this
                                 let _read_result = client.read_next_bytes(result).await;
+
+                                #[cfg(feature = "store_unexpected")]
+                                if _read_result.is_unexpected() {
+                                    let _ = client.store_unexpected_errors.error_sender.send(UnexpectedError::OfReadServerBytes(_read_result)).await;
+                                }
                             }
                             Err(_) => {
                                 if was_used {

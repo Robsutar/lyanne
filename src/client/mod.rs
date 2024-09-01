@@ -91,10 +91,53 @@ enum ClientTickState {
     TickAfterMessagePending,
 }
 
+#[cfg(feature = "store_unexpected")]
+#[derive(Debug)]
+pub enum UnexpectedError {
+    OfReadServerBytes(ReadServerBytesResult),
+}
+
+#[cfg(feature = "store_unexpected")]
+struct StoreUnexpectedErrors {
+    error_sender: async_channel::Sender<UnexpectedError>,
+    error_receiver: async_channel::Receiver<UnexpectedError>,
+    error_list_sender: async_channel::Sender<Vec<UnexpectedError>>,
+    error_list_receiver: async_channel::Receiver<Vec<UnexpectedError>>,
+
+    create_list_signal_sender: async_channel::Sender<()>,
+}
+
+#[cfg(feature = "store_unexpected")]
+impl StoreUnexpectedErrors {
+    pub fn new() -> (StoreUnexpectedErrors, async_channel::Receiver<()>) {
+        let (error_sender, error_receiver) = async_channel::unbounded();
+        let (error_list_sender, error_list_receiver) = async_channel::unbounded();
+        let (create_list_signal_sender, create_list_signal_receiver) = async_channel::unbounded();
+
+        (
+            StoreUnexpectedErrors {
+                error_sender,
+                error_receiver,
+                error_list_sender,
+                error_list_receiver,
+                create_list_signal_sender,
+            },
+            create_list_signal_receiver,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct ReceivedMessageClientTickResult {
+    pub message: DeserializedMessage,
+    #[cfg(feature = "store_unexpected")]
+    pub unexpected_errors: Vec<UnexpectedError>,
+}
+
 /// Result when calling [`Client::tick_start`]
 #[derive(Debug)]
 pub enum ClientTickResult {
-    ReceivedMessage(DeserializedMessage),
+    ReceivedMessage(ReceivedMessageClientTickResult),
     PendingMessage,
     /// The client was disconnected from the server.
     ///
@@ -213,6 +256,9 @@ struct ClientInternal {
     reason_to_disconnect_sender: async_channel::Sender<ServerDisconnectReason>,
     /// Receiver for addresses to be disconnected.
     reason_to_disconnect_receiver: async_channel::Receiver<ServerDisconnectReason>,
+
+    #[cfg(feature = "store_unexpected")]
+    store_unexpected_errors: StoreUnexpectedErrors,
 
     /// Task handle of the receiver.
     tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
@@ -496,9 +542,30 @@ impl Client {
 
                 messaging.tick_bytes_len = 0;
 
+                #[cfg(feature = "store_unexpected")]
+                let unexpected_errors = match internal
+                    .store_unexpected_errors
+                    .error_list_receiver
+                    .try_recv()
+                {
+                    Ok(list) => list,
+                    Err(_) => Vec::new(),
+                };
+
+                #[cfg(feature = "store_unexpected")]
+                internal
+                    .store_unexpected_errors
+                    .create_list_signal_sender
+                    .try_send(())
+                    .unwrap();
+
                 internal.try_check_read_handler();
 
-                return ClientTickResult::ReceivedMessage(message);
+                return ClientTickResult::ReceivedMessage(ReceivedMessageClientTickResult {
+                    message,
+                    #[cfg(feature = "store_unexpected")]
+                    unexpected_errors,
+                });
             } else if now - messaging.last_received_message_instant
                 >= internal.messaging_properties.timeout_interpretation
             {
