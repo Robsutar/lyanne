@@ -34,10 +34,20 @@ mod init;
 /// Possible results when receiving bytes by the server
 #[derive(Debug)]
 pub enum ReadServerBytesResult {
-    /// The server has exceeded the maximum tick byte length.
-    ServerMaxTickByteLenOverflow,
     /// Bytes were successfully received from the server.
     ServerReceivedBytes,
+
+    /// The server has exceeded the maximum tick byte length.
+    ServerMaxTickByteLenOverflow,
+}
+
+impl ReadServerBytesResult {
+    pub fn is_unexpected(&self) -> bool {
+        match self {
+            ReadServerBytesResult::ServerReceivedBytes => false,
+            ReadServerBytesResult::ServerMaxTickByteLenOverflow => true,
+        }
+    }
 }
 
 /// Possible reasons to be disconnected from the server
