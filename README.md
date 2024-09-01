@@ -14,6 +14,8 @@ Efficient, tick-oriented communication framework for server-client architectures
 - ✅ **Throttled Communication**: Limit and control the flow of communication to meet your application's needs.
 - ✅ **Async Performance**: Handle intensive tasks efficiently with asynchronous processing.
 - ✅ **Synchronous Control**: Manage operations, like packet sending and tick handling, without the need to use async.
+- ❌ **No Automatic ECS Replication**: Entity Component System (ECS) replication is not automated.
+- ❌ **No WASM Support**: WebAssembly (WASM) is not supported yet.
 
 ## Examples
 
