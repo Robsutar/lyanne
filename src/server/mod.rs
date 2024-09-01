@@ -140,11 +140,33 @@ pub enum ServerTickState {
     TickEndPending,
 }
 
+#[cfg(feature = "store_unexpected")]
+#[derive(Debug)]
+pub enum UnexpectedError {
+    OfReadAddrBytes(SocketAddr, ReadClientBytesResult),
+    #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+    OfTcpBasedHandlerAccept(SocketAddr, ReadClientBytesResult),
+    #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+    OfTcpBasedHandlerAcceptIoError(SocketAddr, io::Error),
+}
+
+#[cfg(feature = "store_unexpected")]
+struct StoreUnexpectedErrors {
+    error_sender: async_channel::Sender<UnexpectedError>,
+    error_receiver: async_channel::Receiver<UnexpectedError>,
+    error_list_sender: async_channel::Sender<Vec<UnexpectedError>>,
+    error_list_receiver: async_channel::Receiver<Vec<UnexpectedError>>,
+
+    create_list_signal_sender: async_channel::Sender<()>,
+}
+
 /// Result when calling [`Server::tick_start`].
 pub struct ServerTickResult {
     pub received_messages: HashMap<SocketAddr, Vec<DeserializedMessage>>,
     pub to_auth: HashMap<SocketAddr, (AddrToAuth, DeserializedMessage)>,
     pub disconnected: HashMap<SocketAddr, ClientDisconnectReason>,
+    #[cfg(feature = "store_unexpected")]
+    pub unexpected_errors: Vec<UnexpectedError>,
 }
 
 /// Messaging fields of [`ConnectedClient`].
@@ -244,6 +266,10 @@ struct ServerInternal {
         SocketAddr,
         (ClientDisconnectReason, Option<JustifiedRejectionContext>),
     )>,
+
+    #[cfg(feature = "store_unexpected")]
+    /// List of errors emitted in the tick.
+    store_unexpected_errors: StoreUnexpectedErrors,
 
     authenticator_mode: AuthenticatorModeInternal,
 
@@ -449,6 +475,25 @@ impl Server {
                 ));
             }
 
+            #[cfg(feature = "store_unexpected")]
+            let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) = {
+                let (error_sender, error_receiver) = async_channel::unbounded();
+                let (error_list_sender, error_list_receiver) = async_channel::unbounded();
+                let (create_list_signal_sender, create_list_signal_receiver) =
+                    async_channel::unbounded();
+
+                (
+                    StoreUnexpectedErrors {
+                        error_sender,
+                        error_receiver,
+                        error_list_sender,
+                        error_list_receiver,
+                        create_list_signal_sender,
+                    },
+                    create_list_signal_receiver,
+                )
+            };
+
             let mut authenticator_mode_build = authenticator_mode.build();
 
             let server = Arc::new(ServerInternal {
@@ -462,6 +507,9 @@ impl Server {
                 clients_to_auth_receiver,
 
                 clients_to_disconnect_receiver,
+
+                #[cfg(feature = "store_unexpected")]
+                store_unexpected_errors,
 
                 authenticator_mode: authenticator_mode_build.take_authenticator_mode_internal(),
                 tasks_keeper_handle,
@@ -504,6 +552,18 @@ impl Server {
                 )
                 .await;
             });
+
+            #[cfg(feature = "store_unexpected")]
+            {
+                let server_downgraded = Arc::downgrade(&server);
+                server.create_async_task(async move {
+                    init::server::create_store_unexpected_error_list_handler(
+                        server_downgraded,
+                        store_unexpected_errors_create_list_signal_receiver,
+                    )
+                    .await;
+                });
+            }
 
             Ok(BindResult {
                 server: Server { internal: server },
@@ -584,6 +644,16 @@ impl Server {
                 auth_mode.tick_start(internal, now, dispatched_assigned_addrs_in_auth);
             }
         }
+
+        #[cfg(feature = "store_unexpected")]
+        let unexpected_errors = match internal
+            .store_unexpected_errors
+            .error_list_receiver
+            .try_recv()
+        {
+            Ok(list) => list,
+            Err(_) => Vec::new(),
+        };
 
         internal.recently_disconnected.retain(|_, received_time| {
             now - *received_time < internal.messaging_properties.timeout_interpretation
@@ -727,6 +797,13 @@ impl Server {
             }
         }
 
+        #[cfg(feature = "store_unexpected")]
+        internal
+            .store_unexpected_errors
+            .create_list_signal_sender
+            .try_send(())
+            .unwrap();
+
         internal
             .rejections_to_confirm_signal_sender
             .try_send(())
@@ -738,6 +815,8 @@ impl Server {
             received_messages,
             to_auth,
             disconnected,
+            #[cfg(feature = "store_unexpected")]
+            unexpected_errors,
         }
     }
 

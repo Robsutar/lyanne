@@ -343,7 +343,9 @@ where
 
                     if let Ok(accepted) = accepted {
                         if let Ok((stream, addr)) = accepted {
-                            // TODO: use this
+                            #[cfg(feature = "store_unexpected")]
+                            let addr = addr.clone();
+
                             let _result = auth_mode
                                 .handler_accept(
                                     &server,
@@ -352,6 +354,30 @@ where
                                     &mut ignored_reason_justified_count,
                                 )
                                 .await;
+
+                            #[cfg(feature = "store_unexpected")]
+                            match _result {
+                                Ok(result) => {
+                                    if result.is_unexpected() {
+                                        let _ = server
+                                            .store_unexpected_errors
+                                            .error_sender
+                                            .send(UnexpectedError::OfTcpBasedHandlerAccept(
+                                                addr, result,
+                                            ))
+                                            .await;
+                                    }
+                                }
+                                Err(e) => {
+                                    let _ = server
+                                        .store_unexpected_errors
+                                        .error_sender
+                                        .send(UnexpectedError::OfTcpBasedHandlerAcceptIoError(
+                                            addr, e,
+                                        ))
+                                        .await;
+                                }
+                            }
                         }
                     } else {
                         break 'l2;

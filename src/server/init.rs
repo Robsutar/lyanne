@@ -384,6 +384,29 @@ pub mod server {
         }
     }
 
+
+    #[cfg(feature = "store_unexpected")]
+    pub async fn create_store_unexpected_error_list_handler(
+        server: Weak<ServerInternal>,
+        create_list_signal_receiver: async_channel::Receiver<()>,
+    ) {
+        'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
+            if let Some(server) = server.upgrade() {
+                let mut list = Vec::<UnexpectedError>::new();
+                while let Ok(error_list) = server.store_unexpected_errors.error_list_receiver.try_recv() {
+                    list.extend(error_list);
+                }
+                while let Ok(error) = server.store_unexpected_errors.error_receiver.try_recv() {
+                    list.push(error);
+                }
+                
+                let _ = server.store_unexpected_errors.error_list_sender.send(list).await;
+            } else {
+                break 'l1;
+            }
+        }
+    }
+
     pub async fn create_read_handler(weak_server: Weak<ServerInternal>) {
         let mut was_used = false;
         'l1: loop {
@@ -418,8 +441,15 @@ pub mod server {
                                     *surplus_count -= 1;
                                 }
 
-                                //TODO: use this
+                                #[cfg(feature = "store_unexpected")]
+                                let addr = result.0.clone();
+
                                 let _read_result = server.read_next_bytes(result).await;
+
+                                #[cfg(feature = "store_unexpected")]
+                                if _read_result.is_unexpected() {
+                                    let _ = server.store_unexpected_errors.error_sender.send(UnexpectedError::OfReadAddrBytes(addr, _read_result)).await;
+                                } 
                             }
                             Err(_) => {
                                 if was_used {
