@@ -62,9 +62,9 @@ pub struct ConnectResult {
 
 #[derive(Debug)]
 pub struct DisconnectedConnectError {
-    reason: ServerDisconnectReason,
+    pub reason: ServerDisconnectReason,
     #[cfg(feature = "store_unexpected")]
-    unexpected_errors: Vec<UnexpectedError>,
+    pub unexpected_errors: Vec<UnexpectedError>,
 }
 
 #[derive(Debug)]
