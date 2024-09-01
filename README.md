@@ -4,7 +4,7 @@ Efficient, tick-oriented communication framework for server-client architectures
 
 - ✅ **Flexible Runtimes**: Choose between `rt_tokio` or `rt_bevy` runtime environments for seamless integration with your ecosystem.
 - ✅ **Custom Serialization**: Use the `sd_bincode` feature for efficient packet serialization and deserialization.
-- ✅ **Robust Security**: Secure your communication with the `auth_tls` feature using rustls for TLS encryption, or opt for `auth_tcp` with a reverse proxy like NGINX for encrypted TCP communication.
+- ❗ **Cryptography**: Secure your communication with the `auth_tls` feature using rustls for TLS encryption, or opt for `auth_tcp` with a reverse proxy like NGINX for encrypted TCP communication. **WARNING**: More security testing needs to be done to ensure the security of authenticators.
 - ✅ **Tick-Based Synchronization**: Optimized for ping-pong (tick) oriented communication, ensuring precise timing and synchronization.
 - ✅ **Guaranteed Message Ordering**: Maintain strict message order with built-in sequencing mechanisms.
 - ✅ **Zero Packet Loss**: Ensure reliable data transmission with lossless packet delivery.
