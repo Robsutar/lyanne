@@ -11,6 +11,7 @@ lyanne = { path = "../../../", features = [
     "rt_bevy",
     "sd_bincode",
     "troubles_simulator",
+    "store_unexpected",
     "auth_tls",
     "auth_tcp",
     "server",

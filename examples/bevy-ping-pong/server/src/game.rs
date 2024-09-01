@@ -232,6 +232,10 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                 todo!("finish match");
             }
 
+            for error in tick_result.unexpected_errors {
+                println!("Unexpected error: {:?}", error);
+            }
+
             for (addr, message_list) in clients_packets_to_process {
                 let side = {
                     if addr == game.player_left.addr {

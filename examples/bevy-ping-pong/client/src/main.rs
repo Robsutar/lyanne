@@ -139,8 +139,8 @@ fn client_tick(
     'l1: for (entity, mut client_connected) in query.iter_mut() {
         let tick = client_connected.client.as_ref().unwrap().tick_start();
         match tick {
-            ClientTickResult::ReceivedMessage(message) => {
-                for deserialized_packet in message.to_packet_list() {
+            ClientTickResult::ReceivedMessage(tick_result) => {
+                for deserialized_packet in tick_result.message.to_packet_list() {
                     if let Ok(packet) = deserialized_packet.packet.downcast::<GameStartPacket>() {
                         commands.entity(entity).despawn();
 

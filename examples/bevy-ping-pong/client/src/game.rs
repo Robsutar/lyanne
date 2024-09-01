@@ -221,13 +221,18 @@ fn update(
     for (entity, mut game) in query.iter_mut() {
         let tick = game.client.tick_start();
         match tick {
-            ClientTickResult::ReceivedMessage(message) => {
+            ClientTickResult::ReceivedMessage(tick_result) => {
                 let bevy_caller = Arc::clone(&game.bevy_caller);
                 commands.add(move |world: &mut World| {
                     world.insert_resource(ServerPacketSchedule {
                         game_entity: entity.clone(),
                     });
-                    for deserialized_packet in message.to_packet_list() {
+
+                    for error in tick_result.unexpected_errors {
+                        println!("Unexpected error: {:?}", error);
+                    }
+
+                    for deserialized_packet in tick_result.message.to_packet_list() {
                         bevy_caller.client_call(world, deserialized_packet);
                     }
                     world.remove_resource::<ServerPacketSchedule>().unwrap();
