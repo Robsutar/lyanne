@@ -623,9 +623,11 @@ impl Server {
             AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                 auth_mode.tick_start(internal, now, dispatched_assigned_addrs_in_auth);
             }
+            #[cfg(feature = "auth_tcp")]
             AuthenticatorModeInternal::RequireTcp(auth_mode) => {
                 auth_mode.tick_start(internal, now, dispatched_assigned_addrs_in_auth);
             }
+            #[cfg(feature = "auth_tls")]
             AuthenticatorModeInternal::RequireTls(auth_mode) => {
                 auth_mode.tick_start(internal, now, dispatched_assigned_addrs_in_auth);
             }
@@ -775,9 +777,11 @@ impl Server {
             AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                 auth_mode.call_tick_start_signal();
             }
+            #[cfg(feature = "auth_tcp")]
             AuthenticatorModeInternal::RequireTcp(auth_mode) => {
                 auth_mode.call_tick_start_signal();
             }
+            #[cfg(feature = "auth_tls")]
             AuthenticatorModeInternal::RequireTls(auth_mode) => {
                 auth_mode.call_tick_start_signal();
             }
@@ -859,9 +863,11 @@ impl Server {
                 AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                     auth_mode.remove_from_auth(&addr)
                 }
+                #[cfg(feature = "auth_tcp")]
                 AuthenticatorModeInternal::RequireTcp(auth_mode) => {
                     auth_mode.remove_from_auth(&addr)
                 }
+                #[cfg(feature = "auth_tls")]
                 AuthenticatorModeInternal::RequireTls(auth_mode) => {
                     auth_mode.remove_from_auth(&addr)
                 }
