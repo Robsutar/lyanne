@@ -158,14 +158,12 @@ fn use_tick_result(server: &Server, tick_result: ServerTickResult) {
             .packet
             .downcast::<HelloPacket>()
         {
-            if hello_packet.player_name == "Josh" {
-                println!(
-                    "authenticating client {:?}, packet: {:?}",
-                    addr, hello_packet
-                );
+            println!(
+                "Authenticating client {:?}, addr: {:?}",
+                hello_packet.player_name, addr
+            );
 
-                server.authenticate(addr, addr_to_auth);
-            }
+            server.authenticate(addr, addr_to_auth);
         }
     }
 }
