@@ -1,13 +1,10 @@
 [package]
-name = "bevy-ping-pong-client"
+name = "bevy-pong-server"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-player-2 = []
-
 [dependencies]
-bevy-ping-pong = { path = "../", features = ["client"] }
+bevy-pong = { path = "../", features = ["server"] }
 bevy = "^0.14.0"
 lyanne = { path = "../../../", features = [
     "bevy_packet_schedules",
@@ -17,7 +14,7 @@ lyanne = { path = "../../../", features = [
     "store_unexpected",
     "auth_tls",
     "auth_tcp",
-    "client",
+    "server",
 ] }
 tokio = { version = "^1.0.0", optional = true, features = ["full"] }
 rand = "^0.8.0"

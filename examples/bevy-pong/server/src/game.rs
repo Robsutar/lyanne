@@ -1,7 +1,7 @@
 use std::{f32::consts::PI, net::SocketAddr, sync::Arc, time::Instant};
 
 use bevy::prelude::*;
-use bevy_ping_pong::{
+use bevy_pong::{
     BallPositionPacket, BevyPacketCaller, ClackPacket, ConnectionRefuseMessage, GameConfig,
     GameStartPacket, PlayerPositionPacket, PlayerSide, PointPacket, SelfCommandUpdatePacket,
     SelfCommandUpdatePacketServerSchedule,

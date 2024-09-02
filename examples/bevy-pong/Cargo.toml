@@ -1,5 +1,5 @@
 [package]
-name = "bevy-ping-pong"
+name = "bevy-pong"
 version = "0.1.0"
 edition = "2021"
 

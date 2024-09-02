@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
-use bevy_ping_pong::*;
+use bevy_pong::*;
 use lyanne::{
     client::{Client, ClientTickResult},
     packets::ClientPacketResource,

@@ -6,7 +6,7 @@ use std::{io, sync::Arc, time::Duration};
 use bevy::tasks::Task;
 use bevy::time::TimePlugin;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures_lite::future};
-use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameConfig, PacketManagers};
+use bevy_pong::{AuthenticationPacket, BevyPacketCaller, GameConfig, PacketManagers};
 use lyanne::auth_tcp::AuthTcpServerProperties;
 use lyanne::auth_tls::{AuthTlsServerProperties, CertKey, ServerCertProvider};
 use lyanne::server::{AuthenticatorMode, Server};

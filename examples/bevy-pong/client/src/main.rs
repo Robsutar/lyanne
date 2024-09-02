@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use bevy::tasks::Task;
 use bevy::{prelude::*, tasks::futures_lite::future};
-use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, PacketManagers};
+use bevy_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, PacketManagers};
 use lyanne::auth_tcp::AuthTcpClientProperties;
 use lyanne::auth_tls::{AuthTlsClientProperties, RootCertStoreProvider};
 use lyanne::client::{

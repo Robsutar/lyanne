@@ -2,9 +2,9 @@
 resolver = "2"
 members = [
     "derive",
-    "examples/bevy-ping-pong",
-    "examples/bevy-ping-pong/client",
-    "examples/bevy-ping-pong/server",
+    "examples/bevy-pong",
+    "examples/bevy-pong/client",
+    "examples/bevy-pong/server",
 ]
 
 [package]
