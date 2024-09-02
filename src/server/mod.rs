@@ -455,7 +455,7 @@ impl Server {
         #[cfg(feature = "rt_tokio")]
         let task_runner = Arc::new(TaskRunner { runtime });
 
-        #[cfg(feature = "rt_bevy")]
+        #[cfg(not(feature = "rt_tokio"))]
         let task_runner = Arc::new(TaskRunner {});
 
         let task_runner_exit = Arc::clone(&task_runner);

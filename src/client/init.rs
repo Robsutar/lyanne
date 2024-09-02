@@ -326,7 +326,7 @@ pub mod client {
             handle.await.unwrap();
         }
     }
-    #[cfg(feature = "rt_bevy")]
+    #[cfg(not(feature = "rt_tokio"))]
     pub async fn create_async_tasks_keeper(
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
