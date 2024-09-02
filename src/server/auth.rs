@@ -9,7 +9,7 @@ use dashmap::{DashMap, DashSet};
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
-use crate::{messages::DeserializedMessage, packets::SerializedPacketList, rt::timeout};
+use crate::{messages::DeserializedMessage, packets::SerializedPacketList};
 
 use crate::{MessageChannel, MESSAGE_CHANNEL_SIZE};
 
@@ -338,8 +338,11 @@ where
             let mut ignored_reason_justified_count: usize = 0;
             'l2: loop {
                 if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
-                    let accepted =
-                        timeout(server.read_handler_properties.timeout, listener.accept()).await;
+                    let accepted = crate::rt::timeout(
+                        server.read_handler_properties.timeout,
+                        listener.accept(),
+                    )
+                    .await;
 
                     if let Ok(accepted) = accepted {
                         if let Ok((stream, addr)) = accepted {

@@ -15,7 +15,7 @@ use crate::{
     packets::{
         Packet, PacketRegistry, SerializedPacket, SerializedPacketList, ServerTickEndPacket,
     },
-    rt::{timeout, try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+    rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
     utils::{DurationMonitor, RttCalculator},
 };
 
@@ -373,7 +373,7 @@ impl ServerInternal {
         read_timeout: Duration,
     ) -> io::Result<(SocketAddr, Vec<u8>)> {
         let pre_read_next_bytes_result: Result<io::Result<(SocketAddr, Vec<u8>)>, ()> =
-            timeout(read_timeout, async move {
+            crate::rt::timeout(read_timeout, async move {
                 let mut buf = [0u8; 1024];
                 let (len, addr) = socket.recv_from(&mut buf).await?;
                 Ok((addr, buf[..len].to_vec()))

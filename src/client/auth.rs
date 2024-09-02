@@ -12,7 +12,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::{
     messages::{DeserializedMessage, MessagePartMap},
     packets::{ClientTickEndPacket, PacketRegistry, SerializedPacketList},
-    rt::{timeout, Mutex, UdpSocket},
+    rt::{Mutex, UdpSocket},
     utils::{DurationMonitor, RttCalculator},
 };
 
@@ -165,7 +165,7 @@ pub(super) mod connecting {
             }
 
             socket.send(&public_key_sent).await?;
-            match timeout(props.timeout, socket.recv(buf)).await {
+            match crate::rt::timeout(props.timeout, socket.recv(buf)).await {
                 Ok(len) => {
                     let len = len?;
                     if len < MESSAGE_CHANNEL_SIZE {
@@ -230,7 +230,7 @@ pub(super) mod connecting {
         auth_mode: AuthTcpClientProperties,
         props: AuthenticationProperties,
     ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
-        match timeout(props.timeout, async {
+        match crate::rt::timeout(props.timeout, async {
             let tcp_stream = TcpStream::connect(auth_mode.server_addr).await?;
             connect_require_tcp_based_match_arm(buf, public_key_sent, tcp_stream).await
         })
@@ -248,7 +248,7 @@ pub(super) mod connecting {
         auth_mode: AuthTlsClientProperties,
         props: AuthenticationProperties,
     ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
-        match timeout(props.timeout, async {
+        match crate::rt::timeout(props.timeout, async {
             let server_name = match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
                 Ok(server_name) => server_name,
                 Err(_) => return Err(ConnectError::InvalidDnsName),
