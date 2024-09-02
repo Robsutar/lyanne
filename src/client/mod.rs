@@ -640,7 +640,7 @@ impl Client {
                 .await
                 .take()
                 .unwrap();
-            tasks_keeper.cancel(tasks_keeper_handle).await;
+            let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
 
             let socket = Arc::clone(&self.internal.socket);
             let read_timeout = self
