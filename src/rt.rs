@@ -20,23 +20,30 @@ pub(crate) use cfg_rt_bevy;
 pub(crate) use cfg_rt_tokio;
 
 cfg_rt_tokio! {
-    pub use tokio::runtime::Handle;
+    pub use tokio::runtime::Handle as Runtime;
     pub use tokio::net::UdpSocket;
     pub use tokio::net::TcpListener;
     pub use tokio::task::JoinHandle as TaskHandle;
     pub use tokio::sync::Mutex;
-    pub use tokio::io::{AsyncReadExt, AsyncWriteExt, TcpStream};
+    pub use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    pub use tokio::net::TcpStream;
 
-    pub fn spawn<T>(runtime: &Runtime, future: impl std::future::Future<Output = T> + Send + 'static) -> TaskHandle<T>
-    where
-        T: Send + 'static,
-    {
-        runtime.spawn(future)
+    pub struct TaskRunner {
+        pub runtime: Runtime
     }
 
-    pub async fn cancel<T>(handle: TaskHandle<T>) -> Result<T, tokio::task::JoinError> {
-        handle.abort();
-        handle.await
+    impl TaskRunner {
+        pub fn spawn<T>(&self, future: impl std::future::Future<Output = T> + Send + 'static) -> TaskHandle<T>
+        where
+            T: Send + 'static,
+        {
+            self.runtime.spawn(future)
+        }
+
+        pub async fn cancel<T>(&self, handle: TaskHandle<T>) -> Result<T, tokio::task::JoinError> {
+            handle.abort();
+            handle.await
+        }
     }
 
     pub async fn timeout<F>(
