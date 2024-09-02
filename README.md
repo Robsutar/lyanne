@@ -127,7 +127,7 @@ fn main() {
 }
 ```
 
-Sending packets:
+Sending packet to clients:
 
 ```rust,no_run
 use lyanne::{server::*};
@@ -141,6 +141,21 @@ fn inside_tick(server: &Server) {
     for client in server.connected_clients_iter() {
         server.send_packet(&client, &packet);
     }
+}
+```
+
+Sending packet to server:
+
+```rust,no_run
+use lyanne::{client::*};
+use crate::packets::MessagePacket;
+
+fn inside_tick(client: &Client) {
+    let packet = MessagePacket {
+        message: "Bar?".to_owned(),
+    };
+
+    client.send_packet(&packet);
 }
 ```
 
@@ -178,10 +193,35 @@ use crate::{use_tick_result,inside_tick};
 fn complete_tick(server: &Server) {
     let tick_result = server.tick_start();
 
-    use_tick_result(server, tick_result);
+    use_tick_result(&server, tick_result);
     inside_tick();
 
     server.tick_end();
+}
+```
+
+Client tick management:
+
+```rust,no_run
+use lyanne::client::*;
+use crate::{use_tick_result,inside_tick};
+
+fn tick_check(server: &Server) {
+    match client.tick_start() {
+        ClientTickResult::ReceivedMessage(tick_result) => {
+            use_tick_result(&client, tick_result);
+            inside_tick();
+
+            client.tick_after_message();
+        }
+        ClientTickResult::Disconnected => {
+            println!(
+                "Client disconnected, reason: {:?}",
+                client.take_disconnect_reason().unwrap()
+            );
+        }
+        _ => (),
+    }
 }
 ```
 
