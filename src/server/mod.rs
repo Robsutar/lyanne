@@ -15,7 +15,7 @@ use crate::{
     packets::{
         Packet, PacketRegistry, SerializedPacket, SerializedPacketList, ServerTickEndPacket,
     },
-    rt::{spawn, timeout, try_lock, Mutex, TaskHandle, UdpSocket},
+    rt::{timeout, try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
     utils::{DurationMonitor, RttCalculator},
 };
 
@@ -298,9 +298,6 @@ struct ServerInternal {
 
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
-    #[cfg(feature = "rt_tokio")]
-    /// The runtime for asynchronous operations.
-    runtime: crate::rt::Runtime,
     /// Actual state of server periodic tick flow.
     tick_state: RwLock<ServerTickState>,
 
@@ -330,6 +327,8 @@ struct ServerInternal {
     pending_rejection_confirm: DashMap<SocketAddr, JustifiedRejectionContext>,
     /// Set of addresses asking for the rejection confirm.
     rejections_to_confirm: DashSet<SocketAddr>,
+
+    task_runner: Arc<TaskRunner>,
 }
 
 impl ServerInternal {
@@ -352,16 +351,9 @@ impl ServerInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        #[cfg(feature = "rt_tokio")]
-        {
-            let _ = self
-                .tasks_keeper_sender
-                .try_send(spawn(&self.runtime, future));
-        }
-        #[cfg(feature = "rt_bevy")]
-        {
-            let _ = self.tasks_keeper_sender.try_send(spawn(future));
-        }
+        let _ = self
+            .tasks_keeper_sender
+            .try_send(self.task_runner.spawn(future));
     }
 
     fn try_check_read_handler(self: &Arc<Self>) {
@@ -461,7 +453,12 @@ impl Server {
         #[cfg(feature = "rt_tokio")] runtime: crate::rt::Runtime,
     ) -> TaskHandle<io::Result<BindResult>> {
         #[cfg(feature = "rt_tokio")]
-        let runtime_exit = runtime.clone();
+        let task_runner = Arc::new(TaskRunner { runtime });
+
+        #[cfg(feature = "rt_bevy")]
+        let task_runner = Arc::new(TaskRunner {});
+
+        let task_runner_exit = Arc::clone(&task_runner);
 
         let bind_result_body = async move {
             let socket = Arc::new(UdpSocket::bind(addr).await?);
@@ -479,21 +476,9 @@ impl Server {
             let (rejections_to_confirm_signal_sender, rejections_to_confirm_signal_receiver) =
                 async_channel::unbounded();
 
-            let tasks_keeper_handle;
-            #[cfg(feature = "rt_tokio")]
-            {
-                tasks_keeper_handle = spawn(
-                    &runtime,
-                    init::server::create_async_tasks_keeper(tasks_keeper_receiver),
-                );
-            }
-
-            #[cfg(feature = "rt_bevy")]
-            {
-                tasks_keeper_handle = spawn(init::server::create_async_tasks_keeper(
-                    tasks_keeper_receiver,
-                ));
-            }
+            let tasks_keeper_handle = task_runner.spawn(init::server::create_async_tasks_keeper(
+                tasks_keeper_receiver,
+            ));
 
             #[cfg(feature = "store_unexpected")]
             let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) =
@@ -534,8 +519,8 @@ impl Server {
                 recently_disconnected: DashMap::new(),
                 pending_rejection_confirm: DashMap::new(),
                 rejections_to_confirm: DashSet::new(),
-                #[cfg(feature = "rt_tokio")]
-                runtime,
+
+                task_runner,
             });
 
             authenticator_mode_build.apply(&server).await?;
@@ -575,11 +560,7 @@ impl Server {
             })
         };
 
-        spawn(
-            #[cfg(feature = "rt_tokio")]
-            &runtime_exit,
-            bind_result_body,
-        )
+        task_runner_exit.spawn(bind_result_body)
     }
 
     /// Packet Registry getter.

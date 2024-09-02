@@ -12,7 +12,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::{
     messages::{DeserializedMessage, MessagePartMap},
     packets::{ClientTickEndPacket, PacketRegistry, SerializedPacketList},
-    rt::{spawn, timeout, Mutex, UdpSocket},
+    rt::{timeout, Mutex, UdpSocket},
     utils::{DurationMonitor, RttCalculator},
 };
 
@@ -302,7 +302,7 @@ pub(super) mod connecting {
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
         client_properties: Arc<ClientProperties>,
-        #[cfg(feature = "rt_tokio")] runtime: crate::rt::Runtime,
+        task_runner: Arc<TaskRunner>,
         remote_addr: SocketAddr,
         connected_auth_mode: ConnectedAuthenticatorMode,
     ) -> Result<ConnectResult, ConnectError> {
@@ -356,19 +356,8 @@ pub(super) mod connecting {
             incoming_messages_total_size: RwLock::new(0),
         });
 
-        let tasks_keeper_handle;
-        #[cfg(feature = "rt_tokio")]
-        {
-            tasks_keeper_handle = spawn(
-                &runtime,
-                ClientInternal::create_async_tasks_keeper(tasks_keeper_receiver),
-            );
-        }
-
-        #[cfg(feature = "rt_bevy")]
-        {
-            tasks_keeper_handle = spawn(client::create_async_tasks_keeper(tasks_keeper_receiver));
-        }
+        let tasks_keeper_handle =
+            task_runner.spawn(client::create_async_tasks_keeper(tasks_keeper_receiver));
 
         #[cfg(feature = "store_unexpected")]
         let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) =
@@ -386,8 +375,6 @@ pub(super) mod connecting {
 
                 tasks_keeper_handle,
                 socket: Arc::clone(&socket),
-                #[cfg(feature = "rt_tokio")]
-                runtime,
                 tick_state: RwLock::new(ClientTickState::TickStartPending),
                 packet_registry: packet_registry.clone(),
                 messaging_properties: Arc::clone(&messaging_properties),
@@ -395,6 +382,8 @@ pub(super) mod connecting {
                 client_properties: Arc::clone(&client_properties),
                 connected_server: Arc::clone(&server),
                 disconnect_reason: RwLock::new(None),
+
+                task_runner,
             }),
         };
 

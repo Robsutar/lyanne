@@ -16,7 +16,7 @@ use crate::{
     packets::{
         ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
     },
-    rt::{cancel, spawn, timeout, try_lock, Mutex, TaskHandle, UdpSocket},
+    rt::{timeout, try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
     utils::{DurationMonitor, RttCalculator},
 };
 
@@ -265,9 +265,6 @@ struct ClientInternal {
 
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
-    #[cfg(feature = "rt_tokio")]
-    /// The runtime for asynchronous operations.
-    runtime: crate::rt::Runtime,
     /// Actual state of client periodic tick flow.
     tick_state: RwLock<ClientTickState>,
 
@@ -288,6 +285,8 @@ struct ClientInternal {
     /// If equals to [`Option::None`], the client was disconnected.
     /// If inner [`Option::Some`] equals to [`Option::None`], the disconnect reason was taken.
     disconnect_reason: RwLock<Option<Option<ServerDisconnectReason>>>,
+
+    task_runner: Arc<TaskRunner>,
 }
 
 impl ClientInternal {
@@ -295,16 +294,9 @@ impl ClientInternal {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        #[cfg(feature = "rt_tokio")]
-        {
-            let _ = self
-                .tasks_keeper_sender
-                .try_send(spawn(&self.runtime, future));
-        }
-        #[cfg(feature = "rt_bevy")]
-        {
-            let _ = self.tasks_keeper_sender.try_send(spawn(future));
-        }
+        let _ = self
+            .tasks_keeper_sender
+            .try_send(self.task_runner.spawn(future));
     }
 
     fn try_check_read_handler(self: &Arc<Self>) {
@@ -373,7 +365,12 @@ impl Client {
         #[cfg(feature = "rt_tokio")] runtime: crate::rt::Runtime,
     ) -> TaskHandle<Result<ConnectResult, ConnectError>> {
         #[cfg(feature = "rt_tokio")]
-        let runtime_exit = runtime.clone();
+        let task_runner = Arc::new(TaskRunner { runtime });
+
+        #[cfg(feature = "rt_bevy")]
+        let task_runner = Arc::new(TaskRunner {});
+
+        let task_runner_exit = Arc::clone(&task_runner);
 
         let bind_result_body = async move {
             let client_private_key = EphemeralSecret::random_from_rng(OsRng);
@@ -427,8 +424,7 @@ impl Client {
                         messaging_properties,
                         read_handler_properties,
                         client_properties,
-                        #[cfg(feature = "rt_tokio")]
-                        runtime,
+                        task_runner,
                         remote_addr,
                         connected_authentication_mode,
                     )
@@ -438,11 +434,7 @@ impl Client {
             }
         };
 
-        spawn(
-            #[cfg(feature = "rt_tokio")]
-            &runtime_exit,
-            bind_result_body,
-        )
+        task_runner_exit.spawn(bind_result_body)
     }
 
     /// Packet Registry getter.
@@ -636,72 +628,68 @@ impl Client {
         self,
         message: Option<SerializedPacketList>,
     ) -> TaskHandle<ClientDisconnectResult> {
-        spawn(
-            #[cfg(feature = "rt_tokio")]
-            &self.internal.runtime.clone(),
-            async move {
-                let sent_time = Instant::now();
+        let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
+        let tasks_keeper = Arc::clone(&self.internal.task_runner);
+        tasks_keeper_exit.spawn(async move {
+            let sent_time = Instant::now();
 
-                let tasks_keeper_handle = self
-                    .internal
-                    .tasks_keeper_handle
-                    .lock()
-                    .await
-                    .take()
-                    .unwrap();
-                cancel(tasks_keeper_handle).await;
+            let tasks_keeper_handle = self
+                .internal
+                .tasks_keeper_handle
+                .lock()
+                .await
+                .take()
+                .unwrap();
+            tasks_keeper.cancel(tasks_keeper_handle).await;
 
-                let socket = Arc::clone(&self.internal.socket);
-                let read_timeout = self
-                    .internal
-                    .client_properties
-                    .auth_packet_loss_interpretation;
-                let timeout_interpretation =
-                    self.internal.messaging_properties.timeout_interpretation;
+            let socket = Arc::clone(&self.internal.socket);
+            let read_timeout = self
+                .internal
+                .client_properties
+                .auth_packet_loss_interpretation;
+            let timeout_interpretation = self.internal.messaging_properties.timeout_interpretation;
 
-                drop(self);
+            drop(self);
 
-                if let Some(list) = message {
-                    let context =
-                        JustifiedRejectionContext::from_serialized_list(Instant::now(), list);
+            if let Some(list) = message {
+                let context = JustifiedRejectionContext::from_serialized_list(Instant::now(), list);
 
-                    let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
+                let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
 
-                    loop {
-                        let now = Instant::now();
-                        if let Err(e) = socket.send(&context.finished_bytes).await {
-                            return ClientDisconnectResult {
-                                state: ClientDisconnectState::Error(e),
-                            };
-                        }
-
-                        let pre_read_next_bytes_result =
-                            ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
-
-                        match pre_read_next_bytes_result {
-                            Ok(result) => {
-                                if &result == rejection_confirm_bytes {
-                                    return ClientDisconnectResult {
-                                        state: ClientDisconnectState::Confirmed,
-                                    };
-                                }
-                            }
-                            Err(_) => {
-                                if now - sent_time > timeout_interpretation {
-                                    return ClientDisconnectResult {
-                                        state: ClientDisconnectState::ConfirmationTimeout,
-                                    };
-                                }
-                            }
-                        }
+                loop {
+                    let now = Instant::now();
+                    if let Err(e) = socket.send(&context.finished_bytes).await {
+                        return ClientDisconnectResult {
+                            state: ClientDisconnectState::Error(e),
+                        };
                     }
-                } else {
-                    ClientDisconnectResult {
-                        state: ClientDisconnectState::WithoutReason,
+
+                    let pre_read_next_bytes_result =
+                        ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
+
+                    match pre_read_next_bytes_result {
+                        Ok(result) => {
+                            if &result == rejection_confirm_bytes {
+                                return ClientDisconnectResult {
+                                    state: ClientDisconnectState::Confirmed,
+                                };
+                            }
+                        }
+                        Err(_) => {
+                            if now - sent_time > timeout_interpretation {
+                                return ClientDisconnectResult {
+                                    state: ClientDisconnectState::ConfirmationTimeout,
+                                };
+                            }
+                        }
                     }
                 }
-            },
-        )
+            } else {
+                ClientDisconnectResult {
+                    state: ClientDisconnectState::WithoutReason,
+                }
+            }
+        })
     }
 
     /// Serializes, then store the packet to be sent to the server after the next received server tick.

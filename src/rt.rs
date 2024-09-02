@@ -68,15 +68,19 @@ cfg_rt_bevy! {
     pub use async_net::TcpStream;
     pub use futures::{AsyncReadExt, AsyncWriteExt};
 
-    pub fn spawn<T>(future: impl std::future::Future<Output = T> + Send + 'static) -> TaskHandle<T>
-    where
-        T: Send + 'static,
-    {
-        bevy_tasks::AsyncComputeTaskPool::get().spawn(future)
-    }
+    pub struct TaskRunner;
 
-    pub async fn cancel<T>(handle: TaskHandle<T>) -> () {
-        handle.cancel().await;
+    impl TaskRunner {
+        pub fn spawn<T>(&self, future: impl std::future::Future<Output = T> + Send + 'static) -> TaskHandle<T>
+        where
+            T: Send + 'static,
+        {
+            bevy_tasks::AsyncComputeTaskPool::get().spawn(future)
+        }
+
+        pub async fn cancel<T>(&self, handle: TaskHandle<T>) -> () {
+            handle.cancel().await;
+        }
     }
 
     pub async fn timeout<F>(
@@ -100,7 +104,7 @@ cfg_rt_bevy! {
         }
     }
 
-    pub fn try_lock<T>(mutex: &Mutex<T>) -> Option<async_lock::MutexGuard<'_, T>> {
+    pub fn try_lock<T>(mutex: & Mutex<T>) -> Option<async_lock::MutexGuard<'_, T>> {
         mutex.try_lock()
     }
 }
