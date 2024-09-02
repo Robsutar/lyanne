@@ -114,6 +114,7 @@ impl From<io::Error> for ConnectError {
 }
 
 pub(super) mod connecting {
+    #[cfg(feature = "store_unexpected")]
     use client::store_unexpected_error_list_pick;
 
     use super::*;
