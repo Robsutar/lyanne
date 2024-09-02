@@ -64,6 +64,41 @@ struct MessagePacket {
 }
 ```
 
+Sending packet to clients:
+
+```rust,no_run
+use lyanne::{server::*};
+use crate::packets::MessagePacket;
+
+fn inside_tick(server: &Server) {
+    let packet = MessagePacket {
+        message: "Foo!".to_owned(),
+    };
+
+    for client in server.connected_clients_iter() {
+        server.send_packet(&client, &packet);
+    }
+}
+```
+
+Sending packet to server:
+
+```rust,no_run
+use lyanne::{client::*};
+use crate::packets::MessagePacket;
+
+fn inside_tick(client: &Client) {
+    let packet = MessagePacket {
+        message: "Bar?".to_owned(),
+    };
+
+    client.send_packet(&packet);
+}
+```
+
+<details>
+  <summary><strong>Click to see more</strong></summary>
+
 Binding a server:
 
 ```rust,no_run
@@ -127,37 +162,6 @@ fn main() {
 }
 ```
 
-Sending packet to clients:
-
-```rust,no_run
-use lyanne::{server::*};
-use crate::packets::MessagePacket;
-
-fn inside_tick(server: &Server) {
-    let packet = MessagePacket {
-        message: "Foo!".to_owned(),
-    };
-
-    for client in server.connected_clients_iter() {
-        server.send_packet(&client, &packet);
-    }
-}
-```
-
-Sending packet to server:
-
-```rust,no_run
-use lyanne::{client::*};
-use crate::packets::MessagePacket;
-
-fn inside_tick(client: &Client) {
-    let packet = MessagePacket {
-        message: "Bar?".to_owned(),
-    };
-
-    client.send_packet(&packet);
-}
-```
 
 Authenticating clients:
 
@@ -226,3 +230,5 @@ fn tick_check(server: &Server) {
 ```
 
 See more complete examples in `examples` folder.
+
+</details>
