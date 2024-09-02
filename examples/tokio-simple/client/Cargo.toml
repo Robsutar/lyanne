@@ -1,0 +1,10 @@
+[package]
+name = "tokio-simple-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio-simple = { path = "../", features = ["client"] }
+lyanne = { path = "../../../", features = ["rt_tokio", "sd_bincode", "client"] }
+tokio = { version = "^1.0.0", features = ["full"] }
+rand = "^0.8.0"
