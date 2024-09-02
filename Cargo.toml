@@ -5,6 +5,9 @@ members = [
     "examples/bevy-pong",
     "examples/bevy-pong/client",
     "examples/bevy-pong/server",
+    "examples/tokio-simple",
+    "examples/tokio-simple/client",
+    "examples/tokio-simple/server",
 ]
 
 [package]
