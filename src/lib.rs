@@ -16,8 +16,8 @@ use crate::{
 
 pub mod messages;
 pub mod packets;
-pub mod rt;
-pub mod sd;
+pub(crate) mod rt;
+pub(crate) mod sd;
 pub mod utils;
 
 #[cfg(feature = "client")]
