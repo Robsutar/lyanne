@@ -3,6 +3,7 @@ pub mod game;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bevy::tasks::Task;
 use bevy::{prelude::*, tasks::futures_lite::future};
 use bevy_ping_pong::{AuthenticationPacket, BevyPacketCaller, GameStartPacket, PacketManagers};
 use lyanne::auth_tcp::AuthTcpClientProperties;
@@ -11,14 +12,13 @@ use lyanne::client::{
     AuthenticationProperties, AuthenticatorMode, Client, ClientTickResult, ConnectError,
     ConnectResult, ConnectedAuthenticatorMode,
 };
-use lyanne::rt::TaskHandle;
 use lyanne::{client::ClientProperties, packets::SerializedPacketList};
 use lyanne::{MessagingProperties, ReadHandlerProperties};
 
 #[derive(Component)]
 struct ClientConnecting {
     bevy_caller: Option<BevyPacketCaller>,
-    task: TaskHandle<Result<ConnectResult, ConnectError>>,
+    task: Task<Result<ConnectResult, ConnectError>>,
 }
 
 #[derive(Component)]
