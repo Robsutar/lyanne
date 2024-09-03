@@ -1,0 +1,15 @@
+[package]
+name = "async-executor-simple-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-executor-simple = { path = "../", features = ["client"] }
+futures = { version = "^0.3.3" }
+lyanne = { path = "../../../", features = [
+    "rt_async_executor",
+    "sd_bincode",
+    "client",
+] }
+async-executor = { version = "^1.13.0" }
+rand = "^0.8.0"
