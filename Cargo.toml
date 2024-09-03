@@ -17,6 +17,9 @@ members = [
     "examples/async-std-simple",
     "examples/async-std-simple/client",
     "examples/async-std-simple/server",
+    "examples/async-std-tls",
+    "examples/async-std-tls/client",
+    "examples/async-std-tls/server",
 ]
 
 [package]

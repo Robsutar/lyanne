@@ -1,0 +1,15 @@
+[package]
+name = "async-std-tls"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+client = ["lyanne/client"]
+server = ["lyanne/server"]
+
+[dependencies]
+lyanne = { path = "../../", features = ["sd_bincode"] }
+async-std = { version = "^1.12.0" }
+rand = "^0.8.0"
+serde = { version = "^1.0.0", features = ["derive"] }
+bincode = "^1.0.0"

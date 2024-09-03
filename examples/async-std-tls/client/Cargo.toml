@@ -1,0 +1,15 @@
+[package]
+name = "async-std-tls-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-std-tls = { path = "../", features = ["client"] }
+lyanne = { path = "../../../", features = [
+    "rt_async_std",
+    "sd_bincode",
+    "client",
+    "auth_tls",     # Here the example differ of async-std-simple
+] }
+async-std = { version = "^1.12.0" }
+rand = "^0.8.0"
