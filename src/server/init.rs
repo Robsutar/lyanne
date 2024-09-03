@@ -5,12 +5,11 @@ use std::{
     time::Instant,
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{
     aead::{Aead, AeadCore},
     ChaCha20Poly1305, Nonce,
 };
-use rand::rngs::OsRng;
-
 use crate::{
     messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId,
@@ -30,6 +29,8 @@ use crate::{
 use super::*;
 
 pub mod client {
+    use rand::rngs::OsRng;
+
     use super::*;
 
     pub async fn create_receiving_bytes_handler(
@@ -86,72 +87,80 @@ pub mod client {
                             }
                         }
                         MessageChannel::MESSAGE_PART_SEND => {
-                            // 12 for nonce
-                            if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + 12 {
-                                drop(messaging);
-                                let _ = server.clients_to_disconnect_sender.try_send((
-                                    addr,
-                                    (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                ));
-                                break 'l1;
-                            }
-
-                            let nonce = Nonce::from_slice(&bytes[1..13]);
-                            let cipher_text = &bytes[13..];
-
-                            if let Ok(decrypted_message) = messaging.cipher.decrypt(nonce, cipher_text)
-                            {
-                                if let Ok(part) = MessagePart::deserialize(decrypted_message) {
-                                    let mut send_fully_message_confirmation = false;
-                                    let message_id = part.message_id();
-                                    let part_id = part.id();
-
-                                    match messaging.incoming_messages.try_insert(part) {
-                                        MessagePartMapTryInsertResult::PastMessageId => {
-                                            let _ = client
-                                                .message_part_confirmation_sender
-                                                .try_send((message_id, None));
-                                        },
-                                        MessagePartMapTryInsertResult::Stored => {
-                                            'l2: loop {
-                                                match messaging.incoming_messages.try_read(&server.packet_registry){
-                                                    MessagePartMapTryReadResult::PendingParts => break 'l2,
-                                                    MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
-                                                        let _ = server.clients_to_disconnect_sender.try_send((
-                                                            addr,
-                                                            (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                                        ));
-                                                        break 'l1;
-                                                    },
-                                                    MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
-                                                        send_fully_message_confirmation = true;
-            
-                                                        messaging.received_messages.push(message);
-                                                        messaging.last_received_message_instant = Instant::now();
-                                                    },
-                                                }
-                                            }
-            
-                                            if send_fully_message_confirmation {
-                                                let _ = client
-                                                    .message_part_confirmation_sender
-                                                    .try_send((message_id, None));
-                                            } else {
-                                                let _ = client
-                                                    .message_part_confirmation_sender
-                                                    .try_send((message_id, Some(part_id)));
-                                            }
-                                        },
+                            let message_part_bytes = match &messaging.inner_auth {
+                                InnerAuth::NoCryptography => {
+                                    if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE {
+                                        Err(InnerAuth::insufficient_minimal_bytes_error())
+                                    } else {
+                                        Ok(bytes[MESSAGE_CHANNEL_SIZE..].to_vec())
                                     }
+                                },
+                                #[cfg(feature = "auth_tcp")]
+                                InnerAuth::RequireTcp(props) => {
+                                    props.extract(&bytes)
+                                }
+                                #[cfg(feature = "auth_tls")]
+                                InnerAuth::RequireTls(props) => {
+                                    props.extract(&bytes)
+                                }
+                            };
 
-                                    *client.incoming_messages_total_size.write().unwrap() = messaging.incoming_messages.total_size();
-                                } else {
+                            let message_part_bytes = match message_part_bytes {
+                                Ok(message_part_bytes) => message_part_bytes,
+                                Err(_) => {
+                                    drop(messaging);
                                     let _ = server.clients_to_disconnect_sender.try_send((
                                         addr,
                                         (ClientDisconnectReason::InvalidProtocolCommunication, None),
                                     ));
                                     break 'l1;
                                 }
+                            };
+
+                            if let Ok(part) = MessagePart::deserialize(message_part_bytes) {
+                                let mut send_fully_message_confirmation = false;
+                                let message_id = part.message_id();
+                                let part_id = part.id();
+
+                                match messaging.incoming_messages.try_insert(part) {
+                                    MessagePartMapTryInsertResult::PastMessageId => {
+                                        let _ = client
+                                            .message_part_confirmation_sender
+                                            .try_send((message_id, None));
+                                    },
+                                    MessagePartMapTryInsertResult::Stored => {
+                                        'l2: loop {
+                                            match messaging.incoming_messages.try_read(&server.packet_registry){
+                                                MessagePartMapTryReadResult::PendingParts => break 'l2,
+                                                MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
+                                                    let _ = server.clients_to_disconnect_sender.try_send((
+                                                        addr,
+                                                        (ClientDisconnectReason::InvalidProtocolCommunication, None),
+                                                    ));
+                                                    break 'l1;
+                                                },
+                                                MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
+                                                    send_fully_message_confirmation = true;
+        
+                                                    messaging.received_messages.push(message);
+                                                    messaging.last_received_message_instant = Instant::now();
+                                                },
+                                            }
+                                        }
+        
+                                        if send_fully_message_confirmation {
+                                            let _ = client
+                                                .message_part_confirmation_sender
+                                                .try_send((message_id, None));
+                                        } else {
+                                            let _ = client
+                                                .message_part_confirmation_sender
+                                                .try_send((message_id, Some(part_id)));
+                                        }
+                                    },
+                                }
+
+                                *client.incoming_messages_total_size.write().unwrap() = messaging.incoming_messages.total_size();
                             } else {
                                 let _ = server.clients_to_disconnect_sender.try_send((
                                     addr,
@@ -235,16 +244,29 @@ pub mod client {
 
                         for part in message_parts {
                             let part_id = part.id();
+                            let part_message_id = part.message_id();
 
-                            let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-                            let sent_part =
-                                SentMessagePart::encrypted(sent_instant, &part, &messaging.cipher, nonce);
+                            let sent_part = match &messaging.inner_auth {
+                                InnerAuth::NoCryptography => {
+                                    SentMessagePart::no_cryptography(sent_instant, part)
+                                },
+                                #[cfg(feature = "auth_tcp")]
+                                InnerAuth::RequireTcp(props) => {
+                                    let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher, nonce)
+                                },
+                                #[cfg(feature = "auth_tls")]
+                                InnerAuth::RequireTls(props) => {
+                                    let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher, nonce)
+                                },
+                            };
 
                             let finished_bytes = Arc::clone(&sent_part.finished_bytes);
 
                             let (_, pending_part_id_map) = messaging
                                 .pending_confirmation
-                                .entry(part.message_id())
+                                .entry(part_message_id)
                                 .or_insert_with(|| (sent_instant, BTreeMap::new()));
                             pending_part_id_map.insert(part_id, sent_part);
 

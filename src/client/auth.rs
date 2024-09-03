@@ -6,6 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::KeyInit, ChaChaPoly1305, Key};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
@@ -297,7 +298,7 @@ pub(super) mod connecting {
     pub async fn connect_public_key_send_match_arm(
         socket: Arc<UdpSocket>,
         buf: [u8; 1024],
-        client_private_key: EphemeralSecret,
+        _client_private_key: EphemeralSecret,
         message: SerializedPacketList,
         packet_registry: Arc<PacketRegistry>,
         messaging_properties: Arc<MessagingProperties>,
@@ -315,9 +316,25 @@ pub(super) mod connecting {
         authentication_bytes.extend_from_slice(&server_public_key);
         authentication_bytes.extend(message.bytes);
 
-        let server_public_key = PublicKey::from(server_public_key);
-        let shared_key = client_private_key.diffie_hellman(&server_public_key);
-        let cipher = ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
+        let inner_auth = match &connected_auth_mode {
+            &ConnectedAuthenticatorMode::NoCryptography => InnerAuth::NoCryptography,
+            #[cfg(feature = "auth_tcp")]
+            ConnectedAuthenticatorMode::RequireTcp => {
+                let server_public_key = PublicKey::from(server_public_key);
+                let shared_key = _client_private_key.diffie_hellman(&server_public_key);
+                InnerAuth::RequireTcp(InnerAuthTcpBased {
+                    cipher: ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes())),
+                })
+            }
+            #[cfg(feature = "auth_tls")]
+            ConnectedAuthenticatorMode::RequireTls => {
+                let server_public_key = PublicKey::from(server_public_key);
+                let shared_key = _client_private_key.diffie_hellman(&server_public_key);
+                InnerAuth::RequireTls(InnerAuthTcpBased {
+                    cipher: ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes())),
+                })
+            }
+        };
 
         let (tasks_keeper_sender, tasks_keeper_receiver) = async_channel::unbounded();
         let (reason_to_disconnect_sender, reason_to_disconnect_receiver) =
@@ -331,7 +348,7 @@ pub(super) mod connecting {
             async_channel::unbounded();
 
         let messaging = Mutex::new(ConnectedServerMessaging {
-            cipher,
+            inner_auth,
             pending_confirmation: BTreeMap::new(),
             incoming_messages: MessagePartMap::new(
                 messaging_properties.initial_next_message_part_id,
@@ -350,7 +367,6 @@ pub(super) mod connecting {
             message_part_confirmation_sender,
             shared_socket_bytes_send_sender,
             addr: remote_addr,
-            auth_mode: connected_auth_mode,
             messaging,
             last_messaging_write: RwLock::new(Instant::now()),
             average_latency: RwLock::new(messaging_properties.initial_latency),
@@ -373,6 +389,8 @@ pub(super) mod connecting {
                 reason_to_disconnect_receiver,
                 #[cfg(feature = "store_unexpected")]
                 store_unexpected_errors,
+
+                authentication_mode: connected_auth_mode,
 
                 tasks_keeper_handle,
                 socket: Arc::clone(&socket),

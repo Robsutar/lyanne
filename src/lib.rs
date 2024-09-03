@@ -6,6 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 use messages::NONCE_SIZE;
 
@@ -53,8 +54,8 @@ pub struct MessagingProperties {
 impl Default for MessagingProperties {
     fn default() -> Self {
         Self {
-            // 1024 buffer size, 12 for nonce, 16 for encryption
-            part_limit: 1024 - MESSAGE_CHANNEL_SIZE - 12 - 16,
+            // 1024 buffer size, 16 for encryption
+            part_limit: 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - 16,
             timeout_interpretation: Duration::from_secs(10),
             disconnect_reason_resend_delay: Duration::from_secs(3),
             disconnect_reason_resend_cancel: Duration::from_secs(10),
@@ -92,9 +93,10 @@ pub(crate) struct SentMessagePart {
 }
 
 impl SentMessagePart {
+    #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
     pub fn encrypted(
         sent_instant: Instant,
-        part: &MessagePart,
+        part: MessagePart,
         cipher: &ChaCha20Poly1305,
         nonce: Nonce,
     ) -> Self {
@@ -103,6 +105,17 @@ impl SentMessagePart {
         exit.push(MessageChannel::MESSAGE_PART_SEND);
         exit.extend_from_slice(&nonce);
         exit.extend(cipher_bytes);
+        Self {
+            last_sent_time: sent_instant,
+            finished_bytes: Arc::new(exit),
+        }
+    }
+
+    pub fn no_cryptography(sent_instant: Instant, part: MessagePart) -> Self {
+        let part_bytes = part.to_bytes();
+        let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + part_bytes.len());
+        exit.push(MessageChannel::MESSAGE_PART_SEND);
+        exit.extend(part_bytes);
         Self {
             last_sent_time: sent_instant,
             finished_bytes: Arc::new(exit),
