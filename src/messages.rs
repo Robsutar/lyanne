@@ -17,6 +17,8 @@ pub const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
 
 pub const MINIMAL_PART_BYTES_SIZE: usize = 5;
 
+pub const NONCE_SIZE: usize = 12;
+
 struct MessagePartTypes;
 
 impl MessagePartTypes {

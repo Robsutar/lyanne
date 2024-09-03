@@ -7,6 +7,7 @@ use std::{
 };
 
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
+use messages::NONCE_SIZE;
 
 use crate::{
     messages::{MessagePart, MessagePartId},

@@ -29,6 +29,8 @@ use crate::{
 use super::*;
 
 pub mod server {
+    use crate::messages::NONCE_SIZE;
+
     use super::*;
 
     pub async fn create_receiving_bytes_handler(
