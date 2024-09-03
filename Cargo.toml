@@ -8,6 +8,9 @@ members = [
     "examples/tokio-simple",
     "examples/tokio-simple/client",
     "examples/tokio-simple/server",
+    "examples/smol-simple",
+    "examples/smol-simple/client",
+    "examples/smol-simple/server",
 ]
 
 [package]
