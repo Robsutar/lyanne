@@ -28,6 +28,14 @@ rt_bevy = [
     "dep:futures",
     "dep:futures-timer",
 ]
+rt_smol = [
+    "dep:smol",
+    "dep:async-executor",
+    "dep:async-net",
+    "dep:async-lock",
+    "dep:futures",
+    "dep:futures-timer",
+]
 
 sd_bincode = [
     "lyanne-derive/sd_bincode",
@@ -56,16 +64,17 @@ async-channel = "^2.0.0"
 smol = { version = "^2.0.0", optional = true }
 async-std = { version = "^1.0.0", optional = true }
 
-# rt_tokio
 tokio = { version = "^1.0.0", optional = true, features = ["net"] }
-# rt_bevy
+
 bevy_tasks = { version = "^0.14.0", optional = true }
+bevy_ecs = { version = "^0.14.0", optional = true }
+
+async-executor = { version = "^1.13.0", optional = true }
 async-net = { version = "^2.0.0", optional = true }
 async-lock = { version = "^3.0.0", optional = true }
 futures = { version = "^0.3", optional = true, features = ["alloc"] }
 futures-timer = { version = "^3.0.0", optional = true }
 
-bevy_ecs = { version = "^0.14.0", optional = true }
 
 # sd_bincode
 serde = { version = "^1.0.0", features = ["derive"], optional = true }
