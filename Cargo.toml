@@ -64,8 +64,13 @@ sd_bincode = [
     "dep:bincode",
 ]
 
-auth_tcp = []
-auth_tls = ["dep:tokio-rustls", "dep:futures-rustls", "dep:rustls-pemfile"]
+auth_tcp = ["dep:chacha20poly1305"]
+auth_tls = [
+    "dep:chacha20poly1305",
+    "dep:tokio-rustls",
+    "dep:futures-rustls",
+    "dep:rustls-pemfile",
+]
 
 bevy_packet_schedules = ["lyanne-derive/bevy_packet_schedules", "dep:bevy_ecs"]
 deserialized_message_map = []
