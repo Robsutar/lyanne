@@ -1,0 +1,14 @@
+[package]
+name = "async-std-simple-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-std-simple = { path = "../", features = ["client"] }
+lyanne = { path = "../../../", features = [
+    "rt_async_std",
+    "sd_bincode",
+    "client",
+] }
+async-std = { version = "^1.12.0" }
+rand = "^0.8.0"

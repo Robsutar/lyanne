@@ -14,6 +14,9 @@ members = [
     "examples/async-executor-simple",
     "examples/async-executor-simple/client",
     "examples/async-executor-simple/server",
+    "examples/async-std-simple",
+    "examples/async-std-simple/client",
+    "examples/async-std-simple/server",
 ]
 
 [package]
