@@ -228,7 +228,7 @@ pub mod server {
 
                             let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
                             let sent_part =
-                                SentMessagePart::new(sent_instant, &part, &messaging.cipher, nonce);
+                                SentMessagePart::encrypted(sent_instant, &part, &messaging.cipher, nonce);
 
                             let finished_bytes = Arc::clone(&sent_part.finished_bytes);
 

@@ -89,7 +89,7 @@ pub(crate) struct SentMessagePart {
 }
 
 impl SentMessagePart {
-    pub fn new(
+    pub fn encrypted(
         sent_instant: Instant,
         part: &MessagePart,
         cipher: &ChaCha20Poly1305,
