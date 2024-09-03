@@ -35,6 +35,8 @@ pub mod auth_tcp;
 #[cfg(feature = "auth_tls")]
 pub mod auth_tls;
 
+pub mod auth;
+
 pub struct MessagingProperties {
     pub part_limit: usize,
     pub timeout_interpretation: Duration,
