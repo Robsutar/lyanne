@@ -49,6 +49,7 @@ rt_async_executor = [
     "dep:futures",
     "dep:futures-timer",
 ]
+rt_async_std = ["dep:async-std", "dep:futures", "dep:futures-timer"]
 
 sd_bincode = [
     "lyanne-derive/sd_bincode",
