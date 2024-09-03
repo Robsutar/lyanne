@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::KeyInit, ChaCha20Poly1305, ChaChaPoly1305, Key};
 use dashmap::{DashMap, DashSet};
 
@@ -23,6 +24,10 @@ use crate::{
     JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties,
     SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
+
+use crate::auth::InnerAuth;
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+use crate::auth::InnerAuthTcpBased;
 
 pub use auth::*;
 
@@ -193,8 +198,7 @@ pub struct ServerTickResult {
 ///
 /// Intended to be used with [`Mutex`].
 struct ConnectedClientMessaging {
-    /// The cipher used for encrypting and decrypting messages.
-    cipher: ChaCha20Poly1305,
+    inner_auth: InnerAuth,
 
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.
@@ -875,6 +879,26 @@ impl Server {
             }
             .expect("Addr was not marked in the last tick to be possibly authenticated.");
 
+            let inner_auth = match internal.authenticator_mode {
+                AuthenticatorModeInternal::NoCryptography(_) => InnerAuth::NoCryptography,
+                #[cfg(feature = "auth_tcp")]
+                AuthenticatorModeInternal::RequireTcp(_) => {
+                    InnerAuth::RequireTcp(InnerAuthTcpBased {
+                        cipher: ChaChaPoly1305::new(Key::from_slice(
+                            addr_to_auth.shared_key.as_bytes(),
+                        )),
+                    })
+                }
+                #[cfg(feature = "auth_tls")]
+                AuthenticatorModeInternal::RequireTls(_) => {
+                    InnerAuth::RequireTls(InnerAuthTcpBased {
+                        cipher: ChaChaPoly1305::new(Key::from_slice(
+                            addr_to_auth.shared_key.as_bytes(),
+                        )),
+                    })
+                }
+            };
+
             let (receiving_bytes_sender, receiving_bytes_receiver) = async_channel::unbounded();
             let (packets_to_send_sender, packets_to_send_receiver) = async_channel::unbounded();
             let (message_part_confirmation_sender, message_part_confirmation_receiver) =
@@ -885,7 +909,7 @@ impl Server {
             let now = Instant::now();
 
             let messaging = Mutex::new(ConnectedClientMessaging {
-                cipher: ChaChaPoly1305::new(Key::from_slice(addr_to_auth.shared_key.as_bytes())),
+                inner_auth,
                 pending_confirmation: BTreeMap::new(),
                 incoming_messages: MessagePartMap::new(
                     internal.messaging_properties.initial_next_message_part_id,

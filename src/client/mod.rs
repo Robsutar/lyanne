@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305};
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
@@ -24,6 +25,10 @@ use crate::{
     JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties,
     SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
+
+use crate::auth::InnerAuth;
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+use crate::auth::InnerAuthTcpBased;
 
 pub use auth::*;
 use init::*;
@@ -169,8 +174,7 @@ pub struct ClientDisconnectResult {
 ///
 /// Intended to be used with [`Mutex`].
 pub struct ConnectedServerMessaging {
-    /// The cipher used for encrypting and decrypting messages.
-    cipher: ChaCha20Poly1305,
+    inner_auth: InnerAuth,
 
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.
@@ -209,8 +213,6 @@ pub struct ConnectedServer {
 
     /// The socket address of the connected server.
     addr: SocketAddr,
-    /// The socket address of the connected server.
-    auth_mode: ConnectedAuthenticatorMode,
 
     /// Messaging-related properties wrapped in an `Arc` and `RwLock`.
     messaging: Mutex<ConnectedServerMessaging>,
@@ -227,10 +229,6 @@ impl ConnectedServer {
     /// The remove server address.
     pub fn addr(&self) -> &SocketAddr {
         &self.addr
-    }
-
-    pub fn auth_mode(&self) -> &ConnectedAuthenticatorMode {
-        &self.auth_mode
     }
 
     /// # Returns
@@ -259,6 +257,8 @@ struct ClientInternal {
 
     #[cfg(feature = "store_unexpected")]
     store_unexpected_errors: StoreUnexpectedErrors,
+
+    authentication_mode: ConnectedAuthenticatorMode,
 
     /// Task handle of the receiver.
     tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
@@ -461,6 +461,10 @@ impl Client {
     /// Client Properties getter.
     pub fn connected_server(&self) -> &ConnectedServer {
         &self.internal.connected_server
+    }
+
+    pub fn auth_mode(&self) -> &ConnectedAuthenticatorMode {
+        &self.internal.authentication_mode
     }
 
     /// Client periodic tick start.
