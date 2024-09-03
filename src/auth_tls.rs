@@ -1,7 +1,7 @@
 use std::{io, net::SocketAddr, sync::Arc};
 
 #[cfg(feature = "rt_tokio")]
-use tokio_rustls::rustls;
+pub use tokio_rustls::rustls;
 
 #[cfg(feature = "rt_tokio")]
 pub use tokio_rustls::{server::TlsStream, TlsAcceptor, TlsConnector};
