@@ -450,12 +450,13 @@ impl Server {
         read_handler_properties: Arc<ReadHandlerProperties>,
         server_properties: Arc<ServerProperties>,
         authenticator_mode: AuthenticatorMode,
-        #[cfg(feature = "rt_tokio")] runtime: crate::rt::Runtime,
+        #[cfg(any(feature = "rt_tokio", feature = "rt_async_executor"))]
+        runtime: crate::rt::Runtime,
     ) -> TaskHandle<io::Result<BindResult>> {
-        #[cfg(feature = "rt_tokio")]
+        #[cfg(any(feature = "rt_tokio", feature = "rt_async_executor"))]
         let task_runner = Arc::new(TaskRunner { runtime });
 
-        #[cfg(not(feature = "rt_tokio"))]
+        #[cfg(not(any(feature = "rt_tokio", feature = "rt_async_executor")))]
         let task_runner = Arc::new(TaskRunner {});
 
         let task_runner_exit = Arc::clone(&task_runner);

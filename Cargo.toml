@@ -11,6 +11,9 @@ members = [
     "examples/smol-simple",
     "examples/smol-simple/client",
     "examples/smol-simple/server",
+    "examples/async-executor-simple",
+    "examples/async-executor-simple/client",
+    "examples/async-executor-simple/server",
 ]
 
 [package]
@@ -33,6 +36,13 @@ rt_bevy = [
 ]
 rt_smol = [
     "dep:smol",
+    "dep:async-executor",
+    "dep:async-net",
+    "dep:async-lock",
+    "dep:futures",
+    "dep:futures-timer",
+]
+rt_async_executor = [
     "dep:async-executor",
     "dep:async-net",
     "dep:async-lock",
