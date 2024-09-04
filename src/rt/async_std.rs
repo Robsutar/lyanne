@@ -1,9 +1,16 @@
-pub use async_std::net::TcpListener;
-pub use async_std::net::TcpStream;
 pub use async_std::net::UdpSocket;
 pub use async_std::sync::Mutex;
 pub use async_std::task::JoinHandle as TaskHandle;
-pub use futures::io::{AsyncReadExt, AsyncWriteExt};
+
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+mod tls_based {
+    pub use async_std::net::TcpListener;
+    pub use async_std::net::TcpStream;
+    pub use futures::io::{AsyncReadExt, AsyncWriteExt};
+}
+
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+pub use tls_based::*;
 
 pub struct TaskRunner;
 

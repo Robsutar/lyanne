@@ -1,9 +1,16 @@
 pub use async_executor::Task as TaskHandle;
 pub use async_lock::Mutex;
-pub use async_net::TcpListener;
-pub use async_net::TcpStream;
 pub use async_net::UdpSocket;
-pub use futures::{AsyncReadExt, AsyncWriteExt};
+
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+mod tls_based {
+    pub use async_net::TcpListener;
+    pub use async_net::TcpStream;
+    pub use futures::{AsyncReadExt, AsyncWriteExt};
+}
+
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+pub use tls_based::*;
 
 pub struct TaskRunner;
 
