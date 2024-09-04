@@ -17,7 +17,7 @@ pub(super) struct InnerAuthTcpBased {
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 impl InnerAuthTcpBased {
-    pub fn extract(&self, bytes: &Vec<u8>) -> io::Result<Vec<u8>> {
+    pub(crate) fn extract(&self, bytes: &Vec<u8>) -> io::Result<Vec<u8>> {
         if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + NONCE_SIZE {
             Err(InnerAuth::insufficient_minimal_bytes_error())
         } else {
