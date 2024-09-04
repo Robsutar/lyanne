@@ -8,7 +8,7 @@ use std::{
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::KeyInit, ChaChaPoly1305, Key};
-use x25519_dalek::{EphemeralSecret, PublicKey};
+use x25519_dalek::EphemeralSecret;
 
 use crate::{
     messages::{DeserializedMessage, MessagePartMap},
@@ -320,7 +320,7 @@ pub(super) mod connecting {
             &ConnectedAuthenticatorMode::NoCryptography => InnerAuth::NoCryptography,
             #[cfg(feature = "auth_tcp")]
             ConnectedAuthenticatorMode::RequireTcp => {
-                let server_public_key = PublicKey::from(server_public_key);
+                let server_public_key = x25519_dalek::PublicKey::from(server_public_key);
                 let shared_key = _client_private_key.diffie_hellman(&server_public_key);
                 InnerAuth::RequireTcp(InnerAuthTcpBased {
                     cipher: ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes())),
@@ -328,7 +328,7 @@ pub(super) mod connecting {
             }
             #[cfg(feature = "auth_tls")]
             ConnectedAuthenticatorMode::RequireTls => {
-                let server_public_key = PublicKey::from(server_public_key);
+                let server_public_key = x25519_dalek::PublicKey::from(server_public_key);
                 let shared_key = _client_private_key.diffie_hellman(&server_public_key);
                 InnerAuth::RequireTls(InnerAuthTcpBased {
                     cipher: ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes())),

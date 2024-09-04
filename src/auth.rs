@@ -3,6 +3,7 @@ use std::io;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use crate::{
     messages::{MINIMAL_PART_BYTES_SIZE, NONCE_SIZE},
     MESSAGE_CHANNEL_SIZE,
