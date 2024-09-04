@@ -167,12 +167,6 @@ pub enum ClientDisconnectState {
     Error(io::Error),
 }
 
-/// Result when calling [`Client::disconnect`].
-pub struct ClientDisconnectResult {
-    /// The state of the disconnection.
-    pub state: ClientDisconnectState,
-}
-
 /// Messaging fields of [`ConnectedServer`]
 ///
 /// Intended to be used with [`Mutex`].
@@ -635,7 +629,7 @@ impl Client {
     pub fn disconnect(
         self,
         disconnection: Option<GracefullyDisconnection>,
-    ) -> TaskHandle<ClientDisconnectResult> {
+    ) -> TaskHandle<ClientDisconnectState> {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
@@ -670,9 +664,7 @@ impl Client {
                 loop {
                     let now = Instant::now();
                     if let Err(e) = socket.send(&context.finished_bytes).await {
-                        return ClientDisconnectResult {
-                            state: ClientDisconnectState::Error(e),
-                        };
+                        return ClientDisconnectState::Error(e);
                     }
 
                     let pre_read_next_bytes_result =
@@ -681,16 +673,12 @@ impl Client {
                     match pre_read_next_bytes_result {
                         Ok(result) => {
                             if &result == rejection_confirm_bytes {
-                                return ClientDisconnectResult {
-                                    state: ClientDisconnectState::Confirmed,
-                                };
+                                return ClientDisconnectState::Confirmed;
                             }
                         }
                         Err(_) => {
                             if now - sent_time > timeout_interpretation {
-                                return ClientDisconnectResult {
-                                    state: ClientDisconnectState::ConfirmationTimeout,
-                                };
+                                return ClientDisconnectState::ConfirmationTimeout;
                             }
                         }
                     }
@@ -698,9 +686,7 @@ impl Client {
             } else {
                 drop(self);
 
-                ClientDisconnectResult {
-                    state: ClientDisconnectState::WithoutReason,
-                }
+                ClientDisconnectState::WithoutReason
             }
         })
     }
