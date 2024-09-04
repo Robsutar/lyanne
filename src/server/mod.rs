@@ -8,7 +8,7 @@ use std::{
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use chacha20poly1305::{aead::KeyInit, ChaCha20Poly1305, ChaChaPoly1305, Key};
+use chacha20poly1305::{aead::KeyInit, ChaChaPoly1305, Key};
 use dashmap::{DashMap, DashSet};
 
 use crate::{

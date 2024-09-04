@@ -5,11 +5,6 @@ use std::{
     time::Instant,
 };
 
-#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use chacha20poly1305::{
-    aead::{Aead, AeadCore},
-    ChaCha20Poly1305, Nonce,
-};
 use crate::{
     messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId,
@@ -29,8 +24,6 @@ use crate::{
 use super::*;
 
 pub mod client {
-    use rand::rngs::OsRng;
-
     use super::*;
 
     pub async fn create_receiving_bytes_handler(
@@ -252,13 +245,11 @@ pub mod client {
                                 },
                                 #[cfg(feature = "auth_tcp")]
                                 InnerAuth::RequireTcp(props) => {
-                                    let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher, nonce)
+                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher)
                                 },
                                 #[cfg(feature = "auth_tls")]
                                 InnerAuth::RequireTls(props) => {
-                                    let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher, nonce)
+                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher)
                                 },
                             };
 

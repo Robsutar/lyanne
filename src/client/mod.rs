@@ -7,8 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use chacha20poly1305::{aead::Aead, ChaCha20Poly1305};
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
