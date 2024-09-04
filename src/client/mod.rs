@@ -647,11 +647,15 @@ impl Client {
                 let sent_time = Instant::now();
 
                 let socket = Arc::clone(&self.internal.socket);
-                let read_timeout = self
-                    .internal
-                    .client_properties
-                    .auth_packet_loss_interpretation;
                 let timeout_interpretation = disconnection.timeout;
+                let packet_loss_timeout = self
+                    .internal
+                    .connected_server
+                    .messaging
+                    .lock()
+                    .await
+                    .average_packet_loss_rtt
+                    .min(timeout_interpretation);
 
                 drop(self);
 
@@ -664,12 +668,16 @@ impl Client {
 
                 loop {
                     let now = Instant::now();
+                    if now - sent_time > timeout_interpretation {
+                        return ClientDisconnectState::ConfirmationTimeout;
+                    }
+
                     if let Err(e) = socket.send(&context.finished_bytes).await {
                         return ClientDisconnectState::IoError(e);
                     }
 
                     let pre_read_next_bytes_result =
-                        ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
+                        ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;
 
                     match pre_read_next_bytes_result {
                         Ok(result) => {
@@ -677,11 +685,7 @@ impl Client {
                                 return ClientDisconnectState::Confirmed;
                             }
                         }
-                        Err(e) if e.kind() == io::ErrorKind::TimedOut => {
-                            if now - sent_time > timeout_interpretation {
-                                return ClientDisconnectState::ConfirmationTimeout;
-                            }
-                        }
+                        Err(e) if e.kind() == io::ErrorKind::TimedOut => {}
                         Err(e) => return ClientDisconnectState::IoError(e),
                     }
                 }

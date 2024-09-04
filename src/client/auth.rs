@@ -387,12 +387,11 @@ pub(super) mod connecting {
 
         let tasks_keeper_handle =
             task_runner.spawn(client::create_async_tasks_keeper(tasks_keeper_receiver));
+        let tasks_keeper_handle = Mutex::new(Some(tasks_keeper_handle));
 
         #[cfg(feature = "store_unexpected")]
         let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) =
             StoreUnexpectedErrors::new();
-
-        let tasks_keeper_handle = Mutex::new(Some(tasks_keeper_handle));
 
         let client = Client {
             internal: Arc::new(ClientInternal {
@@ -488,11 +487,17 @@ pub(super) mod connecting {
 
         loop {
             let now = Instant::now();
+            if now - sent_time > messaging_properties.timeout_interpretation {
+                return Err(ConnectError::Timeout);
+            }
+
             socket.send(&authentication_bytes).await?;
 
-            let read_timeout = client_properties.auth_packet_loss_interpretation;
+            let packet_loss_timeout = client_properties
+                .auth_packet_loss_interpretation
+                .min(messaging_properties.timeout_interpretation);
             let pre_read_next_bytes_result =
-                ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
+                ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;
 
             match pre_read_next_bytes_result {
                 Ok(result) => {
@@ -507,11 +512,7 @@ pub(super) mod connecting {
                             .await;
                     }
                 }
-                Err(_) => {
-                    if now - sent_time > messaging_properties.timeout_interpretation {
-                        return Err(ConnectError::Timeout);
-                    }
-                }
+                Err(_) => {}
             }
 
             match client.tick_start() {
