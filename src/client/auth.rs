@@ -7,7 +7,9 @@ use std::{
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use chacha20poly1305::{aead::KeyInit, ChaChaPoly1305, Key};
+use chacha20poly1305::{
+    aead::AeadCore, aead::KeyInit, ChaCha20Poly1305, ChaChaPoly1305, Key, Nonce,
+};
 use x25519_dalek::EphemeralSecret;
 
 use crate::{
@@ -17,6 +19,7 @@ use crate::{
     utils::{DurationMonitor, RttCalculator},
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use crate::{MessageChannel, MessagingProperties, ReadHandlerProperties, MESSAGE_CHANNEL_SIZE};
 
 use super::*;
@@ -117,6 +120,8 @@ impl From<io::Error> for ConnectError {
 pub(super) mod connecting {
     #[cfg(feature = "store_unexpected")]
     use client::store_unexpected_error_list_pick;
+
+    use crate::messages::PUBLIC_KEY_SIZE;
 
     use super::*;
 
@@ -308,31 +313,38 @@ pub(super) mod connecting {
         remote_addr: SocketAddr,
         connected_auth_mode: ConnectedAuthenticatorMode,
     ) -> Result<ConnectResult, ConnectError> {
-        let mut server_public_key: [u8; 32] = [0; 32];
-        server_public_key.copy_from_slice(&buf[1..33]);
+        let mut server_public_key_bytes: [u8; PUBLIC_KEY_SIZE] = [0; PUBLIC_KEY_SIZE];
+        server_public_key_bytes
+            .copy_from_slice(&buf[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)]);
 
-        let mut authentication_bytes = Vec::with_capacity(1 + 32 + message.bytes.len());
-        authentication_bytes.push(MessageChannel::AUTH_MESSAGE);
-        authentication_bytes.extend_from_slice(&server_public_key);
-        authentication_bytes.extend(message.bytes);
+        let (authentication_bytes, inner_auth) = match &connected_auth_mode {
+            &ConnectedAuthenticatorMode::NoCryptography => {
+                let mut authentication_bytes = Vec::with_capacity(
+                    MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + message.bytes.len(),
+                );
+                authentication_bytes.push(MessageChannel::AUTH_MESSAGE);
+                authentication_bytes.extend_from_slice(&server_public_key_bytes);
+                authentication_bytes.extend(message.bytes);
 
-        let inner_auth = match &connected_auth_mode {
-            &ConnectedAuthenticatorMode::NoCryptography => InnerAuth::NoCryptography,
+                (authentication_bytes, InnerAuth::NoCryptography)
+            }
             #[cfg(feature = "auth_tcp")]
             ConnectedAuthenticatorMode::RequireTcp => {
-                let server_public_key = x25519_dalek::PublicKey::from(server_public_key);
-                let shared_key = _client_private_key.diffie_hellman(&server_public_key);
-                InnerAuth::RequireTcp(InnerAuthTcpBased {
-                    cipher: ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes())),
-                })
+                let (cipher, authentication_bytes) =
+                    connect_auth_cipher_arm(server_public_key_bytes, _client_private_key, message);
+                (
+                    authentication_bytes,
+                    InnerAuth::RequireTcp(InnerAuthTcpBased { cipher }),
+                )
             }
             #[cfg(feature = "auth_tls")]
             ConnectedAuthenticatorMode::RequireTls => {
-                let server_public_key = x25519_dalek::PublicKey::from(server_public_key);
-                let shared_key = _client_private_key.diffie_hellman(&server_public_key);
-                InnerAuth::RequireTls(InnerAuthTcpBased {
-                    cipher: ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes())),
-                })
+                let (cipher, authentication_bytes) =
+                    connect_auth_cipher_arm(server_public_key_bytes, _client_private_key, message);
+                (
+                    authentication_bytes,
+                    InnerAuth::RequireTls(InnerAuthTcpBased { cipher }),
+                )
             }
         };
 
@@ -525,5 +537,32 @@ pub(super) mod connecting {
                 ClientTickResult::WriteLocked => (),
             }
         }
+    }
+
+    #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+    fn connect_auth_cipher_arm(
+        server_public_key_bytes: [u8; 32],
+        _client_private_key: EphemeralSecret,
+        message: SerializedPacketList,
+    ) -> (ChaCha20Poly1305, Vec<u8>) {
+        let server_public_key = x25519_dalek::PublicKey::from(server_public_key_bytes);
+        let shared_key = _client_private_key.diffie_hellman(&server_public_key);
+        let cipher = ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
+        let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut rand::rngs::OsRng);
+        let cipher_bytes =
+            SentMessagePart::cryptograph_message_part(&message.bytes, &cipher, &nonce);
+
+        let mut authentication_bytes = Vec::with_capacity(
+            MESSAGE_CHANNEL_SIZE
+                + server_public_key_bytes.len()
+                + nonce.len()
+                + message.bytes.len(),
+        );
+        authentication_bytes.push(MessageChannel::AUTH_MESSAGE);
+        authentication_bytes.extend_from_slice(&server_public_key_bytes);
+        authentication_bytes.extend_from_slice(&nonce);
+        authentication_bytes.extend(cipher_bytes);
+
+        (cipher, authentication_bytes)
     }
 }

@@ -5,16 +5,20 @@ use std::{
     time::{Duration, Instant},
 };
 
+use chacha20poly1305::ChaCha20Poly1305;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+use chacha20poly1305::{aead::Aead, Nonce};
 use dashmap::{DashMap, DashSet};
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
-    messages::{DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, NONCE_SIZE, PUBLIC_KEY_SIZE},
+    messages::{DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, PUBLIC_KEY_SIZE},
     packets::SerializedPacketList,
 };
+
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+use crate::messages::NONCE_SIZE;
 
 use crate::{MessageChannel, MESSAGE_CHANNEL_SIZE};
 
@@ -553,6 +557,23 @@ where
                 {
                     ReadClientBytesResult::AuthInsufficientBytesLen
                 } else {
+                    let mut sent_server_public_key: [u8; PUBLIC_KEY_SIZE] = [0; PUBLIC_KEY_SIZE];
+                    sent_server_public_key.copy_from_slice(
+                        &bytes[MESSAGE_CHANNEL_SIZE
+                            ..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE/*+ NONCE_SIZE*/)], // TODO: why the NONCE_SIZE is here???
+                    );
+                    let sent_server_public_key = PublicKey::from(sent_server_public_key);
+
+                    if sent_server_public_key != pending_auth_send.server_public_key {
+                        return ReadClientBytesResult::InvalidPendingAuth;
+                    }
+
+                    let shared_key = pending_auth_send
+                        .server_private_key
+                        .diffie_hellman(&pending_auth_send.addr_public_key);
+                    let cipher: ChaCha20Poly1305 =
+                        ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
+
                     let nonce = Nonce::from_slice(
                         &bytes[(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
                             ..((MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE) + NONCE_SIZE)],
@@ -560,9 +581,9 @@ where
                     let cipher_text =
                         &bytes[((MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE) + NONCE_SIZE)..];
 
-                    let message_part_bytes = match self.cipher.decrypt(nonce, cipher_text) {
+                    let message_part_bytes = match cipher.decrypt(nonce, cipher_text) {
                         Ok(message_part_bytes) => message_part_bytes,
-                        Err(e) => {
+                        Err(_) => {
                             internal.ignore_ip_temporary(
                                 ip,
                                 IgnoredAddrReason::without_reason(),
@@ -573,36 +594,18 @@ where
                     };
 
                     let message = DeserializedMessage::deserialize_single_list(
-                        &bytes[(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + NONCE_SIZE)..],
+                        &message_part_bytes,
                         &internal.packet_registry,
                     );
                     if let Ok(message) = message {
-                        let mut sent_server_public_key: [u8; PUBLIC_KEY_SIZE] =
-                            [0; PUBLIC_KEY_SIZE];
-                        sent_server_public_key.copy_from_slice(
-                            &bytes[MESSAGE_CHANNEL_SIZE
-                                ..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + NONCE_SIZE)],
-                        );
-                        let sent_server_public_key = PublicKey::from(sent_server_public_key);
-
-                        if sent_server_public_key != pending_auth_send.server_public_key {
-                            ReadClientBytesResult::InvalidPendingAuth
-                        } else {
-                            let shared_key = pending_auth_send
-                                .server_private_key
-                                .diffie_hellman(&pending_auth_send.addr_public_key);
-                            let cipher =
-                                ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
-
-                            self.tcp_based_base()
-                                .base
-                                .addrs_in_auth
-                                .insert(addr.clone());
-                            let _ = internal
-                                .clients_to_auth_sender
-                                .try_send((addr, (AddrToAuth { cipher }, message)));
-                            ReadClientBytesResult::DonePendingAuth
-                        }
+                        self.tcp_based_base()
+                            .base
+                            .addrs_in_auth
+                            .insert(addr.clone());
+                        let _ = internal
+                            .clients_to_auth_sender
+                            .try_send((addr, (AddrToAuth { cipher }, message)));
+                        ReadClientBytesResult::DonePendingAuth
                     } else {
                         internal.ignore_ip_temporary(
                             ip,
