@@ -106,7 +106,8 @@ impl SentMessagePart {
     #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
     pub fn encrypted(sent_instant: Instant, part: MessagePart, cipher: &ChaCha20Poly1305) -> Self {
         let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut rand::rngs::OsRng);
-        let cipher_bytes = SentMessagePart::cryptograph_message_part(part, cipher, &nonce);
+        let cipher_bytes =
+            SentMessagePart::cryptograph_message_part(part.as_bytes(), cipher, &nonce);
         let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + nonce.len() + cipher_bytes.len());
         exit.push(MessageChannel::MESSAGE_PART_SEND);
         exit.extend_from_slice(&nonce);
@@ -119,11 +120,11 @@ impl SentMessagePart {
 
     #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
     pub fn cryptograph_message_part(
-        part: MessagePart,
+        message_bytes: &[u8],
         cipher: &ChaCha20Poly1305,
         nonce: &Nonce,
     ) -> Vec<u8> {
-        cipher.encrypt(&nonce, part.as_bytes()).unwrap()
+        cipher.encrypt(&nonce, message_bytes).unwrap()
     }
 }
 
