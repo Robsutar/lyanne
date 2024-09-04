@@ -6,6 +6,7 @@ pub use tokio::task::JoinHandle as TaskHandle;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 mod tls_based {
     pub use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[cfg(feature = "server")]
     pub use tokio::net::TcpListener;
     pub use tokio::net::TcpStream;
 }

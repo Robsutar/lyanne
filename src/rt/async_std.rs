@@ -4,6 +4,7 @@ pub use async_std::task::JoinHandle as TaskHandle;
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 mod tls_based {
+    #[cfg(feature = "server")]
     pub use async_std::net::TcpListener;
     pub use async_std::net::TcpStream;
     pub use futures::io::{AsyncReadExt, AsyncWriteExt};

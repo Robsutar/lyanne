@@ -4,6 +4,7 @@ pub use bevy_tasks::Task as TaskHandle;
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 mod tls_based {
+    #[cfg(feature = "server")]
     pub use async_net::TcpListener;
     pub use async_net::TcpStream;
     pub use futures::{AsyncReadExt, AsyncWriteExt};
