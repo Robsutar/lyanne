@@ -171,7 +171,7 @@ pub mod client {
                                 ));
                                 break 'l1;
                             } else if let Ok(message) =
-                                DeserializedMessage::deserialize_single_list(&bytes[1..], &server.packet_registry)
+                                DeserializedMessage::deserialize_single_list(&bytes[MESSAGE_CHANNEL_SIZE..], &server.packet_registry)
                             {
                                 server.recently_disconnected.insert(addr.clone(), Instant::now());
                                 server.rejections_to_confirm.insert(addr.clone());

@@ -163,7 +163,7 @@ pub mod server {
                                     .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
                             } else if let Ok(message) =
-                                DeserializedMessage::deserialize_single_list(&bytes[1..], &client.packet_registry)
+                                DeserializedMessage::deserialize_single_list(&bytes[MESSAGE_CHANNEL_SIZE..], &client.packet_registry)
                             {
                                 {
                                     let _ = client.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;

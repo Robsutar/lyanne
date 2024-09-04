@@ -401,9 +401,10 @@ impl Client {
                     // 4 for the minimal SerializedPacket
                     if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
                         return Err(ConnectError::InvalidProtocolCommunication);
-                    } else if let Ok(message) =
-                        DeserializedMessage::deserialize_single_list(&bytes[1..], &packet_registry)
-                    {
+                    } else if let Ok(message) = DeserializedMessage::deserialize_single_list(
+                        &bytes[MESSAGE_CHANNEL_SIZE..],
+                        &packet_registry,
+                    ) {
                         return Err(ConnectError::Ignored(message));
                     } else {
                         return Err(ConnectError::InvalidProtocolCommunication);
