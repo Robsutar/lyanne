@@ -644,8 +644,6 @@ impl Client {
             let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
 
             if let Some(disconnection) = disconnection {
-                let sent_time = Instant::now();
-
                 let socket = Arc::clone(&self.internal.socket);
                 let timeout_interpretation = disconnection.timeout;
                 let packet_loss_timeout = self
@@ -668,7 +666,7 @@ impl Client {
 
                 loop {
                     let now = Instant::now();
-                    if now - sent_time > timeout_interpretation {
+                    if now - context.rejection_instant > timeout_interpretation {
                         return ClientDisconnectState::ConfirmationTimeout;
                     }
 
