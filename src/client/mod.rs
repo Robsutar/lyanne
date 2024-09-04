@@ -164,7 +164,7 @@ pub enum ClientDisconnectState {
     /// No disconnection message was sent to the server.
     WithoutReason,
     /// Error sending/receiving the bytes of the server.
-    Error(io::Error),
+    IoError(io::Error),
 }
 
 /// Messaging fields of [`ConnectedServer`]
@@ -664,7 +664,7 @@ impl Client {
                 loop {
                     let now = Instant::now();
                     if let Err(e) = socket.send(&context.finished_bytes).await {
-                        return ClientDisconnectState::Error(e);
+                        return ClientDisconnectState::IoError(e);
                     }
 
                     let pre_read_next_bytes_result =
@@ -676,11 +676,12 @@ impl Client {
                                 return ClientDisconnectState::Confirmed;
                             }
                         }
-                        Err(_) => {
+                        Err(e) if e.kind() == io::ErrorKind::TimedOut => {
                             if now - sent_time > timeout_interpretation {
                                 return ClientDisconnectState::ConfirmationTimeout;
                             }
                         }
+                        Err(e) => return ClientDisconnectState::IoError(e),
                     }
                 }
             } else {
