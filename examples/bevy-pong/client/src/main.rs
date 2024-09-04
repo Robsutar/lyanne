@@ -148,7 +148,7 @@ fn client_tick(
 
                         client.tick_after_message();
 
-                        let my_name = my_name_of(client.connected_server().auth_mode());
+                        let my_name = my_name_of(client.auth_mode());
 
                         let game = game::Game::start(
                             packet.config,
