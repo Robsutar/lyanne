@@ -67,8 +67,13 @@ sd_bincode = [
     "dep:bincode",
 ]
 
-auth_tcp = []
-auth_tls = ["dep:tokio-rustls", "dep:futures-rustls", "dep:rustls-pemfile"]
+auth_tcp = ["dep:chacha20poly1305"]
+auth_tls = [
+    "dep:chacha20poly1305",
+    "dep:tokio-rustls",
+    "dep:futures-rustls",
+    "dep:rustls-pemfile",
+]
 
 bevy_packet_schedules = ["lyanne-derive/bevy_packet_schedules", "dep:bevy_ecs"]
 deserialized_message_map = []
@@ -80,7 +85,7 @@ lyanne-derive = { path = "derive" }
 rand = "^0.8.0"
 dashmap = "^6.0.0"
 x25519-dalek = "^2.0.0"
-chacha20poly1305 = { version = "^0.10.0" }
+chacha20poly1305 = { version = "^0.10.0", optional = true }
 colored = "2.0"
 async-channel = "^2.0.0"
 

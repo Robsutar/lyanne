@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::ChaCha20Poly1305;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::Aead, Nonce};
@@ -38,10 +39,12 @@ pub(super) struct AddrPendingAuthSend {
     /// The instant that the request was received.
     pub received_time: Instant,
     /// Random private key created inside the server.
+    #[allow(unused)]
     pub server_private_key: EphemeralSecret,
     /// Random public key created inside the server. Sent to the addr.
     pub server_public_key: PublicKey,
     /// Random public key created by the addr. Sent by the addr.
+    #[allow(unused)]
     pub addr_public_key: PublicKey,
     /// Finished bytes, with the channel and the server public key.
     pub finished_bytes: Vec<u8>,
@@ -50,8 +53,7 @@ pub(super) struct AddrPendingAuthSend {
 /// Addr to auth properties, after a [`AddrPendingAuthSend`] is confirmed,
 /// the next step is read the message of the addr, and authenticate it or no.
 pub struct AddrToAuth {
-    #[allow(unused)]
-    pub(super) cipher: ChaCha20Poly1305,
+    pub(super) inner_auth: InnerAuth,
 }
 
 /// The reason to ignore messages from an addr.
@@ -226,15 +228,15 @@ impl NoCryptographyAuth {
                         } else {
                             auth_mode.base().addrs_in_auth.insert(addr.clone());
 
-                            let shared_key = pending_auth_send
-                                .server_private_key
-                                .diffie_hellman(&pending_auth_send.addr_public_key);
-                            let cipher =
-                                ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
-
-                            let _ = internal
-                                .clients_to_auth_sender
-                                .try_send((addr, (AddrToAuth { cipher }, message)));
+                            let _ = internal.clients_to_auth_sender.try_send((
+                                addr,
+                                (
+                                    AddrToAuth {
+                                        inner_auth: InnerAuth::NoCryptography,
+                                    },
+                                    message,
+                                ),
+                            ));
                             ReadClientBytesResult::DonePendingAuth
                         }
                     } else {
@@ -509,6 +511,8 @@ where
         }
     }
 
+    fn inner_auth_of(&self, props: InnerAuthTcpBased) -> InnerAuth;
+
     async fn read_next_bytes(
         &self,
         internal: &ServerInternal,
@@ -602,9 +606,15 @@ where
                             .base
                             .addrs_in_auth
                             .insert(addr.clone());
-                        let _ = internal
-                            .clients_to_auth_sender
-                            .try_send((addr, (AddrToAuth { cipher }, message)));
+                        let _ = internal.clients_to_auth_sender.try_send((
+                            addr,
+                            (
+                                AddrToAuth {
+                                    inner_auth: self.inner_auth_of(InnerAuthTcpBased { cipher }),
+                                },
+                                message,
+                            ),
+                        ));
                         ReadClientBytesResult::DonePendingAuth
                     } else {
                         internal.ignore_ip_temporary(
@@ -661,6 +671,10 @@ impl RequireTcpBasedAuthHandler<TcpStream> for RequireTcpAuth {
     async fn bound_stream(&self, raw_stream: TcpStream) -> io::Result<TcpStream> {
         Ok(raw_stream)
     }
+
+    fn inner_auth_of(&self, props: InnerAuthTcpBased) -> InnerAuth {
+        InnerAuth::RequireTcp(props)
+    }
 }
 #[cfg(feature = "auth_tcp")]
 impl AuthModeHandler for RequireTcpAuth {
@@ -687,6 +701,10 @@ impl RequireTcpBasedAuthHandler<TlsStream<TcpStream>> for RequireTlsAuth {
         let config = Arc::new(self.properties.new_server_config()?);
         let acceptor = TlsAcceptor::from(config);
         Ok(acceptor.accept(raw_stream).await?)
+    }
+
+    fn inner_auth_of(&self, props: InnerAuthTcpBased) -> InnerAuth {
+        InnerAuth::RequireTls(props)
     }
 }
 #[cfg(feature = "auth_tls")]

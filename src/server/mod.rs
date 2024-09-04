@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::KeyInit, ChaChaPoly1305, Key};
 use dashmap::{DashMap, DashSet};
 
@@ -878,22 +879,6 @@ impl Server {
             }
             .expect("Addr was not marked in the last tick to be possibly authenticated.");
 
-            let inner_auth = match internal.authenticator_mode {
-                AuthenticatorModeInternal::NoCryptography(_) => InnerAuth::NoCryptography,
-                #[cfg(feature = "auth_tcp")]
-                AuthenticatorModeInternal::RequireTcp(_) => {
-                    InnerAuth::RequireTcp(InnerAuthTcpBased {
-                        cipher: addr_to_auth.cipher,
-                    })
-                }
-                #[cfg(feature = "auth_tls")]
-                AuthenticatorModeInternal::RequireTls(_) => {
-                    InnerAuth::RequireTls(InnerAuthTcpBased {
-                        cipher: addr_to_auth.cipher,
-                    })
-                }
-            };
-
             let (receiving_bytes_sender, receiving_bytes_receiver) = async_channel::unbounded();
             let (packets_to_send_sender, packets_to_send_receiver) = async_channel::unbounded();
             let (message_part_confirmation_sender, message_part_confirmation_receiver) =
@@ -904,7 +889,7 @@ impl Server {
             let now = Instant::now();
 
             let messaging = Mutex::new(ConnectedClientMessaging {
-                inner_auth,
+                inner_auth: addr_to_auth.inner_auth,
                 pending_confirmation: BTreeMap::new(),
                 incoming_messages: MessagePartMap::new(
                     internal.messaging_properties.initial_next_message_part_id,
