@@ -149,6 +149,11 @@ pub enum ClientTickResult {
     WriteLocked,
 }
 
+pub struct GracefullyDisconnection {
+    timeout: Duration,
+    message: SerializedPacketList,
+}
+
 /// The disconnection state.
 #[derive(Debug)]
 pub enum ClientDisconnectState {
@@ -629,13 +634,11 @@ impl Client {
     /// ```
     pub fn disconnect(
         self,
-        message: Option<SerializedPacketList>,
+        disconnection: Option<GracefullyDisconnection>,
     ) -> TaskHandle<ClientDisconnectResult> {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
-            let sent_time = Instant::now();
-
             let tasks_keeper_handle = self
                 .internal
                 .tasks_keeper_handle
@@ -645,17 +648,22 @@ impl Client {
                 .unwrap();
             let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
 
-            let socket = Arc::clone(&self.internal.socket);
-            let read_timeout = self
-                .internal
-                .client_properties
-                .auth_packet_loss_interpretation;
-            let timeout_interpretation = self.internal.messaging_properties.timeout_interpretation;
+            if let Some(disconnection) = disconnection {
+                let sent_time = Instant::now();
 
-            drop(self);
+                let socket = Arc::clone(&self.internal.socket);
+                let read_timeout = self
+                    .internal
+                    .client_properties
+                    .auth_packet_loss_interpretation;
+                let timeout_interpretation = disconnection.timeout;
 
-            if let Some(list) = message {
-                let context = JustifiedRejectionContext::from_serialized_list(Instant::now(), list);
+                drop(self);
+
+                let context = JustifiedRejectionContext::from_serialized_list(
+                    Instant::now(),
+                    disconnection.message,
+                );
 
                 let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
 
@@ -688,6 +696,8 @@ impl Client {
                     }
                 }
             } else {
+                drop(self);
+
                 ClientDisconnectResult {
                     state: ClientDisconnectState::WithoutReason,
                 }
