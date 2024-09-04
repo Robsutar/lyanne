@@ -5,12 +5,14 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use dashmap::{DashMap, DashSet};
 use rand::rngs::OsRng;
-use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
+use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
-    messages::{DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, PUBLIC_KEY_SIZE},
+    messages::{DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, NONCE_SIZE, PUBLIC_KEY_SIZE},
     packets::SerializedPacketList,
 };
 
@@ -45,7 +47,7 @@ pub(super) struct AddrPendingAuthSend {
 /// the next step is read the message of the addr, and authenticate it or no.
 pub struct AddrToAuth {
     #[allow(unused)]
-    pub(super) shared_key: SharedSecret,
+    pub(super) cipher: ChaCha20Poly1305,
 }
 
 /// The reason to ignore messages from an addr.
@@ -219,17 +221,16 @@ impl NoCryptographyAuth {
                             ReadClientBytesResult::InvalidPendingAuth
                         } else {
                             auth_mode.base().addrs_in_auth.insert(addr.clone());
-                            let _ = internal.clients_to_auth_sender.try_send((
-                                addr,
-                                (
-                                    AddrToAuth {
-                                        shared_key: pending_auth_send
-                                            .server_private_key
-                                            .diffie_hellman(&pending_auth_send.addr_public_key),
-                                    },
-                                    message,
-                                ),
-                            ));
+
+                            let shared_key = pending_auth_send
+                                .server_private_key
+                                .diffie_hellman(&pending_auth_send.addr_public_key);
+                            let cipher =
+                                ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
+
+                            let _ = internal
+                                .clients_to_auth_sender
+                                .try_send((addr, (AddrToAuth { cipher }, message)));
                             ReadClientBytesResult::DonePendingAuth
                         }
                     } else {
@@ -545,40 +546,61 @@ where
                 .remove(&sent_server_public_key)
             {
                 if bytes.len()
-                    < MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE
+                    < MESSAGE_CHANNEL_SIZE
+                        + PUBLIC_KEY_SIZE
+                        + NONCE_SIZE
+                        + MINIMAL_SERIALIZED_PACKET_SIZE
                 {
                     ReadClientBytesResult::AuthInsufficientBytesLen
                 } else {
+                    let nonce = Nonce::from_slice(
+                        &bytes[(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
+                            ..((MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE) + NONCE_SIZE)],
+                    );
+                    let cipher_text =
+                        &bytes[((MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE) + NONCE_SIZE)..];
+
+                    let message_part_bytes = match self.cipher.decrypt(nonce, cipher_text) {
+                        Ok(message_part_bytes) => message_part_bytes,
+                        Err(e) => {
+                            internal.ignore_ip_temporary(
+                                ip,
+                                IgnoredAddrReason::without_reason(),
+                                Instant::now() + Duration::from_secs(5),
+                            );
+                            return ReadClientBytesResult::InvalidPendingAuth;
+                        }
+                    };
+
                     let message = DeserializedMessage::deserialize_single_list(
-                        &bytes[(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)..],
+                        &bytes[(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + NONCE_SIZE)..],
                         &internal.packet_registry,
                     );
                     if let Ok(message) = message {
                         let mut sent_server_public_key: [u8; PUBLIC_KEY_SIZE] =
                             [0; PUBLIC_KEY_SIZE];
                         sent_server_public_key.copy_from_slice(
-                            &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
+                            &bytes[MESSAGE_CHANNEL_SIZE
+                                ..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + NONCE_SIZE)],
                         );
                         let sent_server_public_key = PublicKey::from(sent_server_public_key);
 
                         if sent_server_public_key != pending_auth_send.server_public_key {
                             ReadClientBytesResult::InvalidPendingAuth
                         } else {
+                            let shared_key = pending_auth_send
+                                .server_private_key
+                                .diffie_hellman(&pending_auth_send.addr_public_key);
+                            let cipher =
+                                ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
+
                             self.tcp_based_base()
                                 .base
                                 .addrs_in_auth
                                 .insert(addr.clone());
-                            let _ = internal.clients_to_auth_sender.try_send((
-                                addr,
-                                (
-                                    AddrToAuth {
-                                        shared_key: pending_auth_send
-                                            .server_private_key
-                                            .diffie_hellman(&pending_auth_send.addr_public_key),
-                                    },
-                                    message,
-                                ),
-                            ));
+                            let _ = internal
+                                .clients_to_auth_sender
+                                .try_send((addr, (AddrToAuth { cipher }, message)));
                             ReadClientBytesResult::DonePendingAuth
                         }
                     } else {

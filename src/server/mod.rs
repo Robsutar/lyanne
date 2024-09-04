@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::KeyInit, ChaChaPoly1305, Key};
 use dashmap::{DashMap, DashSet};
 
@@ -884,17 +883,13 @@ impl Server {
                 #[cfg(feature = "auth_tcp")]
                 AuthenticatorModeInternal::RequireTcp(_) => {
                     InnerAuth::RequireTcp(InnerAuthTcpBased {
-                        cipher: ChaChaPoly1305::new(Key::from_slice(
-                            addr_to_auth.shared_key.as_bytes(),
-                        )),
+                        cipher: addr_to_auth.cipher,
                     })
                 }
                 #[cfg(feature = "auth_tls")]
                 AuthenticatorModeInternal::RequireTls(_) => {
                     InnerAuth::RequireTls(InnerAuthTcpBased {
-                        cipher: ChaChaPoly1305::new(Key::from_slice(
-                            addr_to_auth.shared_key.as_bytes(),
-                        )),
+                        cipher: addr_to_auth.cipher,
                     })
                 }
             };
