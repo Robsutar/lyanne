@@ -41,6 +41,7 @@ pub(super) struct AddrPendingAuthSend {
 /// Addr to auth properties, after a [`AddrPendingAuthSend`] is confirmed,
 /// the next step is read the message of the addr, and authenticate it or no.
 pub struct AddrToAuth {
+    #[allow(unused)]
     pub(super) shared_key: SharedSecret,
 }
 
