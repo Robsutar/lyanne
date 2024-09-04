@@ -9,7 +9,10 @@ use dashmap::{DashMap, DashSet};
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
-use crate::{messages::DeserializedMessage, packets::SerializedPacketList};
+use crate::{
+    messages::{DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, PUBLIC_KEY_SIZE},
+    packets::SerializedPacketList,
+};
 
 use crate::{MessageChannel, MESSAGE_CHANNEL_SIZE};
 
@@ -195,17 +198,21 @@ impl NoCryptographyAuth {
             auth_mode.pending_auth.remove(&addr)
         {
             if bytes[0] == MessageChannel::AUTH_MESSAGE {
-                // 32 for public key, and 1 for the smallest possible serialized packet
-                if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
+                if bytes.len()
+                    < MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE
+                {
                     ReadClientBytesResult::AuthInsufficientBytesLen
                 } else {
                     let message = DeserializedMessage::deserialize_single_list(
-                        &bytes[33..],
+                        &bytes[(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)..],
                         &internal.packet_registry,
                     );
                     if let Ok(message) = message {
-                        let mut sent_server_public_key: [u8; 32] = [0; 32];
-                        sent_server_public_key.copy_from_slice(&bytes[1..33]);
+                        let mut sent_server_public_key: [u8; PUBLIC_KEY_SIZE] =
+                            [0; PUBLIC_KEY_SIZE];
+                        sent_server_public_key.copy_from_slice(
+                            &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
+                        );
                         let sent_server_public_key = PublicKey::from(sent_server_public_key);
 
                         if sent_server_public_key != pending_auth_send.server_public_key {
@@ -240,15 +247,20 @@ impl NoCryptographyAuth {
                     .insert(addr, (pending_auth_send, last_sent_time));
                 ReadClientBytesResult::PendingPendingAuth
             }
-        } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
-            let mut client_public_key: [u8; 32] = [0; 32];
-            client_public_key.copy_from_slice(&bytes[1..33]);
+        } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND
+            && bytes.len() == (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
+        {
+            let mut client_public_key: [u8; PUBLIC_KEY_SIZE] = [0; PUBLIC_KEY_SIZE];
+            client_public_key.copy_from_slice(
+                &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
+            );
             let client_public_key = PublicKey::from(client_public_key);
             let server_private_key = EphemeralSecret::random_from_rng(OsRng);
             let server_public_key = PublicKey::from(&server_private_key);
             let server_public_key_bytes = server_public_key.as_bytes();
 
-            let mut finished_bytes = Vec::with_capacity(1 + server_public_key_bytes.len());
+            let mut finished_bytes =
+                Vec::with_capacity(MESSAGE_CHANNEL_SIZE + server_public_key_bytes.len());
             finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
             finished_bytes.extend_from_slice(server_public_key_bytes);
 
@@ -439,9 +451,13 @@ where
                 }
             };
 
-            if bytes[0] == MessageChannel::PUBLIC_KEY_SEND && bytes.len() == 33 {
-                let mut client_public_key: [u8; 32] = [0; 32];
-                client_public_key.copy_from_slice(&bytes[1..33]);
+            if bytes[0] == MessageChannel::PUBLIC_KEY_SEND
+                && bytes.len() == (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
+            {
+                let mut client_public_key: [u8; PUBLIC_KEY_SIZE] = [0; PUBLIC_KEY_SIZE];
+                client_public_key.copy_from_slice(
+                    &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
+                );
                 let client_public_key = PublicKey::from(client_public_key);
 
                 let mut server_private_key = EphemeralSecret::random_from_rng(OsRng);
@@ -456,7 +472,8 @@ where
                 }
                 let server_public_key_bytes = server_public_key.as_bytes();
 
-                let mut finished_bytes = Vec::with_capacity(1 + server_public_key_bytes.len());
+                let mut finished_bytes =
+                    Vec::with_capacity(MESSAGE_CHANNEL_SIZE + server_public_key_bytes.len());
                 finished_bytes.push(MessageChannel::PUBLIC_KEY_SEND);
                 finished_bytes.extend_from_slice(server_public_key_bytes);
 
@@ -511,13 +528,15 @@ where
         } else if self.tcp_based_base().base.addrs_in_auth.contains(&addr) {
             ReadClientBytesResult::AddrInAuth
         } else if bytes[0] == MessageChannel::AUTH_MESSAGE {
-            // 32 for public key, and 1 for the smallest possible serialized packet
-            if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
+            if bytes.len() < MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE
+            {
                 return ReadClientBytesResult::AuthInsufficientBytesLen;
             }
 
-            let mut sent_server_public_key: [u8; 32] = [0; 32];
-            sent_server_public_key.copy_from_slice(&bytes[1..33]);
+            let mut sent_server_public_key: [u8; PUBLIC_KEY_SIZE] = [0; PUBLIC_KEY_SIZE];
+            sent_server_public_key.copy_from_slice(
+                &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
+            );
             let sent_server_public_key = PublicKey::from(sent_server_public_key);
 
             if let Some((_, pending_auth_send)) = self
@@ -525,17 +544,21 @@ where
                 .pending_auth
                 .remove(&sent_server_public_key)
             {
-                // 32 for public key, and 1 for the smallest possible serialized packet
-                if bytes.len() < MESSAGE_CHANNEL_SIZE + 32 + 1 {
+                if bytes.len()
+                    < MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE
+                {
                     ReadClientBytesResult::AuthInsufficientBytesLen
                 } else {
                     let message = DeserializedMessage::deserialize_single_list(
-                        &bytes[33..],
+                        &bytes[(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)..],
                         &internal.packet_registry,
                     );
                     if let Ok(message) = message {
-                        let mut sent_server_public_key: [u8; 32] = [0; 32];
-                        sent_server_public_key.copy_from_slice(&bytes[1..33]);
+                        let mut sent_server_public_key: [u8; PUBLIC_KEY_SIZE] =
+                            [0; PUBLIC_KEY_SIZE];
+                        sent_server_public_key.copy_from_slice(
+                            &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
+                        );
                         let sent_server_public_key = PublicKey::from(sent_server_public_key);
 
                         if sent_server_public_key != pending_auth_send.server_public_key {

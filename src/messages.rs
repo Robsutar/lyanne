@@ -15,9 +15,14 @@ pub const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
 
 pub const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
 
-pub const MINIMAL_PART_BYTES_SIZE: usize = 5;
+pub const MINIMAL_SERIALIZED_PACKET_SIZE: usize = 1;
+
+pub const MINIMAL_PART_BYTES_SIZE: usize = 4 + MINIMAL_SERIALIZED_PACKET_SIZE;
 
 pub const NONCE_SIZE: usize = 12;
+
+// TODO: use this size to check the maximum authentication message sent by the client
+pub const PUBLIC_KEY_SIZE: usize = 32;
 
 struct MessagePartTypes;
 

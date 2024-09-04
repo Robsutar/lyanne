@@ -11,7 +11,7 @@ use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
-    messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
+    messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE},
     packets::{
         ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
     },
@@ -411,7 +411,7 @@ impl Client {
                     }
                 }
                 MessageChannel::PUBLIC_KEY_SEND => {
-                    if len != 33 {
+                    if len != (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE) {
                         return Err(ConnectError::InvalidProtocolCommunication);
                     }
                     return connecting::connect_public_key_send_match_arm(
