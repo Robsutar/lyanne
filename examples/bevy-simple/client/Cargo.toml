@@ -1,0 +1,10 @@
+[package]
+name = "bevy-simple-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy-simple = { path = "../", features = ["client"] }
+lyanne = { path = "../../../", features = ["rt_bevy", "sd_bincode", "client"] }
+bevy = { version = "^0.14.0" }
+rand = "^0.8.0"
