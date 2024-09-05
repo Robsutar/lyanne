@@ -1,14 +1,19 @@
-use std::{f32::consts::PI, net::SocketAddr, sync::Arc, time::Instant};
+use std::{
+    f32::consts::PI,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use bevy::prelude::*;
 use bevy_pong::{
     BallPositionPacket, BevyPacketCaller, ClackPacket, ConnectionRefuseMessage, GameConfig,
-    GameStartPacket, PlayerPositionPacket, PlayerSide, PointPacket, SelfCommandUpdatePacket,
-    SelfCommandUpdatePacketServerSchedule,
+    GameStartPacket, MatchFinished, PlayerPositionPacket, PlayerSide, PointPacket,
+    SelfCommandUpdatePacket, SelfCommandUpdatePacketServerSchedule,
 };
 use lyanne::{
     packets::{SerializedPacket, SerializedPacketList, ServerPacketResource},
-    server::Server,
+    server::{GracefullyDisconnection, Server},
 };
 use rand::{thread_rng, Rng};
 
@@ -111,7 +116,7 @@ struct PlayerPacketSchedule {
 #[derive(Component)]
 pub struct Game {
     pub config: GameConfig,
-    pub server: Server,
+    pub server: Option<Server>,
     pub tick_timer: Timer,
     pub bevy_caller: Arc<BevyPacketCaller>,
     pub ball: Ball,
@@ -146,7 +151,7 @@ impl Game {
         );
         let game = Self {
             config,
-            server,
+            server: Some(server),
             tick_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
             bevy_caller,
             ball,
@@ -156,9 +161,9 @@ impl Game {
         };
 
         {
-            game.server.tick_start();
+            game.server.as_ref().unwrap().tick_start();
 
-            for client in game.server.connected_clients_iter() {
+            for client in game.server.as_ref().unwrap().connected_clients_iter() {
                 let addr = client.key().clone();
 
                 if addr == game.player_left.addr {
@@ -167,26 +172,32 @@ impl Game {
                         enemy_name: game.player_right.name.clone(),
                         config: game.config.clone(),
                     };
-                    game.server.send_packet(&client, &start_packet)
+                    game.server
+                        .as_ref()
+                        .unwrap()
+                        .send_packet(&client, &start_packet)
                 } else if addr == game.player_right.addr {
                     let start_packet = GameStartPacket {
                         owned_type: PlayerSide::Right,
                         enemy_name: game.player_left.name.clone(),
                         config: game.config.clone(),
                     };
-                    game.server.send_packet(&client, &start_packet)
+                    game.server
+                        .as_ref()
+                        .unwrap()
+                        .send_packet(&client, &start_packet)
                 } else {
                     panic!("Invalid player connected");
                 }
             }
 
-            game.server.tick_end();
+            game.server.as_ref().unwrap().tick_end();
         }
 
         game
     }
 
-    fn get_player_mut(&mut self, side: PlayerSide) -> &mut Player {
+    fn get_player_mut(&mut self, side: &PlayerSide) -> &mut Player {
         match side {
             PlayerSide::Left => &mut self.player_left,
             PlayerSide::Right => &mut self.player_right,
@@ -209,20 +220,23 @@ impl Plugin for GamePlugin {
 fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: Res<Time>) {
     for (entity, mut game) in query.iter_mut() {
         if game.tick_timer.tick(time.delta()).just_finished() {
-            let tick_result = game.server.tick_start();
+            let tick_result = game.server.as_ref().unwrap().tick_start();
 
             let clients_packets_to_process = tick_result.received_messages;
             let clients_to_auth = tick_result.to_auth;
 
             for (addr, _) in clients_to_auth {
                 info!("refusing client {:?}", addr,);
-                game.server.refuse(
+                game.server.as_ref().unwrap().refuse(
                     addr,
-                    SerializedPacketList::create(vec![game.server.packet_registry().serialize(
-                        &ConnectionRefuseMessage {
+                    SerializedPacketList::create(vec![game
+                        .server
+                        .as_ref()
+                        .unwrap()
+                        .packet_registry()
+                        .serialize(&ConnectionRefuseMessage {
                             message: "Match already started".to_owned(),
-                        },
-                    )]),
+                        })]),
                 );
             }
 
@@ -276,6 +290,11 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                     RectCollision::Top | RectCollision::Bottom => clack = true,
                     RectCollision::Left => {
                         game.player_left.points += 1;
+
+                        if game.player_left.points >= game.config.max_points {
+                            finish_match(&mut game, PlayerSide::Left);
+                        }
+
                         reset_round(&mut game);
                         send_point_packets(&mut game, PlayerSide::Left);
 
@@ -286,6 +305,11 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                     }
                     RectCollision::Right => {
                         game.player_right.points += 1;
+
+                        if game.player_left.points >= game.config.max_points {
+                            finish_match(&mut game, PlayerSide::Right);
+                        }
+
                         reset_round(&mut game);
                         send_point_packets(&mut game, PlayerSide::Right);
 
@@ -307,49 +331,62 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
 
             let ball_position_packet =
                 game.server
+                    .as_ref()
+                    .unwrap()
                     .packet_registry()
                     .serialize(&BallPositionPacket {
                         new_pos: game.ball.pos,
                     });
-            let player_left_position_packet =
-                game.server
-                    .packet_registry()
-                    .serialize(&PlayerPositionPacket {
-                        side: game.player_left.side,
-                        new_y: game.player_left.pos.y,
-                    });
-            let player_right_position_packet =
-                game.server
-                    .packet_registry()
-                    .serialize(&PlayerPositionPacket {
-                        side: game.player_right.side,
-                        new_y: game.player_right.pos.y,
-                    });
+            let player_left_position_packet = game
+                .server
+                .as_ref()
+                .unwrap()
+                .packet_registry()
+                .serialize(&PlayerPositionPacket {
+                    side: game.player_left.side,
+                    new_y: game.player_left.pos.y,
+                });
+            let player_right_position_packet = game
+                .server
+                .as_ref()
+                .unwrap()
+                .packet_registry()
+                .serialize(&PlayerPositionPacket {
+                    side: game.player_right.side,
+                    new_y: game.player_right.pos.y,
+                });
 
-            for client in game.server.connected_clients_iter() {
-                game.server.send_packet_serialized(
+            for client in game.server.as_ref().unwrap().connected_clients_iter() {
+                game.server.as_ref().unwrap().send_packet_serialized(
                     &client,
                     SerializedPacket::clone(&ball_position_packet),
                 );
-                game.server.send_packet_serialized(
+                game.server.as_ref().unwrap().send_packet_serialized(
                     &client,
                     SerializedPacket::clone(&player_left_position_packet),
                 );
-                game.server.send_packet_serialized(
+                game.server.as_ref().unwrap().send_packet_serialized(
                     &client,
                     SerializedPacket::clone(&player_right_position_packet),
                 );
             }
 
             if clack {
-                let clack_packet = game.server.packet_registry().serialize(&ClackPacket);
-                for client in game.server.connected_clients_iter() {
+                let clack_packet = game
+                    .server
+                    .as_ref()
+                    .unwrap()
+                    .packet_registry()
+                    .serialize(&ClackPacket);
+                for client in game.server.as_ref().unwrap().connected_clients_iter() {
                     game.server
+                        .as_ref()
+                        .unwrap()
                         .send_packet_serialized(&client, SerializedPacket::clone(&clack_packet));
                 }
             }
 
-            game.server.tick_end();
+            game.server.as_ref().unwrap().tick_end();
         }
     }
 }
@@ -362,7 +399,7 @@ fn self_command_update_read(
     let packet = packet.packet.take().unwrap();
     let mut game = query.get_mut(player_packet_schedule.game_entity).unwrap();
 
-    let player = game.get_player_mut(player_packet_schedule.side);
+    let player = game.get_player_mut(&player_packet_schedule.side);
     player.actual_command = packet;
 }
 
@@ -385,13 +422,40 @@ fn reset_round(game: &mut Mut<Game>) {
 fn send_point_packets(game: &mut Mut<Game>, side: PlayerSide) {
     let point_packet = game
         .server
+        .as_ref()
+        .unwrap()
         .packet_registry()
         .serialize(&PointPacket { side });
 
-    for client in game.server.connected_clients_iter() {
+    for client in game.server.as_ref().unwrap().connected_clients_iter() {
         game.server
+            .as_ref()
+            .unwrap()
             .send_packet_serialized(&client, SerializedPacket::clone(&point_packet));
     }
+}
+
+fn finish_match(game: &mut Mut<Game>, winner: PlayerSide) {
+    println!(
+        "Finishing match, {} is the winner",
+        game.get_player_mut(&winner).name
+    );
+
+    let server = game.server.take().unwrap();
+
+    let finish_packet = server.packet_registry().serialize(&MatchFinished {
+        winner,
+        cause: bevy_pong::FinishCause::MaxPoints,
+    });
+
+    let disconnect_state = bevy::tasks::futures_lite::future::block_on(server.disconnect(Some(
+        GracefullyDisconnection {
+            timeout: Duration::from_secs(3),
+            message: SerializedPacketList::create(vec![finish_packet]),
+        },
+    )));
+    println!("disconnect state: {:?}", disconnect_state);
+    std::process::exit(0);
 }
 
 fn try_collide(rect: Rect, ball: &mut Ball) -> bool {

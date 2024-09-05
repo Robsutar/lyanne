@@ -256,10 +256,21 @@ fn update(
                 game.client.tick_after_message();
             }
             ClientTickResult::Disconnected => {
-                panic!(
-                    "client disconnected: {:?}",
-                    game.client.take_disconnect_reason().unwrap()
-                )
+                let reason = game.client.take_disconnect_reason().unwrap();
+                match reason {
+                    lyanne::client::ServerDisconnectReason::DisconnectRequest(message) => {
+                        let finish_packet = message
+                            .to_packet_list()
+                            .remove(0)
+                            .packet
+                            .downcast::<MatchFinished>();
+                        println!("match finished, disconnect message: {:?}", finish_packet);
+                    }
+                    _ => {
+                        println!("client disconnected: {:?}", reason);
+                    }
+                }
+                std::process::exit(0);
             }
             _ => (),
         }
