@@ -64,8 +64,8 @@ pub enum ReadClientBytesResult {
     InvalidPendingAuth,
     /// The pending authentication is still in process.
     PendingPendingAuth,
-    /// The public key send operation is invalid.
-    InvalidPublicKeySend,
+    /// The public key send operation is invalid. And the error code.
+    InvalidPublicKeySend(u16),
     /// The client tried to authenticate, but it is already connected.
     AlreadyConnected,
 }
@@ -86,7 +86,7 @@ impl ReadClientBytesResult {
             ReadClientBytesResult::ClientMaxTickByteLenOverflow => true,
             ReadClientBytesResult::InvalidPendingAuth => true,
             ReadClientBytesResult::PendingPendingAuth => true,
-            ReadClientBytesResult::InvalidPublicKeySend => true,
+            ReadClientBytesResult::InvalidPublicKeySend(_) => true,
             ReadClientBytesResult::AlreadyConnected => true,
         }
     }
@@ -442,7 +442,7 @@ impl ServerInternal {
                 self.rejections_to_confirm.insert(addr);
                 return ReadClientBytesResult::RecentClientDisconnectConfirm;
             } else {
-                return ReadClientBytesResult::InvalidPublicKeySend;
+                return ReadClientBytesResult::InvalidPublicKeySend(30);
             }
         }
 

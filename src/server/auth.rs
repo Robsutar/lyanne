@@ -286,7 +286,7 @@ impl NoCryptographyAuth {
             );
             ReadClientBytesResult::PublicKeySend
         } else {
-            ReadClientBytesResult::InvalidPublicKeySend
+            ReadClientBytesResult::InvalidPublicKeySend(10)
         }
     }
 }
@@ -506,7 +506,7 @@ where
 
                 Ok(ReadClientBytesResult::PublicKeySend)
             } else {
-                Ok(ReadClientBytesResult::InvalidPublicKeySend)
+                Ok(ReadClientBytesResult::InvalidPublicKeySend(20))
             }
         }
     }
