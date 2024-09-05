@@ -87,18 +87,30 @@ fn use_tick_result(
                     )]),
                 )
             } else {
-                broadcast(
-                    &server,
-                    format!("{} entered the chat.", hello_packet.player_name),
+                server.authenticate(
+                    addr,
+                    addr_to_auth,
+                    SerializedPacketList::create(vec![server.packet_registry().serialize(
+                        &ChatContextPacket {
+                            connected_players: client_registry
+                                .addrs_from_names
+                                .keys()
+                                .cloned()
+                                .collect(),
+                        },
+                    )]),
                 );
-
-                server.authenticate(addr, addr_to_auth);
                 client_registry
                     .names_from_addrs
                     .insert(addr, hello_packet.player_name.clone());
                 client_registry
                     .addrs_from_names
-                    .insert(hello_packet.player_name, addr);
+                    .insert(hello_packet.player_name.clone(), addr);
+
+                broadcast(
+                    &server,
+                    format!("{} entered the chat.", hello_packet.player_name),
+                );
             }
         } else {
             println!(

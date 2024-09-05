@@ -5,6 +5,7 @@ pub fn new_packet_registry() -> PacketRegistry {
     let mut exit = PacketRegistry::with_essential();
 
     exit.add::<HelloPacket>();
+    exit.add::<ChatContextPacket>();
     exit.add::<MessagePacket>();
     exit.add::<ChatLinePacket>();
     exit.add::<LeavePacket>();
@@ -16,6 +17,11 @@ pub fn new_packet_registry() -> PacketRegistry {
 #[derive(Packet, Deserialize, Serialize, Debug)]
 pub struct HelloPacket {
     pub player_name: String,
+}
+
+#[derive(Packet, Deserialize, Serialize, Debug)]
+pub struct ChatContextPacket {
+    pub connected_players: Vec<String>,
 }
 
 #[derive(Packet, Deserialize, Serialize, Debug)]

@@ -40,11 +40,27 @@ async fn main() {
         runtime,
     );
 
-    let connect_result = connect_handle.await.unwrap();
+    let connect_result = connect_handle
+        .await
+        .unwrap()
+        .expect("Failed to connect client");
 
-    let client = connect_result.expect("Failed to connect client").client;
+    let client = connect_result.client;
 
     println!("Client connected to {:?}", remote_addr);
+
+    if let Ok(chat_context) = connect_result
+        .initial_message
+        .to_packet_list()
+        .remove(0)
+        .packet
+        .downcast::<ChatContextPacket>()
+    {
+        println!("Connected players: {:?}", chat_context.connected_players);
+    } else {
+        println!("Server did not sent a chat context in the initial message, finishing program");
+        std::process::exit(0);
+    }
 
     println!("{}", HELP);
 
