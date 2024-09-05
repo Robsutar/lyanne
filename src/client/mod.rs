@@ -150,8 +150,8 @@ pub enum ClientTickResult {
 }
 
 pub struct GracefullyDisconnection {
-    timeout: Duration,
-    message: SerializedPacketList,
+    pub timeout: Duration,
+    pub message: SerializedPacketList,
 }
 
 /// The disconnection state.
