@@ -50,7 +50,7 @@ fn init(mut commands: Commands) {
     let authenticator_mode = AuthenticatorMode::AttemptList(vec![
         AuthenticatorMode::RequireTls(
             AuthenticationProperties {
-                message: SerializedPacketList::create(vec![packet_managers
+                message: SerializedPacketList::non_empty(vec![packet_managers
                     .packet_registry
                     .serialize(&AuthenticationPacket {
                         player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTls),
@@ -68,7 +68,7 @@ fn init(mut commands: Commands) {
         ),
         AuthenticatorMode::RequireTcp(
             AuthenticationProperties {
-                message: SerializedPacketList::create(vec![packet_managers
+                message: SerializedPacketList::non_empty(vec![packet_managers
                     .packet_registry
                     .serialize(&AuthenticationPacket {
                         player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTcp),
@@ -80,7 +80,7 @@ fn init(mut commands: Commands) {
             },
         ),
         AuthenticatorMode::NoCryptography(AuthenticationProperties {
-            message: SerializedPacketList::create(vec![packet_managers.packet_registry.serialize(
+            message: SerializedPacketList::non_empty(vec![packet_managers.packet_registry.serialize(
                 &AuthenticationPacket {
                     player_name: my_name_of(&ConnectedAuthenticatorMode::NoCryptography),
                 },

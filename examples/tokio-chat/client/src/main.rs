@@ -24,7 +24,7 @@ async fn main() {
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
     let authenticator_mode = AuthenticatorMode::NoCryptography(AuthenticationProperties {
-        message: SerializedPacketList::create(vec![
+        message: SerializedPacketList::non_empty(vec![
             packet_registry.serialize(&HelloPacket { player_name })
         ]),
         timeout: Duration::from_secs(10),
@@ -126,7 +126,7 @@ fn inside_tick(
                 println!("Leaving program sending: {:?} message", message);
                 let disconnection = GracefullyDisconnection {
                     timeout: Duration::from_secs(3),
-                    message: SerializedPacketList::create(vec![client
+                    message: SerializedPacketList::non_empty(vec![client
                         .packet_registry()
                         .serialize(&LeavePacket {
                             message: message.to_owned(),

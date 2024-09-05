@@ -229,7 +229,7 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
                 info!("refusing client {:?}", addr,);
                 game.server.as_ref().unwrap().refuse(
                     addr,
-                    SerializedPacketList::create(vec![game
+                    SerializedPacketList::non_empty(vec![game
                         .server
                         .as_ref()
                         .unwrap()
@@ -451,7 +451,7 @@ fn finish_match(game: &mut Mut<Game>, winner: PlayerSide) {
     let disconnect_state = bevy::tasks::futures_lite::future::block_on(server.disconnect(Some(
         GracefullyDisconnection {
             timeout: Duration::from_secs(3),
-            message: SerializedPacketList::create(vec![finish_packet]),
+            message: SerializedPacketList::non_empty(vec![finish_packet]),
         },
     )));
     println!("disconnect state: {:?}", disconnect_state);

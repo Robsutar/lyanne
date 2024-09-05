@@ -32,7 +32,7 @@ fn init(mut commands: Commands) {
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
     let authenticator_mode = AuthenticatorMode::NoCryptography(AuthenticationProperties {
-        message: SerializedPacketList::create(vec![packet_registry.serialize(&HelloPacket {
+        message: SerializedPacketList::non_empty(vec![packet_registry.serialize(&HelloPacket {
             player_name: "Josh".to_owned(),
         })]),
         timeout: Duration::from_secs(10),
