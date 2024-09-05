@@ -441,8 +441,6 @@ impl ServerInternal {
             if self.recently_disconnected.contains_key(&addr) {
                 self.rejections_to_confirm.insert(addr);
                 return ReadClientBytesResult::RecentClientDisconnectConfirm;
-            } else {
-                return ReadClientBytesResult::InvalidPublicKeySend(30);
             }
         }
 
