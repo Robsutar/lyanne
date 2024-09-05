@@ -225,46 +225,8 @@ pub mod client {
                         let mut messaging = client.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
 
-                        let bytes = SerializedPacketList::create(packets_to_send).bytes;
-                        let message_parts = MessagePart::create_list(
-                            &server.messaging_properties,
-                            next_message_id,
-                            bytes,
-                        )
-                        .unwrap();
-
-                        let sent_instant = Instant::now();
-
-                        for part in message_parts {
-                            let part_id = part.id();
-                            let part_message_id = part.message_id();
-
-                            let sent_part = match &messaging.inner_auth {
-                                InnerAuth::NoCryptography => {
-                                    SentMessagePart::no_cryptography(sent_instant, part)
-                                },
-                                #[cfg(feature = "auth_tcp")]
-                                InnerAuth::RequireTcp(props) => {
-                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher)
-                                },
-                                #[cfg(feature = "auth_tls")]
-                                InnerAuth::RequireTls(props) => {
-                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher)
-                                },
-                            };
-
-                            let finished_bytes = Arc::clone(&sent_part.finished_bytes);
-
-                            let (_, pending_part_id_map) = messaging
-                                .pending_confirmation
-                                .entry(part_message_id)
-                                .or_insert_with(|| (sent_instant, BTreeMap::new()));
-                            pending_part_id_map.insert(part_id, sent_part);
-
-                            let _ = client
-                                .shared_socket_bytes_send_sender
-                                .try_send(finished_bytes);
-                        }
+                        let serialized_packet_list = SerializedPacketList::create(packets_to_send);
+                        push_completed_message_tick(&server, &mut messaging, &client.shared_socket_bytes_send_sender, next_message_id, serialized_packet_list);
 
                         next_message_id = next_message_id.wrapping_add(1);
                     } else {
@@ -277,6 +239,54 @@ pub mod client {
         }
     }
 
+    pub fn push_completed_message_tick(
+        server: &ServerInternal, 
+        messaging: &mut ConnectedClientMessaging,
+        shared_socket_bytes_send_sender: &async_channel::Sender<Arc<Vec<u8>>>,
+        message_id: MessageId, 
+        serialized_packet_list: SerializedPacketList) {
+        let bytes = serialized_packet_list.bytes;
+        
+        let message_parts = MessagePart::create_list(
+            &server.messaging_properties,
+            message_id,
+            bytes,
+        )
+        .unwrap();
+    
+        let sent_instant = Instant::now();
+    
+        for part in message_parts {
+            let part_id = part.id();
+            let part_message_id = part.message_id();
+    
+            let sent_part = match &messaging.inner_auth {
+                InnerAuth::NoCryptography => {
+                    SentMessagePart::no_cryptography(sent_instant, part)
+                },
+                #[cfg(feature = "auth_tcp")]
+                InnerAuth::RequireTcp(props) => {
+                    SentMessagePart::encrypted(sent_instant, part, &props.cipher)
+                },
+                #[cfg(feature = "auth_tls")]
+                InnerAuth::RequireTls(props) => {
+                    SentMessagePart::encrypted(sent_instant, part, &props.cipher)
+                },
+            };
+    
+            let finished_bytes = Arc::clone(&sent_part.finished_bytes);
+    
+            let (_, pending_part_id_map) = messaging
+                .pending_confirmation
+                .entry(part_message_id)
+                .or_insert_with(|| (sent_instant, BTreeMap::new()));
+            pending_part_id_map.insert(part_id, sent_part);
+    
+            let _ = shared_socket_bytes_send_sender
+                .try_send(finished_bytes);
+        }
+    }
+    
     pub async fn create_message_part_confirmation_handler(
         server: Weak<ServerInternal>,
         addr: SocketAddr,

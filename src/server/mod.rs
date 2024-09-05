@@ -867,13 +867,18 @@ impl Server {
 
     /// Connect a client.
     ///
-    /// Should only be used with [`AddrToAuth`] that were created after the last server tick,
+    /// Should only be used with [`AddrToAuth`] that were created after the last server tick start,
     /// if another tick server tick comes up, the [`addr_to_auth`] will not be valid.
     ///
     /// # Panics
     /// - if addr is already connected.
     /// - if addr was not marked in the last tick to be possibly authenticated.
-    pub fn authenticate(&self, addr: SocketAddr, addr_to_auth: AddrToAuth) {
+    pub fn authenticate(
+        &self,
+        addr: SocketAddr,
+        addr_to_auth: AddrToAuth,
+        initial_message: SerializedPacketList,
+    ) {
         let internal = &self.internal;
         if internal.connected_clients.contains_key(&addr) {
             panic!("Addr is already connected.",)
@@ -909,12 +914,13 @@ impl Server {
 
             let now = Instant::now();
 
-            let messaging = Mutex::new(ConnectedClientMessaging {
+            let initial_next_message_part_id =
+                internal.messaging_properties.initial_next_message_part_id + 1;
+
+            let mut messaging = ConnectedClientMessaging {
                 inner_auth: addr_to_auth.inner_auth,
                 pending_confirmation: BTreeMap::new(),
-                incoming_messages: MessagePartMap::new(
-                    internal.messaging_properties.initial_next_message_part_id,
-                ),
+                incoming_messages: MessagePartMap::new(initial_next_message_part_id),
                 tick_bytes_len: 0,
                 last_received_message_instant: now,
                 received_messages: Vec::new(),
@@ -926,7 +932,15 @@ impl Server {
                     internal.messaging_properties.initial_latency,
                     16,
                 ),
-            });
+            };
+
+            init::client::push_completed_message_tick(
+                &internal,
+                &mut messaging,
+                &shared_socket_bytes_send_sender,
+                initial_next_message_part_id - 1,
+                initial_message,
+            );
 
             let client = Arc::new(ConnectedClient {
                 receiving_bytes_sender,
@@ -934,7 +948,7 @@ impl Server {
                 message_part_confirmation_sender,
                 shared_socket_bytes_send_sender,
                 addr,
-                messaging,
+                messaging: Mutex::new(messaging),
                 last_messaging_write: RwLock::new(now),
                 average_latency: RwLock::new(internal.messaging_properties.initial_latency),
                 incoming_messages_total_size: RwLock::new(0),
@@ -954,8 +968,6 @@ impl Server {
 
             let server_downgraded = Arc::downgrade(&internal);
             let client_downgraded = Arc::downgrade(&client);
-            let initial_next_message_part_id =
-                internal.messaging_properties.initial_next_message_part_id;
             internal.create_async_task(async move {
                 init::client::create_packets_to_send_handler(
                     server_downgraded,

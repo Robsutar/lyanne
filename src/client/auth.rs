@@ -61,7 +61,7 @@ pub enum ConnectedAuthenticatorMode {
 /// Result when calling [`Client::connect`]
 pub struct ConnectResult {
     pub client: Client,
-    pub message: DeserializedMessage,
+    pub initial_message: DeserializedMessage,
 }
 
 #[derive(Debug)]
@@ -521,7 +521,7 @@ pub(super) mod connecting {
                     client.tick_after_message();
                     return Ok(ConnectResult {
                         client,
-                        message: tick_result.message,
+                        initial_message: tick_result.message,
                     });
                 }
                 ClientTickResult::PendingMessage => (),
