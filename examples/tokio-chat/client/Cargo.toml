@@ -1,0 +1,14 @@
+[package]
+name = "tokio-chat-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio-chat = { path = "../", features = ["client"] }
+lyanne = { path = "../../../", features = [
+    "rt_tokio",
+    "sd_bincode",
+    "client",
+    "store_unexpected",
+] }
+tokio = { version = "^1.0.0", features = ["full"] }

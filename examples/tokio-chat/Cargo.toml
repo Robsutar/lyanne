@@ -1,0 +1,14 @@
+[package]
+name = "tokio-chat"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+client = ["lyanne/client"]
+server = ["lyanne/server"]
+
+[dependencies]
+lyanne = { path = "../../", features = ["sd_bincode"] }
+tokio = { version = "^1.0.0", features = ["full"] }
+serde = { version = "^1.0.0", features = ["derive"] }
+bincode = "^1.0.0"

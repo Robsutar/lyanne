@@ -2,30 +2,9 @@
 resolver = "2"
 members = [
     "derive",
-    "examples/bevy-simple",
-    "examples/bevy-simple/client",
-    "examples/bevy-simple/server",
-    "examples/bevy-pong",
-    "examples/bevy-pong/client",
-    "examples/bevy-pong/server",
-    "examples/tokio-simple",
-    "examples/tokio-simple/client",
-    "examples/tokio-simple/server",
-    "examples/smol-simple",
-    "examples/smol-simple/client",
-    "examples/smol-simple/server",
-    "examples/async-executor-simple",
-    "examples/async-executor-simple/client",
-    "examples/async-executor-simple/server",
-    "examples/async-std-simple",
-    "examples/async-std-simple/client",
-    "examples/async-std-simple/server",
-    "examples/async-std-tcp",
-    "examples/async-std-tcp/client",
-    "examples/async-std-tcp/server",
-    "examples/async-std-tls",
-    "examples/async-std-tls/client",
-    "examples/async-std-tls/server",
+    "examples/tokio-chat",
+    "examples/tokio-chat/client",
+    "examples/tokio-chat/server",
 ]
 
 [package]
