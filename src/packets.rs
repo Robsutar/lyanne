@@ -57,6 +57,7 @@ macro_rules! add_essential_packets {
     ($exit:expr) => {
         $exit.add::<lyanne::packets::ClientTickEndPacket>();
         $exit.add::<lyanne::packets::ServerTickEndPacket>();
+        $exit.add::<lyanne::packets::EmptyPacket>();
     };
 }
 
@@ -198,6 +199,10 @@ impl PacketRegistry {
                 "Packet id not found",
             ));
         }
+    }
+
+    pub fn empty_serialized_list(&self) -> SerializedPacketList {
+        SerializedPacketList::single(self.serialize(&EmptyPacket))
     }
 }
 
@@ -382,6 +387,10 @@ impl SerializedPacketList {
     pub fn non_empty(stored: Vec<SerializedPacket>) -> SerializedPacketList {
         SerializedPacketList::try_non_empty(stored).expect("SerializedPacketList can not be empty")
     }
+
+    pub fn single(stored: SerializedPacket) -> SerializedPacketList {
+        SerializedPacketList::non_empty(vec![stored])
+    }
 }
 
 cfg_sd_bincode! {
@@ -390,6 +399,9 @@ cfg_sd_bincode! {
 
     #[derive(Packet, Deserialize, Serialize, Debug)]
     pub struct ServerTickEndPacket;
+
+    #[derive(Packet, Deserialize, Serialize, Debug)]
+    pub struct EmptyPacket;
 }
 
 cfg_sd_none! {
@@ -478,4 +490,47 @@ cfg_sd_none! {
     #[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct ServerTickEndPacketServerSchedule;
+
+    #[derive(Debug)]
+    pub struct EmptyPacket;
+    impl Packet for EmptyPacket {
+        fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
+            Ok(Self)
+        }
+
+        #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+        fn run_client_schedule(
+            world: &mut World,
+        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+            world.try_run_schedule(EmptyPacketClientSchedule)
+        }
+
+        #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+        fn run_server_schedule(
+            world: &mut World,
+        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+            world.try_run_schedule(EmptyPacketServerSchedule)
+        }
+    }
+    #[allow(dead_code)]
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    struct EmptyPacketClientSchedule;
+    #[allow(dead_code)]
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    struct EmptyPacketServerSchedule;
+
+    #[allow(dead_code)]
+    #[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct EmptyPacketClientSchedule;
+    #[allow(dead_code)]
+    #[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct EmptyPacketServerSchedule;
 }
