@@ -361,7 +361,11 @@ pub struct SerializedPacketList {
 }
 
 impl SerializedPacketList {
-    pub fn create(stored: Vec<SerializedPacket>) -> SerializedPacketList {
+    pub fn try_non_empty(stored: Vec<SerializedPacket>) -> Option<SerializedPacketList> {
+        if stored.is_empty() {
+            return None;
+        }
+
         let total_size = stored
             .iter()
             .map(|packet| packet.bytes.len())
@@ -372,7 +376,11 @@ impl SerializedPacketList {
             bytes.extend(packet.bytes);
         }
 
-        SerializedPacketList { bytes }
+        Some(SerializedPacketList { bytes })
+    }
+
+    pub fn non_empty(stored: Vec<SerializedPacket>) -> SerializedPacketList {
+        SerializedPacketList::try_non_empty(stored).expect("SerializedPacketList can not be empty")
     }
 }
 
