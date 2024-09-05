@@ -87,7 +87,11 @@ fn use_tick_result(server: &Server, tick_result: ServerTickResult) {
                 hello_packet.player_name, addr
             );
 
-            server.authenticate(addr, addr_to_auth);
+            server.authenticate(
+                addr,
+                addr_to_auth,
+                server.packet_registry().empty_serialized_list(),
+            );
         } else {
             println!(
                 "Client {:?} did not sent a `HelloPacket`, it will not be authenticated",
