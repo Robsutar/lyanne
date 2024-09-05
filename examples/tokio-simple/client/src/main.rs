@@ -55,7 +55,8 @@ async fn main() {
             _ => (),
         }
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // The client tick check rate should be at least slightly faster than the server tick rate.
+        std::thread::sleep(Duration::from_millis(25));
     }
 }
 

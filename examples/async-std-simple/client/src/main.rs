@@ -52,7 +52,8 @@ fn main() {
             _ => (),
         }
 
-        std::thread::sleep(Duration::from_millis(50));
+        // The client tick check rate should be at least slightly faster than the server tick rate.
+        std::thread::sleep(Duration::from_millis(25));
     }
 }
 
