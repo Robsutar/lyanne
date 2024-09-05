@@ -994,12 +994,12 @@ impl Server {
 
     /// Refuses a client connection with justification.
     ///
-    /// If you want to refuse a client, but without any justification, just ignore the `addrs_to_auth`.
+    /// If you want to refuse a client, but without any justification, just ignore the `AddrToAuth`.
     ///
     /// If that addr was already refused, the new message will replace the old message.
     ///
     /// Should only be used with [`AddrToAuth`] that were created after the last server tick,
-    /// if another tick server tick comes up, the [`addr_to_auth`] will not be valid.
+    /// if another tick server tick comes up, the [`AddrToAuth`] will not be valid.
     ///
     /// # Panics
     /// - if addr is already connected.
