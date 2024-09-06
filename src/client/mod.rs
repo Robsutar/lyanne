@@ -168,9 +168,7 @@ pub enum ClientDisconnectState {
 }
 
 /// Messaging fields of [`ConnectedServer`]
-///
-/// Intended to be used with [`Mutex`].
-pub struct ConnectedServerMessaging {
+struct ConnectedServerMessaging {
     inner_auth: InnerAuth,
 
     /// Map of message parts pending confirmation.
