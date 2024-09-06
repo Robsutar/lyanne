@@ -77,28 +77,25 @@ fn use_tick_result(
 
                 server.refuse(
                     addr,
-                    SerializedPacketList::non_empty(vec![server.packet_registry().serialize(
+                    SerializedPacketList::single(server.packet_registry().serialize(
                         &AuthenticationFailedPacket {
                             justification: format!(
                                 "Another {} is already connected",
                                 hello_packet.player_name
                             ),
                         },
-                    )]),
+                    )),
                 )
             } else {
                 server.authenticate(
                     addr,
                     addr_to_auth,
-                    SerializedPacketList::non_empty(vec![server.packet_registry().serialize(
+                    SerializedPacketList::single(server.packet_registry().serialize(
                         &ChatContextPacket {
-                            connected_players: client_registry
-                                .addrs_from_names
-                                .keys()
-                                .cloned()
-                                .collect(),
+                            connected_players:
+                                client_registry.addrs_from_names.keys().cloned().collect(),
                         },
-                    )]),
+                    )),
                 );
                 client_registry
                     .names_from_addrs

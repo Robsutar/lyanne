@@ -12,11 +12,9 @@ fn main() {
     let client_properties = Arc::new(ClientProperties::default());
     let authenticator_mode = AuthenticatorMode::RequireTcp(
         AuthenticationProperties {
-            message: SerializedPacketList::non_empty(vec![packet_registry.serialize(
-                &HelloPacket {
-                    player_name: "Josh".to_owned(),
-                },
-            )]),
+            message: SerializedPacketList::single(packet_registry.serialize(&HelloPacket {
+                player_name: "Josh".to_owned(),
+            })),
             timeout: Duration::from_secs(10),
         },
         lyanne::auth_tcp::AuthTcpClientProperties {

@@ -50,11 +50,11 @@ fn init(mut commands: Commands) {
     let authenticator_mode = AuthenticatorMode::AttemptList(vec![
         AuthenticatorMode::RequireTls(
             AuthenticationProperties {
-                message: SerializedPacketList::non_empty(vec![packet_managers
-                    .packet_registry
-                    .serialize(&AuthenticationPacket {
+                message: SerializedPacketList::single(packet_managers.packet_registry.serialize(
+                    &AuthenticationPacket {
                         player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTls),
-                    })]),
+                    },
+                )),
                 timeout: Duration::from_secs(3),
             },
             AuthTlsClientProperties {
@@ -68,11 +68,11 @@ fn init(mut commands: Commands) {
         ),
         AuthenticatorMode::RequireTcp(
             AuthenticationProperties {
-                message: SerializedPacketList::non_empty(vec![packet_managers
-                    .packet_registry
-                    .serialize(&AuthenticationPacket {
+                message: SerializedPacketList::single(packet_managers.packet_registry.serialize(
+                    &AuthenticationPacket {
                         player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTcp),
-                    })]),
+                    },
+                )),
                 timeout: Duration::from_secs(3),
             },
             AuthTcpClientProperties {
@@ -80,11 +80,11 @@ fn init(mut commands: Commands) {
             },
         ),
         AuthenticatorMode::NoCryptography(AuthenticationProperties {
-            message: SerializedPacketList::non_empty(vec![packet_managers.packet_registry.serialize(
+            message: SerializedPacketList::single(packet_managers.packet_registry.serialize(
                 &AuthenticationPacket {
                     player_name: my_name_of(&ConnectedAuthenticatorMode::NoCryptography),
                 },
-            )]),
+            )),
             timeout: Duration::from_secs(3),
         }),
     ]);
