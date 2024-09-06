@@ -90,9 +90,12 @@ pub struct ConnectResult {
     pub initial_message: DeserializedMessage,
 }
 
+/// Client disconnected.
 #[derive(Debug)]
 pub struct DisconnectedConnectError {
+    /// The reason to be disconnected at the connection.
     pub reason: ServerDisconnectReason,
+    /// Errors since the start of the connection.
     #[cfg(feature = "store_unexpected")]
     pub unexpected_errors: Vec<UnexpectedError>,
 }
@@ -110,7 +113,7 @@ pub enum ConnectError {
     Ignored(DeserializedMessage),
     /// IO error.
     IoError(io::Error),
-    /// Client disconnected.
+    /// Client disconnected, see [`DisconnectedConnectError`]
     Disconnected(DisconnectedConnectError),
     /// All attempts failed, see [`AuthenticatorMode::AttemptList`].
     AllAttemptsFailed(Vec<ConnectError>),
