@@ -71,6 +71,8 @@ pub enum ReadClientBytesResult {
 }
 
 impl ReadClientBytesResult {
+    /// # Returns
+    /// `true` if the result is unexpected.
     pub fn is_unexpected(&self) -> bool {
         match self {
             ReadClientBytesResult::DoneDisconnectConfirm => false,
@@ -113,11 +115,15 @@ pub enum ClientDisconnectReason {
     DisconnectRequest(DeserializedMessage),
 }
 
+/// Properties to disconnect the clients from the server, notifying them.
 pub struct GracefullyDisconnection {
+    /// The client response timeout.
     pub timeout: Duration,
+    /// The message.
     pub message: SerializedPacketList,
 }
 
+/// The disconnection state of an specific client.
 #[derive(Debug)]
 pub enum ServerDisconnectClientState {
     /// The client received the message, and confirmed the server disconnection.
@@ -131,16 +137,19 @@ pub enum ServerDisconnectClientState {
 /// The disconnection state.
 #[derive(Debug)]
 pub enum ServerDisconnectState {
+    /// The result of the message sent to the client warning about the server connection.
+    ///
+    /// See [`GracefullyDisconnection`].
     Confirmations(HashMap<SocketAddr, ServerDisconnectClientState>),
+    /// Server did not notified the clients of the server close.
     WithoutReason,
 }
 
 /// General properties for the server management.
-///
-/// # Warning
-/// The default version does not use cryptography.
 pub struct ServerProperties {
+    /// Maximum number of ignore justifications to be sent per tick.
     pub max_ignored_addrs_asking_reason: usize,
+    /// TODO: field not used in TCP based auth.
     pub pending_auth_packet_loss_interpretation: Duration,
 }
 
@@ -155,6 +164,7 @@ impl Default for ServerProperties {
 
 /// Result when calling [`Server::bind`].
 pub struct BindResult {
+    /// The bind server to handle tne next connections and tick management.
     pub server: Server,
 }
 
@@ -169,10 +179,16 @@ pub enum ServerTickState {
 
 #[cfg(feature = "store_unexpected")]
 #[derive(Debug)]
+/// Errors generated during connection.
 pub enum UnexpectedError {
+    /// While reading bytes from some addr.
+    ///
+    /// See [`ReadClientBytesResult::is_unexpected`]
     OfReadAddrBytes(SocketAddr, ReadClientBytesResult),
+    /// While trying to accept clients from the tcp based authenticators.
     #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
     OfTcpBasedHandlerAccept(SocketAddr, ReadClientBytesResult),
+    /// Io error while trying to accept clients from the tcp based authenticators.
     #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
     OfTcpBasedHandlerAcceptIoError(SocketAddr, io::Error),
 }
@@ -209,16 +225,51 @@ impl StoreUnexpectedErrors {
 
 /// Result when calling [`Server::tick_start`].
 pub struct ServerTickResult {
+    /// Received messages from the clients.
+    ///
+    /// The list (Vec<DeserializedMessage>) will never be empty.
+    /// If some client did not sent a message since the last tick, it will not appear in this map.
     pub received_messages: HashMap<SocketAddr, Vec<DeserializedMessage>>,
+    /// Client to authenticate, and their authentication message.
+    /// # Examples
+    /// ```no_run
+    /// let tick_result: ServerTickResult = server.tick_start();
+    /// for (addr, (addr_to_auth, message)) in tick_result.to_auth {
+    ///     if let Ok(hello_packet) = message
+    ///         .to_packet_list()
+    ///         .remove(0)
+    ///         .packet
+    ///         .downcast::<HelloPacket>()
+    ///     {
+    ///         println!(
+    ///             "Authenticating client {:?}, addr: {:?}",
+    ///             hello_packet.player_name, addr
+    ///         );
+    ///
+    ///         server.authenticate(
+    ///             addr,
+    ///             addr_to_auth,
+    ///             server.packet_registry().empty_serialized_list(),
+    ///         );
+    ///     } else {
+    ///         // Discards the authentication, the client will not know explicitly the refuse.
+    ///         // If is desired to send a justification to the client, see [`Server::refuse`]
+    ///         println!(
+    ///             "Client {:?} did not sent a `HelloPacket`, it will not be authenticated",
+    ///             addr
+    ///         );
+    ///     }
+    /// }
+    /// ```
     pub to_auth: HashMap<SocketAddr, (AddrToAuth, DeserializedMessage)>,
+    /// Disconnected clients since the last tick, and the reason.
     pub disconnected: HashMap<SocketAddr, ClientDisconnectReason>,
+    /// Errors emitted since the last server tick.
     #[cfg(feature = "store_unexpected")]
     pub unexpected_errors: Vec<UnexpectedError>,
 }
 
 /// Messaging fields of [`ConnectedClient`].
-///
-/// Intended to be used with [`Mutex`].
 struct ConnectedClientMessaging {
     inner_auth: InnerAuth,
 
@@ -466,6 +517,7 @@ pub struct Server {
 }
 
 impl Server {
+    /// Bind a [`UdpSocket´], to create a new Server instance.
     ///
     /// Additional sockets may be used depending on the authentication mode.
     pub fn bind(
@@ -1174,6 +1226,25 @@ impl Server {
             .unwrap();
     }
 
+    /// Disconnect the server from the clients gracefully if there is some message.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// let server: Server = ...;
+    ///
+    /// let message = SerializedPacketList::single(
+    ///     server.packet_registry().serialize(&FooPacket {
+    ///         message: "We finished here...".to_owned(),
+    ///     }),
+    /// );
+    /// let state = server
+    ///     .disconnect(Some(GracefullyDisconnection {
+    ///         message,
+    ///         timeout: Duration::from_secs(3),
+    ///     }))
+    ///     .await;
+    /// println!("Server disconnected itself: {:?}", state);
+    /// ```
     pub fn disconnect(
         self,
         disconnection: Option<GracefullyDisconnection>,
