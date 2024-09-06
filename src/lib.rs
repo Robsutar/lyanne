@@ -37,7 +37,7 @@ pub mod auth_tcp;
 #[cfg(feature = "auth_tls")]
 pub mod auth_tls;
 
-pub mod auth;
+pub(crate) mod auth;
 
 pub struct MessagingProperties {
     pub part_limit: usize,
