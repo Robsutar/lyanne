@@ -33,7 +33,7 @@ members = [
 
 [package]
 name = "lyanne"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 
 [features]
