@@ -92,7 +92,7 @@ pub struct AuthTlsServerProperties {
 
 #[cfg(feature = "server")]
 impl AuthTlsServerProperties {
-    pub fn new_server_config(&self) -> io::Result<ServerConfig> {
+    pub(crate) fn new_server_config(&self) -> io::Result<ServerConfig> {
         let config = ServerConfig::builder().with_no_client_auth();
         let config = self.server_cert.apply(config)?;
 
