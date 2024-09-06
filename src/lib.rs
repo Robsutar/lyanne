@@ -74,7 +74,6 @@ impl MessageChannel {
     pub const MESSAGE_PART_CONFIRM: MessageChannelType = 0;
     pub const MESSAGE_PART_SEND: MessageChannelType = 1;
     pub const REJECTION_CONFIRM: MessageChannelType = 2;
-    //TODO: AUTH_MESSAGE has no cryptography, probably some dtls implementation is needed here
     pub const AUTH_MESSAGE: MessageChannelType = 3;
     pub const PUBLIC_KEY_SEND: MessageChannelType = 4;
     pub const REJECTION_JUSTIFICATION: MessageChannelType = 5;
