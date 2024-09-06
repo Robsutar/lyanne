@@ -39,12 +39,15 @@ mod init;
 pub enum ReadServerBytesResult {
     /// Bytes were successfully received from the server.
     ServerReceivedBytes,
-
     /// The server has exceeded the maximum tick byte length.
+    ///
+    /// See [`MessagingProperties::max_tick_bytes_len`].
     ServerMaxTickByteLenOverflow,
 }
 
 impl ReadServerBytesResult {
+    /// # Returns
+    /// `true` if the result is unexpected.
     pub fn is_unexpected(&self) -> bool {
         match self {
             ReadServerBytesResult::ServerReceivedBytes => false,
@@ -74,6 +77,7 @@ pub enum ServerDisconnectReason {
 
 /// General properties for the client management.
 pub struct ClientProperties {
+    /// Time to interpret that the server may not have received the packet because of packet loss.
     pub auth_packet_loss_interpretation: Duration,
 }
 
@@ -96,7 +100,11 @@ enum ClientTickState {
 
 #[cfg(feature = "store_unexpected")]
 #[derive(Debug)]
+/// Errors generated during connection.
 pub enum UnexpectedError {
+    /// While reading bytes from the server.
+    ///
+    /// See [`ReadServerBytesResult::is_unexpected`]
     OfReadServerBytes(ReadServerBytesResult),
 }
 
@@ -130,9 +138,12 @@ impl StoreUnexpectedErrors {
     }
 }
 
+/// Message received from the server what represents a server tick.
 #[derive(Debug)]
 pub struct ReceivedMessageClientTickResult {
+    /// The message.
     pub message: DeserializedMessage,
+    /// Errors emitted since the last server message/tick.
     #[cfg(feature = "store_unexpected")]
     pub unexpected_errors: Vec<UnexpectedError>,
 }
@@ -140,18 +151,24 @@ pub struct ReceivedMessageClientTickResult {
 /// Result when calling [`Client::tick_start`]
 #[derive(Debug)]
 pub enum ClientTickResult {
+    /// Message received from the server, see [`ReceivedMessageClientTickResult`].
     ReceivedMessage(ReceivedMessageClientTickResult),
+    /// Message is pending from the server.
     PendingMessage,
     /// The client was disconnected from the server.
     ///
     /// After this is returned by the tick, is possible to use [`Client::get_disconnect_reason`]
     Disconnected,
+    /// The write lock could not be acquired.
     WriteLocked,
 }
 
+/// Properties to disconnect the client from the server, notifying the server.
 pub struct GracefullyDisconnection {
-    pub timeout: Duration,
+    /// The message.
     pub message: SerializedPacketList,
+    /// The server response timeout.
+    pub timeout: Duration,
 }
 
 /// The disconnection state.
@@ -459,6 +476,7 @@ impl Client {
         &self.internal.connected_server
     }
 
+    /// Authentication mode of the client and server.
     pub fn auth_mode(&self) -> &ConnectedAuthenticatorMode {
         &self.internal.authentication_mode
     }
@@ -616,14 +634,18 @@ impl Client {
     /// ```no_run
     /// let client: Client = ...;
     ///
-    /// let message = Some(SerializedPacketList::create(vec![client
-    ///     .packet_registry()
-    ///     .serialize(&BarPacket {
+    /// let message = SerializedPacketList::single(
+    ///     client.packet_registry().serialize(&BarPacket {
     ///         message: "We finished here...".to_owned(),
-    ///     })]));
-    ///
-    /// let result = client.disconnect(message).await.unwrap();
-    /// println!("Client disconnected itself: {:?}", result.state);
+    ///     }),
+    /// );
+    /// let state = client
+    ///     .disconnect(Some(GracefullyDisconnection {
+    ///         message,
+    ///         timeout: Duration::from_secs(3),
+    ///     }))
+    ///     .await;
+    /// println!("Client disconnected itself: {:?}", state);
     /// ```
     pub fn disconnect(
         self,
