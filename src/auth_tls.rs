@@ -141,7 +141,7 @@ pub struct AuthTlsClientProperties {
 
 #[cfg(feature = "client")]
 impl AuthTlsClientProperties {
-    pub fn new_client_config(&self) -> ClientConfig {
+    pub(crate) fn new_client_config(&self) -> ClientConfig {
         let config = rustls::ClientConfig::builder();
         let config = self.root_cert_store.apply(config).with_no_client_auth();
 
