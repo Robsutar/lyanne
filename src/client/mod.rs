@@ -336,7 +336,7 @@ impl ClientInternal {
         let mut messaging = self.connected_server.messaging.lock().await;
         // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
         messaging.tick_bytes_len += bytes.len() + 8 + 20;
-        if messaging.tick_bytes_len > self.messaging_properties.max_client_tick_bytes_len {
+        if messaging.tick_bytes_len > self.messaging_properties.max_tick_bytes_len {
             ReadServerBytesResult::ServerMaxTickByteLenOverflow
         } else {
             let _ = self.connected_server.receiving_bytes_sender.try_send(bytes);

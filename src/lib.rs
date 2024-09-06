@@ -47,8 +47,7 @@ pub struct MessagingProperties {
     pub initial_next_message_part_id: MessagePartId,
     pub initial_latency: Duration,
     pub packet_loss_rtt_properties: RttProperties,
-    // TODO: rename that field, it is also used by the client.
-    pub max_client_tick_bytes_len: usize,
+    pub max_tick_bytes_len: usize,
 }
 
 impl Default for MessagingProperties {
@@ -62,7 +61,7 @@ impl Default for MessagingProperties {
             initial_next_message_part_id: 1,
             initial_latency: Duration::from_millis(50),
             packet_loss_rtt_properties: RttProperties::new(0.125, 0.25),
-            max_client_tick_bytes_len: usize::MAX,
+            max_tick_bytes_len: usize::MAX,
         }
     }
 }
