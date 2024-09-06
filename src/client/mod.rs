@@ -367,6 +367,8 @@ pub struct Client {
 
 impl Client {
     /// Connect to a server via a [`UdpSocket`], creating a new Client instance.
+    ///
+    /// Additional sockets may be used depending on the authentication mode.
     pub fn connect(
         remote_addr: SocketAddr,
         packet_registry: Arc<PacketRegistry>,

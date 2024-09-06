@@ -466,7 +466,8 @@ pub struct Server {
 }
 
 impl Server {
-    /// Bind a [`UdpSocket´], to create a new Server instance
+    ///
+    /// Additional sockets may be used depending on the authentication mode.
     pub fn bind(
         addr: SocketAddr,
         packet_registry: Arc<PacketRegistry>,
