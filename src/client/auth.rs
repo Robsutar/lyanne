@@ -36,20 +36,44 @@ use crate::auth_tls::rustls;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use crate::rt::{AsyncReadExt, AsyncWriteExt, TcpStream};
 
+/// Proprieties for handling the client authentication/handshake with the server.
 pub struct AuthenticationProperties {
+    /// The authentication message.
     pub message: SerializedPacketList,
+    /// The timeout to wait for a server response.
     pub timeout: Duration,
 }
 
+/// Modes for exchanging keys between client and server.
+///
+/// This enum represents the different methods by which keys (e.g., Diffie-Hellman)
+/// are exchanged for securing communication. Although communication is primarily
+/// done using UDP, if a TCP or TLS authenticator is used, the Diffie-Hellman keys
+/// are exchanged accordingly. These keys are then used for encrypting data throughout
+/// the UDP connection.
 pub enum AuthenticatorMode {
+    /// No cryptographic exchange, using only the provided authentication properties.
     NoCryptography(AuthenticationProperties),
+    /// Requires TCP-based key exchange for authentication.
+    /// # Warning
+    /// This authenticator alone is not responsible for encrypting the entire connection,
+    /// the key exchange will be exposed if this TCP layer does not have a layer on top
+    /// ensuring encryption, such as a reverse proxy.
     #[cfg(feature = "auth_tcp")]
     RequireTcp(AuthenticationProperties, AuthTcpClientProperties),
+    /// Requires TLS-based key exchange for authentication.
+    /// # Warning
+    /// This authenticator uses `rustls` to cryptograph the key exchange between server and client.
+    /// Ensure that the certificates provided in AuthTlsClientProperties are valid.
     #[cfg(feature = "auth_tls")]
     RequireTls(AuthenticationProperties, AuthTlsClientProperties),
+    /// Attempts a list of authenticator modes in sequence until one succeeds.
     AttemptList(Vec<AuthenticatorMode>),
 }
 
+/// Connection mode between server and client.
+///
+/// See [`AuthenticatorMode`].
 pub enum ConnectedAuthenticatorMode {
     NoCryptography,
     #[cfg(feature = "auth_tcp")]
@@ -58,9 +82,11 @@ pub enum ConnectedAuthenticatorMode {
     RequireTls,
 }
 
-/// Result when calling [`Client::connect`]
+/// Result when calling [`Client::connect`].
 pub struct ConnectResult {
+    /// Client used to manage the connection going forward.
     pub client: Client,
+    /// Initial message sent by the server when accepting the connection of the client.
     pub initial_message: DeserializedMessage,
 }
 
@@ -71,14 +97,22 @@ pub struct DisconnectedConnectError {
     pub unexpected_errors: Vec<UnexpectedError>,
 }
 
+/// Possible reasons why a connection was unsuccessful with [`Client::connect`].
 #[derive(Debug)]
 pub enum ConnectError {
+    /// Server took a long time to respond.
     Timeout,
+    /// Server did not communicate correctly.
     InvalidProtocolCommunication,
+    /// Invalid dns name.
     InvalidDnsName,
+    /// Client addr is ignored by the server.
     Ignored(DeserializedMessage),
+    /// IO error.
     IoError(io::Error),
+    /// Client disconnected.
     Disconnected(DisconnectedConnectError),
+    /// All attempts failed, see [`AuthenticatorMode::AttemptList`].
     AllAttemptsFailed(Vec<ConnectError>),
 }
 
@@ -96,7 +130,7 @@ impl fmt::Display for ConnectError {
                 message.as_packet_list().len()
             ),
             ConnectError::IoError(ref err) => write!(f, "IO error: {}", err),
-            ConnectError::Disconnected(reason) => write!(f, "Disconnected: {:?}", reason),
+            ConnectError::Disconnected(reason) => write!(f, "Client disconnected: {:?}", reason),
             Self::AllAttemptsFailed(errors) => write!(f, "All attempts failed: {:?}", errors),
         }
     }
@@ -170,6 +204,7 @@ pub(super) mod connecting {
                 return Err(ConnectError::Timeout);
             }
 
+            println!("sending {:?}", public_key_sent);
             socket.send(&public_key_sent).await?;
             match crate::rt::timeout(props.timeout, socket.recv(buf)).await {
                 Ok(len) => {
@@ -484,38 +519,15 @@ pub(super) mod connecting {
         }
 
         let sent_time = Instant::now();
+        let mut last_sent_time = sent_time;
+        let packet_loss_timeout = client_properties
+            .auth_packet_loss_interpretation
+            .min(messaging_properties.timeout_interpretation);
 
         loop {
-            let now = Instant::now();
-            if now - sent_time > messaging_properties.timeout_interpretation {
-                return Err(ConnectError::Timeout);
-            }
-
-            socket.send(&authentication_bytes).await?;
-
-            let packet_loss_timeout = client_properties
-                .auth_packet_loss_interpretation
-                .min(messaging_properties.timeout_interpretation);
-            let pre_read_next_bytes_result =
-                ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;
-
-            match pre_read_next_bytes_result {
-                Ok(result) => {
-                    let _read_result = internal.read_next_bytes(result).await;
-
-                    #[cfg(feature = "store_unexpected")]
-                    if _read_result.is_unexpected() {
-                        let _ = internal
-                            .store_unexpected_errors
-                            .error_sender
-                            .send(UnexpectedError::OfReadServerBytes(_read_result))
-                            .await;
-                    }
-                }
-                Err(_) => {}
-            }
-
-            match client.tick_start() {
+            let a = client.tick_start();
+            println!("a: {:?}", a);
+            match a {
                 ClientTickResult::ReceivedMessage(tick_result) => {
                     internal.try_check_read_handler();
                     client.tick_after_message();
@@ -536,6 +548,41 @@ pub(super) mod connecting {
                     }));
                 }
                 ClientTickResult::WriteLocked => (),
+            }
+
+            let now = Instant::now();
+            if now - sent_time > messaging_properties.timeout_interpretation {
+                return Err(ConnectError::Timeout);
+            }
+
+            if last_sent_time == sent_time || now - last_sent_time > packet_loss_timeout {
+                last_sent_time = now;
+
+                println!("send auti {:?}", authentication_bytes);
+                socket.send(&authentication_bytes).await?;
+
+                let pre_read_next_bytes_result =
+                    ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;
+
+                match pre_read_next_bytes_result {
+                    Ok(result) => {
+                        let _read_result = internal.read_next_bytes(result).await;
+
+                        println!("reas result {:?}", _read_result);
+
+                        #[cfg(feature = "store_unexpected")]
+                        if _read_result.is_unexpected() {
+                            let _ = internal
+                                .store_unexpected_errors
+                                .error_sender
+                                .send(UnexpectedError::OfReadServerBytes(_read_result))
+                                .await;
+                        }
+                    }
+                    Err(e) => {
+                        println!("sending auti error {}", e);
+                    }
+                }
             }
         }
     }
