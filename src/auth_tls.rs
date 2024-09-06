@@ -18,12 +18,16 @@ use rustls::{client::WantsClientCert, ClientConfig, RootCertStore, WantsVerifier
 #[cfg(feature = "server")]
 use rustls::{server::ResolvesServerCert, server::WantsServerCert, ServerConfig};
 
+/// Wrapper to store the certificate chain and key.
 pub struct CertKey {
+    /// Certificates.
     pub cert_chain: Vec<CertificateDer<'static>>,
+    /// Key.
     pub key: PrivateKeyDer<'static>,
 }
 
 impl CertKey {
+    /// Loads certificates and key from buf.
     pub fn from_buf(cert: &mut dyn io::BufRead, key: &mut dyn io::BufRead) -> io::Result<Self> {
         let certs = certs_collected(cert)?;
         if let Some(key) = rustls_pemfile::private_key(key)? {
@@ -35,6 +39,15 @@ impl CertKey {
             Err(io::Error::new(io::ErrorKind::NotFound, "Key not found."))
         }
     }
+
+    /// Loads certificates and key from files.
+    /// # Examples
+    /// ```no_run
+    /// let cert_key = CertKey::from_file(
+    ///     "certificates/server_cert.pem",
+    ///     "certificates/server_key.pem",
+    /// );
+    /// ```
     pub fn from_file<P: AsRef<std::path::Path>>(cert: P, key: P) -> io::Result<Self> {
         CertKey::from_buf(
             &mut io::BufReader::new(&mut std::fs::File::open(cert)?),
@@ -56,6 +69,7 @@ fn certs_collected(cert: &mut dyn io::BufRead) -> io::Result<Vec<CertificateDer<
     Ok(certs)
 }
 
+/// Certificates providers options.
 #[cfg(feature = "server")]
 pub enum ServerCertProvider {
     SingleCert(CertKey),
@@ -83,10 +97,14 @@ impl ServerCertProvider {
     }
 }
 
+/// Properties to bind a server with Tls authenticator.
 #[cfg(feature = "server")]
 pub struct AuthTlsServerProperties {
+    /// Dns name of the server.
     pub server_name: &'static str,
+    /// Addr to bind the Tcp socket.
     pub server_addr: SocketAddr,
+    /// Certificate provider.
     pub server_cert: ServerCertProvider,
 }
 
@@ -100,6 +118,7 @@ impl AuthTlsServerProperties {
     }
 }
 
+/// Root certificate provider.
 #[cfg(feature = "client")]
 pub struct RootCertStoreProvider {
     pub roots: Arc<RootCertStore>,
@@ -107,6 +126,7 @@ pub struct RootCertStoreProvider {
 
 #[cfg(feature = "client")]
 impl RootCertStoreProvider {
+    /// Loads certificates from buf.
     pub fn from_buf(cert: &mut dyn io::BufRead) -> io::Result<Self> {
         let certs = certs_collected(cert)?;
         let mut roots = RootCertStore::empty();
@@ -120,6 +140,14 @@ impl RootCertStoreProvider {
             roots: Arc::new(roots),
         })
     }
+
+    /// Loads certificates from files.
+    /// # Examples
+    /// ```no_run
+    /// let root_cert_store = RootCertStoreProvider::from_file(
+    ///     "certificates/ca_cert.pem",
+    /// );
+    /// ```
     pub fn from_file<P: AsRef<std::path::Path>>(cert: P) -> io::Result<Self> {
         RootCertStoreProvider::from_buf(&mut io::BufReader::new(&mut std::fs::File::open(cert)?))
     }
@@ -132,10 +160,14 @@ impl RootCertStoreProvider {
     }
 }
 
+/// Properties to connect a client with Tls authenticator.
 #[cfg(feature = "client")]
 pub struct AuthTlsClientProperties {
+    /// Dns name of the server.
     pub server_name: &'static str,
+    /// Addr to the server Tcp socket.
     pub server_addr: SocketAddr,
+    /// Certificate root store.
     pub root_cert_store: RootCertStoreProvider,
 }
 
