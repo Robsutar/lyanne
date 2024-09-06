@@ -810,10 +810,27 @@ pub(super) enum AuthenticatorModeInternal {
     RequireTls(Arc<RequireTlsAuth>),
 }
 
+/// Modes for exchanging keys between client and server.
+///
+/// This enum represents the different methods by which keys (e.g., Diffie-Hellman)
+/// are exchanged for securing communication. Although communication is primarily
+/// done using UDP, if a TCP or TLS authenticator is used, the Diffie-Hellman keys
+/// are exchanged accordingly. These keys are then used for encrypting data throughout
+/// the UDP connection.
 pub enum AuthenticatorMode {
+    /// No cryptographic exchange, using only the provided authentication properties.
     NoCryptography,
+    /// Requires TCP-based key exchange for authentication.
+    /// # Warning
+    /// This authenticator alone is not responsible for encrypting the entire connection,
+    /// the key exchange will be exposed if this TCP layer does not have a layer on top
+    /// ensuring encryption, such as a reverse proxy.
     #[cfg(feature = "auth_tcp")]
     RequireTcp(AuthTcpServerProperties),
+    /// Requires TLS-based key exchange for authentication.
+    /// # Warning
+    /// This authenticator uses `rustls` to cryptograph the key exchange between server and client.
+    /// Ensure that the certificates provided in AuthTlsServerProperties are valid.
     #[cfg(feature = "auth_tls")]
     RequireTls(AuthTlsServerProperties),
 }
