@@ -35,6 +35,19 @@ members = [
 name = "lyanne"
 version = "0.2.6"
 edition = "2021"
+authors = ["Robsutar"]
+description = "Tick-based communication framework for server-client architectures."
+keywords = [
+    "networking",
+    "low-latency",
+    "tick-based",
+    "udp",
+    "tcp",
+    "tls",
+    "cryptography",
+]
+categories = ["network-programming", "game-development"]
+readme = "README.md"
 
 [features]
 default = []
