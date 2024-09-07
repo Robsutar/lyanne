@@ -59,12 +59,11 @@ fn use_tick_result(
     client_registry: &mut ClientRegistry,
 ) {
     for (addr, (addr_to_auth, message)) in tick_result.to_auth {
-        if let Ok(hello_packet) = message
-            .to_packet_list()
-            .remove(0)
-            .packet
-            .downcast::<HelloPacket>()
+        if let Some(mut list) = message
+            .to_packet_map()
+            .collect_list::<HelloPacket>(&server.packet_registry())
         {
+            let hello_packet = list.remove(0);
             if client_registry
                 .addrs_from_names
                 .contains_key(&hello_packet.player_name)
@@ -121,12 +120,12 @@ fn use_tick_result(
         let player_name = client_registry.names_from_addrs.remove(&addr).unwrap();
         let message = match reason {
             ClientDisconnectReason::DisconnectRequest(message) => {
-                if let Ok(message_packet) = message
-                    .to_packet_list()
-                    .remove(0)
-                    .packet
-                    .downcast::<LeavePacket>()
+                if let Some(mut list) = message
+                    .to_packet_map()
+                    .collect_list::<LeavePacket>(&server.packet_registry())
                 {
+                    let message_packet = list.remove(0);
+
                     format!(
                         "{} left the chat, message: {:?}",
                         player_name, message_packet.message
@@ -143,9 +142,11 @@ fn use_tick_result(
     for (addr, messages) in tick_result.received_messages {
         let name = client_registry.names_from_addrs.get(&addr).unwrap();
         for message in messages {
-            let packet_list = message.to_packet_list();
-            for deserialized_packet in packet_list {
-                if let Ok(message_packet) = deserialized_packet.packet.downcast::<MessagePacket>() {
+            if let Some(list) = message
+                .to_packet_map()
+                .collect_list::<MessagePacket>(&server.packet_registry())
+            {
+                for message_packet in list {
                     broadcast(&server, format!("{}: {}", name, message_packet.message))
                 }
             }

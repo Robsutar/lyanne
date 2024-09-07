@@ -10,5 +10,6 @@ lyanne = { path = "../../../", features = [
     "sd_bincode",
     "client",
     "store_unexpected",
+    "deserialized_message_map",
 ] }
 tokio = { version = "^1.0.0", features = ["full"] }

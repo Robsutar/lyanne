@@ -49,13 +49,12 @@ async fn main() {
 
     println!("Client connected to {:?}", remote_addr);
 
-    if let Ok(chat_context) = connect_result
+    if let Some(mut list) = connect_result
         .initial_message
-        .to_packet_list()
-        .remove(0)
-        .packet
-        .downcast::<ChatContextPacket>()
+        .to_packet_map()
+        .collect_list::<ChatContextPacket>(&client.packet_registry())
     {
+        let chat_context = list.remove(0);
         println!("Connected players: {:?}", chat_context.connected_players);
     } else {
         println!("Server did not sent a chat context in the initial message, finishing program");
@@ -94,10 +93,13 @@ async fn main() {
     }
 }
 
-fn use_tick_result(_client: &Client, tick_result: ReceivedMessageClientTickResult) {
-    let message = tick_result.message.to_packet_list();
-    for deserialized_packet in message {
-        if let Ok(message_packet) = deserialized_packet.packet.downcast::<ChatLinePacket>() {
+fn use_tick_result(client: &Client, tick_result: ReceivedMessageClientTickResult) {
+    if let Some(list) = tick_result
+        .message
+        .to_packet_map()
+        .collect_list::<ChatLinePacket>(&client.packet_registry())
+    {
+        for message_packet in list {
             println!("● {}", message_packet.line);
         }
     }
