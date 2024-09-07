@@ -83,7 +83,6 @@ auth_tls = [
 
 bevy_packet_schedules = ["lyanne-derive/bevy_packet_schedules", "dep:bevy_ecs"]
 deserialized_message_map = []
-troubles_simulator = []
 store_unexpected = []
 
 [dependencies]

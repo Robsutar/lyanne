@@ -28,9 +28,6 @@ pub mod client;
 #[cfg(feature = "server")]
 pub mod server;
 
-#[cfg(feature = "troubles_simulator")]
-pub mod troubles_simulator;
-
 #[cfg(feature = "auth_tcp")]
 pub mod auth_tcp;
 
