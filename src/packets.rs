@@ -41,12 +41,12 @@ macro_rules! packet_body {
         }
 
         #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-        type ClientSchedule: lyanne::bevy::bevy_ecs::schedule::ScheduleLabel;
+        type ClientSchedule: lyanne::bevy_ecs::schedule::ScheduleLabel;
         #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
         fn client_schedule() -> Self::ClientSchedule;
 
         #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-        type ServerSchedule: lyanne::bevy::bevy_ecs::schedule::ScheduleLabel;
+        type ServerSchedule: lyanne::bevy_ecs::schedule::ScheduleLabel;
         #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
         fn server_schedule() -> Self::ServerSchedule;
     };
@@ -78,13 +78,13 @@ cfg_sd_none! {
 }
 
 #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-#[derive(lyanne::bevy::bevy_ecs::system::Resource)]
+#[derive(lyanne::bevy_ecs::system::Resource)]
 pub struct ClientPacketResource<P: Packet> {
     pub packet: Option<P>,
 }
 
 #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-#[derive(lyanne::bevy::bevy_ecs::system::Resource)]
+#[derive(lyanne::bevy_ecs::system::Resource)]
 pub struct ServerPacketResource<P: Packet> {
     pub packet: Option<P>,
 }
@@ -419,24 +419,24 @@ cfg_sd_none! {
         #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
         fn run_client_schedule(
             world: &mut World,
-        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
             world.try_run_schedule(ClientTickEndPacketClientSchedule)
         }
 
         #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
         fn run_server_schedule(
             world: &mut World,
-        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
             world.try_run_schedule(ClientTickEndPacketServerSchedule)
         }
     }
     #[allow(dead_code)]
     #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct ClientTickEndPacketClientSchedule;
     #[allow(dead_code)]
     #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct ClientTickEndPacketServerSchedule;
 
     #[allow(dead_code)]
@@ -462,24 +462,24 @@ cfg_sd_none! {
         #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
         fn run_client_schedule(
             world: &mut World,
-        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
             world.try_run_schedule(ServerTickEndPacketClientSchedule)
         }
 
         #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
         fn run_server_schedule(
             world: &mut World,
-        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
             world.try_run_schedule(ServerTickEndPacketServerSchedule)
         }
     }
     #[allow(dead_code)]
     #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct ServerTickEndPacketClientSchedule;
     #[allow(dead_code)]
     #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct ServerTickEndPacketServerSchedule;
 
     #[allow(dead_code)]
@@ -505,24 +505,24 @@ cfg_sd_none! {
         #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
         fn run_client_schedule(
             world: &mut World,
-        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
             world.try_run_schedule(EmptyPacketClientSchedule)
         }
 
         #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
         fn run_server_schedule(
             world: &mut World,
-        ) -> Result<(), lyanne::bevy::bevy_ecs::world::error::TryRunScheduleError> {
+        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
             world.try_run_schedule(EmptyPacketServerSchedule)
         }
     }
     #[allow(dead_code)]
     #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct EmptyPacketClientSchedule;
     #[allow(dead_code)]
     #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-    #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
     struct EmptyPacketServerSchedule;
 
     #[allow(dead_code)]

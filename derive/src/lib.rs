@@ -22,7 +22,7 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
             }
         });
         external.push(quote::quote! {
-            #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+            #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
             pub struct #client_schedule_ident;
         });
     }
@@ -38,7 +38,7 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
             }
         });
         external.push(quote::quote! {
-            #[derive(lyanne::bevy::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+            #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
             pub struct #server_schedule_ident;
         });
     }

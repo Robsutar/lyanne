@@ -1,5 +1,5 @@
 #[cfg(feature = "bevy_packet_schedules")]
-pub mod bevy;
+pub use bevy_ecs;
 
 use std::{
     sync::{Arc, RwLock},
