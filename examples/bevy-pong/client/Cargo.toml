@@ -13,7 +13,6 @@ lyanne = { path = "../../../", features = [
     "bevy_packet_schedules",
     "rt_bevy",
     "sd_bincode",
-    "troubles_simulator",
     "store_unexpected",
     "auth_tls",
     "auth_tcp",
