@@ -69,6 +69,8 @@ impl Default for MessagingProperties {
 pub(crate) type MessageChannelType = u8;
 pub(crate) struct MessageChannel;
 
+pub(crate) const MESSAGE_CHANNEL_SIZE: usize = 1;
+
 #[allow(dead_code)]
 impl MessageChannel {
     pub const MESSAGE_PART_CONFIRM: MessageChannelType = 0;
@@ -79,8 +81,6 @@ impl MessageChannel {
     pub const REJECTION_JUSTIFICATION: MessageChannelType = 5;
     pub const IGNORED_REASON: MessageChannelType = 6;
 }
-
-pub const MESSAGE_CHANNEL_SIZE: usize = 1;
 
 #[allow(dead_code)]
 pub(crate) struct SentMessagePart {
