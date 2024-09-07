@@ -1,3 +1,76 @@
+//! Connecting a client:
+//!
+//! ```rust,no_run
+//! use lyanne::{client::*, packets::*, *};
+//! use std::{net::SocketAddr, sync::Arc, time::Duration};
+//! use crate::packets::HelloPacket;
+//!
+//! fn main() {
+//!     let mut packet_registry = PacketRegistry::with_essential();
+//!     packet_registry.add::<HelloPacket>();
+//!
+//!     let remote_addr: SocketAddr = "127.0.0.1:8822".parse().unwrap();
+//!     let messaging_properties = Arc::new(MessagingProperties::default());
+//!     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
+//!     let client_properties = Arc::new(ClientProperties::default());
+//!     let authenticator_mode = AuthenticatorMode::NoCryptography(AuthenticationProperties {
+//!         message: SerializedPacketList::create(vec![packet_registry.serialize(
+//!             &HelloPacket {
+//!                 player_name: "Josh".to_owned(),
+//!             },
+//!         )]),
+//!         timeout: Duration::from_secs(10),
+//!     });
+//!
+//!     let connect_handle = Client::connect(
+//!         remote_addr,
+//!         Arc::new(packet_registry),
+//!         messaging_properties,
+//!         read_handler_properties,
+//!         client_properties,
+//!         authenticator_mode,
+//!     );
+//! }
+//! ```
+//! Sending packet to server:
+//!
+//! ```rust,no_run
+//! use lyanne::{client::*};
+//! use crate::packets::MessagePacket;
+//!
+//! fn inside_tick(client: &Client) {
+//!     let packet = MessagePacket {
+//!         message: "Bar?".to_owned(),
+//!     };
+//!
+//!     client.send_packet(&packet);
+//! }
+//! ```
+//!
+//! Client tick management:
+//!
+//! ```rust,no_run
+//! use lyanne::client::*;
+//! use crate::{use_tick_result,inside_tick};
+//!
+//! fn tick_check(server: &Server) {
+//!     match client.tick_start() {
+//!         ClientTickResult::ReceivedMessage(tick_result) => {
+//!             use_tick_result(&client, tick_result);
+//!             inside_tick();
+//!             client.tick_after_message();
+//!         }
+//!         ClientTickResult::Disconnected => {
+//!             println!(
+//!                 "Client disconnected, reason: {:?}",
+//!                 client.take_disconnect_reason().unwrap()
+//!             );
+//!         }
+//!         _ => (),
+//!     }
+//! }
+//! ```
+
 use std::{
     collections::BTreeMap,
     future::Future,

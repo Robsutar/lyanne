@@ -1,3 +1,89 @@
+//! Binding a server:
+//!
+//! ```rust,no_run
+//! use lyanne::{packets::*, server::*, *};
+//! use std::{net::SocketAddr, sync::Arc};
+//! use crate::packets::HelloPacket;
+//!
+//! fn main() {
+//!     let mut packet_registry = PacketRegistry::with_essential();
+//!     packet_registry.add::<HelloPacket>();
+//!
+//!     let addr: SocketAddr = "127.0.0.1:8822".parse().unwrap();
+//!     let messaging_properties = Arc::new(MessagingProperties::default());
+//!     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
+//!     let server_properties = Arc::new(ServerProperties::default());
+//!     let authenticator_mode = AuthenticatorMode::NoCryptography;
+//!
+//!     let bind_handle = Server::bind(
+//!         addr,
+//!         Arc::new(packet_registry),
+//!         messaging_properties,
+//!         read_handler_properties,
+//!         server_properties,
+//!         authenticator_mode,
+//!     );
+//! }
+//! ```
+//!
+//! Sending packet to clients:
+//!
+//! ```rust,no_run
+//! use lyanne::{server::*};
+//! use crate::packets::MessagePacket;
+//!
+//! fn inside_tick(server: &Server) {
+//!     let packet = MessagePacket {
+//!         message: "Foo!".to_owned(),
+//!     };
+//!
+//!     for client in server.connected_clients_iter() {
+//!         server.send_packet(&client, &packet);
+//!     }
+//! }
+//! ```
+//!
+//! Authenticating clients:
+//!
+//! ```rust,no_run
+//! use lyanne::{server::*};
+//! use crate::packets::HelloPacket;
+//!
+//! fn use_tick_result(server: &Server, tick_result: ServerTickResult) {
+//!     for (addr, (addr_to_auth, message)) in tick_result.to_auth {
+//!         if let Ok(hello_packet) = message
+//!             .to_packet_list()
+//!             .remove(0)
+//!             .packet
+//!             .downcast::<HelloPacket>()
+//!         {
+//!             println!(
+//!                 "Authenticating client {:?}, addr: {:?}",
+//!                 hello_packet.player_name, addr
+//!             );
+//!
+//!             server.authenticate(addr, addr_to_auth);
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! Server tick management:
+//!
+//! ```rust,no_run
+//! use lyanne::server::*;
+//! use crate::{use_tick_result,inside_tick};
+//!
+//! fn complete_tick(server: &Server) {
+//!     let tick_result = server.tick_start();
+//!
+//!     use_tick_result(&server, tick_result);
+//!     inside_tick();
+//!
+//!     server.tick_end();
+//! }
+//! ```
+
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     future::Future,
