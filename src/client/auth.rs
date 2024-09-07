@@ -207,7 +207,6 @@ pub(super) mod connecting {
                 return Err(ConnectError::Timeout);
             }
 
-            println!("sending {:?}", public_key_sent);
             socket.send(&public_key_sent).await?;
             match crate::rt::timeout(props.timeout, socket.recv(buf)).await {
                 Ok(len) => {
@@ -522,15 +521,38 @@ pub(super) mod connecting {
         }
 
         let sent_time = Instant::now();
-        let mut last_sent_time = sent_time;
         let packet_loss_timeout = client_properties
             .auth_packet_loss_interpretation
             .min(messaging_properties.timeout_interpretation);
 
         loop {
-            let a = client.tick_start();
-            println!("a: {:?}", a);
-            match a {
+            let now = Instant::now();
+            if now - sent_time > messaging_properties.timeout_interpretation {
+                return Err(ConnectError::Timeout);
+            }
+
+            socket.send(&authentication_bytes).await?;
+
+            let pre_read_next_bytes_result =
+                ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;
+
+            match pre_read_next_bytes_result {
+                Ok(result) => {
+                    let _read_result = internal.read_next_bytes(result).await;
+
+                    #[cfg(feature = "store_unexpected")]
+                    if _read_result.is_unexpected() {
+                        let _ = internal
+                            .store_unexpected_errors
+                            .error_sender
+                            .send(UnexpectedError::OfReadServerBytes(_read_result))
+                            .await;
+                    }
+                }
+                Err(_) => {}
+            }
+
+            match client.tick_start() {
                 ClientTickResult::ReceivedMessage(tick_result) => {
                     internal.try_check_read_handler();
                     client.tick_after_message();
@@ -551,41 +573,6 @@ pub(super) mod connecting {
                     }));
                 }
                 ClientTickResult::WriteLocked => (),
-            }
-
-            let now = Instant::now();
-            if now - sent_time > messaging_properties.timeout_interpretation {
-                return Err(ConnectError::Timeout);
-            }
-
-            if last_sent_time == sent_time || now - last_sent_time > packet_loss_timeout {
-                last_sent_time = now;
-
-                println!("send auti {:?}", authentication_bytes);
-                socket.send(&authentication_bytes).await?;
-
-                let pre_read_next_bytes_result =
-                    ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;
-
-                match pre_read_next_bytes_result {
-                    Ok(result) => {
-                        let _read_result = internal.read_next_bytes(result).await;
-
-                        println!("reas result {:?}", _read_result);
-
-                        #[cfg(feature = "store_unexpected")]
-                        if _read_result.is_unexpected() {
-                            let _ = internal
-                                .store_unexpected_errors
-                                .error_sender
-                                .send(UnexpectedError::OfReadServerBytes(_read_result))
-                                .await;
-                        }
-                    }
-                    Err(e) => {
-                        println!("sending auti error {}", e);
-                    }
-                }
             }
         }
     }
