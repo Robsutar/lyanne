@@ -19,13 +19,13 @@
 //! ```toml
 //! [dependencies]
 //! lyanne = { version = "0.2.6", features = [
-//!     "rt_bevy", # We need one runtime.
+//!     "rt_smol", # We need one runtime.
 //!     "sd_bincode", # Serde + Bincode will help our packet serialization/deserialization.
 //!     "server", # Server exclusive feature.
 //! ] }
 //!
 //! # Our runtime.
-//! bevy = "^0.14.0"
+//! smol = "^2.0.0"
 //!
 //! # Our serializer.
 //! serde = { version = "^1.0.0", features = ["derive"] }
