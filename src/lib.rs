@@ -1,3 +1,18 @@
+//! Efficient, tick-oriented communication framework for server-client architectures.
+//!
+//! Lyanne is an abstraction for communication between client and server, greatly
+//! simplifying the process, maintaining low latency and low resource usage.
+//!
+//! Moves the most resource-intensive work to asynchronous operations, but both
+//! client and server calls, such as sending/receiving packets, can be used in
+//! synchronous contexts.
+//!
+//! Being highly customizable, Lyanne supports:
+//! - Multiple runtimes.
+//! - Different ways of serializing/deserializing packages.
+//! - Different authenticators, including the required/optional use of tls with rustls.
+//! All within features, keeping compilation time fast.
+
 #[cfg(feature = "bevy_packet_schedules")]
 pub use bevy_ecs;
 
