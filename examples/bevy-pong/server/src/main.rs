@@ -9,6 +9,7 @@ use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*, tasks::futures
 use bevy_pong::{AuthenticationPacket, BevyPacketCaller, GameConfig, PacketManagers};
 use lyanne::auth_tcp::AuthTcpServerProperties;
 use lyanne::auth_tls::{AuthTlsServerProperties, CertKey, ServerCertProvider};
+use lyanne::packets::SerializedPacketList;
 use lyanne::server::{AuthenticatorMode, Server};
 use lyanne::server::{BindResult, ServerProperties};
 use lyanne::{MessagingProperties, ReadHandlerProperties};
@@ -157,11 +158,16 @@ fn server_tick(
                                 addr, auth_packet
                             );
                             server_connected.players.push((addr, *auth_packet));
-                            server_connected
-                                .server
-                                .as_ref()
-                                .unwrap()
-                                .authenticate(addr, addr_to_auth);
+                            server_connected.server.as_ref().unwrap().authenticate(
+                                addr,
+                                addr_to_auth,
+                                server_connected
+                                    .server
+                                    .as_ref()
+                                    .unwrap()
+                                    .packet_registry()
+                                    .empty_serialized_list(),
+                            );
 
                             if server_connected.players.len() == 2 {
                                 break;
