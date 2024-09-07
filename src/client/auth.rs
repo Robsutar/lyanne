@@ -127,11 +127,7 @@ impl fmt::Display for ConnectError {
                 write!(f, "Server did not communicate correctly.")
             }
             ConnectError::InvalidDnsName => write!(f, "Invalid dns name."),
-            ConnectError::Ignored(message) => write!(
-                f,
-                "Client addr is ignored by the server, reason size: {}",
-                message.as_packet_list().len()
-            ),
+            ConnectError::Ignored(_) => write!(f, "Client addr is ignored by the server.",),
             ConnectError::IoError(ref err) => write!(f, "IO error: {}", err),
             ConnectError::Disconnected(reason) => write!(f, "Client disconnected: {:?}", reason),
             Self::AllAttemptsFailed(errors) => write!(f, "All attempts failed: {:?}", errors),
