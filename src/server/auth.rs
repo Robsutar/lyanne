@@ -50,8 +50,7 @@ pub(super) struct AddrPendingAuthSend {
     pub finished_bytes: Vec<u8>,
 }
 
-/// Addr to auth properties, after a [`AddrPendingAuthSend`] is confirmed,
-/// the next step is read the message of the addr, and authenticate it or no.
+/// The holder to complete a connection with an Addr.
 pub struct AddrToAuth {
     pub(super) inner_auth: InnerAuth,
 }

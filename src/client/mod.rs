@@ -157,7 +157,7 @@ pub enum ClientTickResult {
     PendingMessage,
     /// The client was disconnected from the server.
     ///
-    /// After this is returned by the tick, is possible to use [`Client::get_disconnect_reason`]
+    /// After this is returned by the tick, is possible to use [`Client::take_disconnect_reason`]
     Disconnected,
     /// The write lock could not be acquired.
     WriteLocked,
@@ -211,8 +211,6 @@ struct ConnectedServerMessaging {
 }
 
 /// Properties of the server that is connected to the client.
-///
-/// Intended to be used inside [`ServerInternal`] with [`Arc`].
 pub struct ConnectedServer {
     /// Sender for receiving bytes.
     receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
@@ -257,8 +255,6 @@ impl ConnectedServer {
 }
 
 /// Properties of the client.
-///
-/// Intended to be used inside [`Client`].
 struct ClientInternal {
     /// Sender for make the spawned tasks keep alive.
     tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
@@ -599,7 +595,7 @@ impl Client {
         }
     }
 
-    /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::tick`]
+    /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::tick_start`]
     ///
     /// It handles:
     /// - Unification of packages to be sent to server.

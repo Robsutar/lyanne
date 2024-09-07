@@ -227,7 +227,7 @@ impl StoreUnexpectedErrors {
 pub struct ServerTickResult {
     /// Received messages from the clients.
     ///
-    /// The list (Vec<DeserializedMessage>) will never be empty.
+    /// The list (`Vec<DeserializedMessage>`) will never be empty.
     /// If some client did not sent a message since the last tick, it will not appear in this map.
     pub received_messages: HashMap<SocketAddr, Vec<DeserializedMessage>>,
     /// Client to authenticate, and their authentication message.
@@ -296,8 +296,6 @@ struct ConnectedClientMessaging {
 }
 
 /// Properties of a client that is connected to the server.
-///
-/// Intended to be used inside [`ServerInternal`] with [`Arc`].
 pub struct ConnectedClient {
     /// Sender for receiving bytes.
     receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
@@ -336,8 +334,6 @@ impl ConnectedClient {
 }
 
 /// Properties of the server.
-///
-/// Intended to be used inside [`Server`].
 struct ServerInternal {
     /// Sender for make the spawned tasks keep alive.
     tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
@@ -921,7 +917,7 @@ impl Server {
     /// Connect a client.
     ///
     /// Should only be used with [`AddrToAuth`] that were created after the last server tick start,
-    /// if another tick server tick comes up, the [`addr_to_auth`] will not be valid.
+    /// if another tick server tick comes up, the `addr_to_auth` will not be valid.
     ///
     /// # Panics
     /// - if addr is already connected.
@@ -1088,7 +1084,7 @@ impl Server {
 
     /// Mark that client to be disconnected in the next tick.
     ///
-    /// If there is a pending disconnection of that client, the new [`message`]
+    /// If there is a pending disconnection of that client, the new `message`
     /// will be ignored, and just the first message will be considered
     ///
     /// # Parameters
