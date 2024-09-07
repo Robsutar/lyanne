@@ -117,7 +117,7 @@ fn read_bind_result(mut commands: Commands, mut query: Query<(Entity, &mut Clien
                     };
                     info!(
                         "Client connected, first message size: {:?}",
-                        connect_result.message.as_packet_list().len()
+                        connect_result.initial_message.as_packet_list().len()
                     );
 
                     commands.spawn(client_connected);
