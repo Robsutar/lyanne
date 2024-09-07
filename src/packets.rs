@@ -162,8 +162,21 @@ impl PacketRegistry {
         packet_id
     }
 
+    pub fn try_get_packet_id<P: Packet>(&self) -> Option<&PacketId> {
+        self.packet_type_ids.get(&TypeId::of::<P>())
+    }
+
+    /// Get the if of the packet.
+    ///
+    /// # Panics
+    /// If the packet is not registered.
+    pub fn get_packet_id<P: Packet>(&self) -> &PacketId {
+        self.try_get_packet_id::<P>()
+            .expect("Packet is not registered.")
+    }
+
     pub fn try_serialize<P: Packet>(&self, packet: &P) -> io::Result<SerializedPacket> {
-        let packet_id = self.packet_type_ids.get(&TypeId::of::<P>());
+        let packet_id = self.try_get_packet_id::<P>();
         if let Some(packet_id) = packet_id {
             let (serialize, _) = self.serde_map.get(packet_id).unwrap();
             let serialized = serialize(packet)?;
