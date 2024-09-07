@@ -5,6 +5,12 @@ use crate::{
     MessagingProperties,
 };
 
+#[cfg(feature = "deserialized_message_map")]
+use std::collections::HashMap;
+
+#[cfg(feature = "deserialized_message_map")]
+use crate::packets::PacketId;
+
 pub type MessageId = u16;
 pub type MessagePartId = u16;
 pub type MessagePartType = u8;
@@ -367,14 +373,14 @@ impl DeserializedMessage {
     /// # Returns
     /// Reference of mapped packets by they ids.
     #[cfg(feature = "deserialized_message_map")]
-    pub fn as_packet_map(&self) -> &HashMap<u16, Vec<DeserializedPacket>> {
+    pub fn as_packet_map(&self) -> &HashMap<PacketId, Vec<DeserializedPacket>> {
         &self.packet_map
     }
 
     /// # Returns
     /// Mapped packets by they ids.
     #[cfg(feature = "deserialized_message_map")]
-    pub fn to_packet_map(self) -> HashMap<u16, Vec<DeserializedPacket>> {
+    pub fn to_packet_map(self) -> HashMap<PacketId, Vec<DeserializedPacket>> {
         self.packet_map
     }
 }
