@@ -264,6 +264,53 @@ impl SerializedPacket {
 }
 
 #[derive(Debug)]
+pub struct DeserializedMessageMap {
+    inner: HashMap<PacketId, Vec<DeserializedPacket>>,
+}
+
+impl DeserializedMessageMap {
+    pub fn try_collect_list<P: Packet>(
+        &mut self,
+        packet_registry: &PacketRegistry,
+    ) -> io::Result<Option<Vec<P>>> {
+        if let Some(packet_id) = packet_registry.try_get_packet_id::<P>() {
+            if let Some(list) = self.inner.remove(&packet_id) {
+                let mut exit = Vec::<P>::new();
+                for packet in list {
+                    if let Ok(downcast) = packet.packet.downcast::<P>() {
+                        exit.push(*downcast);
+                    } else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "Packet could not be converted into P.",
+                        ));
+                    }
+                }
+                Ok(Some(exit))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Packet is not registered.",
+            ))
+        }
+    }
+
+    /// The list (if there is some) of the packet type (`P`).
+    ///
+    /// That list will never be empty.
+    /// # Panics
+    /// - If the packet type (`P`) was not registered in `packet_registry`.
+    /// - If the packet_map is invalid, and has packets that can not be converted to `P` in the list.
+    pub fn collect_list<P: Packet>(&mut self, packet_registry: &PacketRegistry) -> Option<Vec<P>> {
+        self.try_collect_list(packet_registry)
+            .expect("Failed to collect packets into list from map.")
+    }
+}
+
+#[derive(Debug)]
 pub struct DeserializedPacket {
     pub packet_id: PacketId,
     pub packet: Box<PacketToDowncast>,
@@ -323,7 +370,7 @@ impl DeserializedPacket {
     pub fn deserialize_list_as_map(
         buf: &[u8],
         packet_registry: &PacketRegistry,
-    ) -> io::Result<HashMap<PacketId, Vec<DeserializedPacket>>> {
+    ) -> io::Result<DeserializedMessageMap> {
         let mut packet_buf_index = 0;
         let mut received_packets: HashMap<PacketId, Vec<DeserializedPacket>> = HashMap::new();
         loop {
@@ -369,7 +416,9 @@ impl DeserializedPacket {
                 "The list has no packets.",
             ))
         } else {
-            Ok(received_packets)
+            Ok(DeserializedMessageMap {
+                inner: received_packets,
+            })
         }
     }
 }
