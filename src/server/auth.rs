@@ -14,12 +14,9 @@ use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
-    messages::{DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, PUBLIC_KEY_SIZE},
+    messages::{DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, NONCE_SIZE, PUBLIC_KEY_SIZE},
     packets::SerializedPacketList,
 };
-
-#[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::messages::NONCE_SIZE;
 
 use crate::{MessageChannel, MESSAGE_CHANNEL_SIZE};
 
@@ -68,17 +65,26 @@ impl IgnoredAddrReason {
             finished_bytes: None,
         }
     }
-    /// The message will be sent to the client when it tries to connect.
+    pub fn try_from_serialized_list(list: SerializedPacketList) -> Result<Self, ()> {
+        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE {
+            Err(())
+        } else {
+            let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
+            finished_bytes.push(MessageChannel::IGNORED_REASON);
+            finished_bytes.extend(list.bytes);
+            Ok(Self {
+                finished_bytes: Some(finished_bytes),
+            })
+        }
+    }
+
+    /// Loads from [`SerializedPacketList`].
+    ///
+    /// # Panics
+    /// If the message reached the maximum byte length.
     pub fn from_serialized_list(list: SerializedPacketList) -> Self {
-        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE {
-            panic!("Max bytes length reached.");
-        }
-        let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
-        finished_bytes.push(MessageChannel::IGNORED_REASON);
-        finished_bytes.extend(list.bytes);
-        Self {
-            finished_bytes: Some(finished_bytes),
-        }
+        IgnoredAddrReason::try_from_serialized_list(list)
+            .expect("Message reached the maximum byte length.")
     }
 }
 

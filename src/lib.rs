@@ -206,32 +206,42 @@ impl Default for ReadHandlerProperties {
     }
 }
 
-/// The context that caused an addr to be disconnected from the server.
+/// Justified rejection message.
 #[allow(dead_code)]
 pub struct JustifiedRejectionContext {
     /// The instant that the disconnection was made.
     rejection_instant: Instant,
     /// The last instant that the bytes were sent.
     last_sent_time: Option<Instant>,
-    /// The serialized message to send to the addr, confirming the disconnect.
-    ///
-    /// That message has limited size.
+    /// The serialized message to send, confirming the disconnect.
     finished_bytes: Vec<u8>,
 }
 
 impl JustifiedRejectionContext {
-    /// The message will be sent when it tries to connect.
+    pub fn try_from_serialized_list(
+        rejection_instant: Instant,
+        list: SerializedPacketList,
+    ) -> Result<Self, ()> {
+        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE {
+            Err(())
+        } else {
+            let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
+            finished_bytes.push(MessageChannel::REJECTION_JUSTIFICATION);
+            finished_bytes.extend(list.bytes);
+            Ok(Self {
+                rejection_instant,
+                last_sent_time: None,
+                finished_bytes,
+            })
+        }
+    }
+
+    /// Loads from [`SerializedPacketList`].
+    ///
+    /// # Panics
+    /// If the message reached the maximum byte length.
     pub fn from_serialized_list(rejection_instant: Instant, list: SerializedPacketList) -> Self {
-        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE {
-            panic!("Max bytes length reached.");
-        }
-        let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
-        finished_bytes.push(MessageChannel::REJECTION_JUSTIFICATION);
-        finished_bytes.extend(list.bytes);
-        Self {
-            rejection_instant,
-            last_sent_time: None,
-            finished_bytes,
-        }
+        JustifiedRejectionContext::try_from_serialized_list(rejection_instant, list)
+            .expect("Message reached the maximum byte length.")
     }
 }
