@@ -23,7 +23,7 @@ Adding lyanne dependency in server:
 
 ```toml
 [dependencies]
-lyanne = { version = "0.2.6", features = [
+lyanne = { version = "0.3", features = [
     "rt_bevy", # We need one runtime.
     "sd_bincode", # Serde + Bincode will help our packet serialization/deserialization.
     "server", # Server exclusive feature.
@@ -41,7 +41,7 @@ Adding lyanne dependency in client:
 
 ```toml
 [dependencies]
-lyanne = { version = "0.2.6", features = [
+lyanne = { version = "0.3", features = [
     # ...
     "client", # Same as the server, but using "client" instead of "server".
 ] }
