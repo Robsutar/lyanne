@@ -1,3 +1,7 @@
+[![Crate](https://img.shields.io/crates/v/lyanne.svg)](https://crates.io/crates/lyanne)
+[![Docs](https://docs.rs/lyanne/badge.svg)](https://docs.rs/lyanne/latest/lyanne/)
+[![License](https://img.shields.io/badge/license-MIT%2FApache-blue.svg)](LICENSE-MIT)
+
 # lyanne
 
 Efficient, tick-oriented communication framework for server-client architectures.
