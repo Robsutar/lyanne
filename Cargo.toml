@@ -50,6 +50,7 @@ categories = ["network-programming", "game-development"]
 readme = "README.md"
 repository = "https://github.com/Robsutar/lyanne/"
 documentation = "https://docs.rs/lyanne"
+license = "MIT OR Apache-2.0"
 
 [features]
 default = []
