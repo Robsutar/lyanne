@@ -164,6 +164,12 @@ impl PacketRegistry {
         packet_id
     }
 
+    pub fn check_essential(&self) -> bool {
+        self.try_get_packet_id::<ClientTickEndPacket>().is_some()
+            && self.try_get_packet_id::<ServerTickEndPacket>().is_some()
+            && self.try_get_packet_id::<EmptyPacket>().is_some()
+    }
+
     pub fn try_get_packet_id<P: Packet>(&self) -> Option<&PacketId> {
         self.packet_type_ids.get(&TypeId::of::<P>())
     }
