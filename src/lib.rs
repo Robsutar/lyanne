@@ -11,6 +11,7 @@
 //! - Multiple runtimes.
 //! - Different ways of serializing/deserializing packages.
 //! - Different authenticators, including the required/optional use of tls with rustls.
+//!
 //! All within features, keeping compilation time fast.
 //!
 //! # Examples
