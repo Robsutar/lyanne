@@ -249,11 +249,21 @@ impl Default for ServerProperties {
         }
     }
 }
-
 /// Result when calling [`Server::bind`].
 pub struct BindResult {
     /// The bind server to handle tne next connections and tick management.
     pub server: Server,
+}
+
+/// Possible reasons why a bind was unsuccessful with [`Server::bind`].
+#[derive(Debug)]
+pub enum BindError {
+    /// Packet registry has not registered the essential packets.
+    MissingEssentialPackets,
+    /// IO error on UDP socket binding.
+    SocketBindError(io::Error),
+    /// IO error on authenticator binding.
+    AuthenticatorError(io::Error),
 }
 
 /// Server tick flow state.
@@ -613,7 +623,7 @@ impl Server {
         authenticator_mode: AuthenticatorMode,
         #[cfg(any(feature = "rt_tokio", feature = "rt_async_executor"))]
         runtime: crate::rt::Runtime,
-    ) -> TaskHandle<io::Result<BindResult>> {
+    ) -> TaskHandle<Result<BindResult, BindError>> {
         #[cfg(any(feature = "rt_tokio", feature = "rt_async_executor"))]
         let task_runner = Arc::new(TaskRunner { runtime });
 
@@ -623,7 +633,10 @@ impl Server {
         let task_runner_exit = Arc::clone(&task_runner);
 
         let bind_result_body = async move {
-            let socket = Arc::new(UdpSocket::bind(addr).await?);
+            let socket = match UdpSocket::bind(addr).await {
+                Ok(socket) => Arc::new(socket),
+                Err(e) => return Err(BindError::SocketBindError(e)),
+            };
 
             let (tasks_keeper_sender, tasks_keeper_receiver) = async_channel::unbounded();
 
@@ -686,7 +699,9 @@ impl Server {
                 task_runner,
             });
 
-            authenticator_mode_build.apply(&server).await?;
+            if let Err(e) = authenticator_mode_build.apply(&server).await {
+                return Err(BindError::AuthenticatorError(e));
+            }
 
             let server_downgraded = Arc::downgrade(&server);
             server.create_async_task(async move {
