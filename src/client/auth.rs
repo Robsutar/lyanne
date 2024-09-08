@@ -90,19 +90,11 @@ pub struct ConnectResult {
     pub initial_message: DeserializedMessage,
 }
 
-/// Client disconnected.
-#[derive(Debug)]
-pub struct DisconnectedConnectError {
-    /// The reason to be disconnected at the connection.
-    pub reason: ServerDisconnectReason,
-    /// Errors since the start of the connection.
-    #[cfg(feature = "store_unexpected")]
-    pub unexpected_errors: Vec<UnexpectedError>,
-}
-
 /// Possible reasons why a connection was unsuccessful with [`Client::connect`].
 #[derive(Debug)]
 pub enum ConnectError {
+    /// Packet registry has not registered the essential packets.
+    MissingEssentialPackets,
     /// Server took a long time to respond.
     Timeout,
     /// Server did not communicate correctly.
@@ -119,9 +111,23 @@ pub enum ConnectError {
     AllAttemptsFailed(Vec<ConnectError>),
 }
 
+/// Client disconnected.
+#[derive(Debug)]
+pub struct DisconnectedConnectError {
+    /// The reason to be disconnected at the connection.
+    pub reason: ServerDisconnectReason,
+    /// Errors since the start of the connection.
+    #[cfg(feature = "store_unexpected")]
+    pub unexpected_errors: Vec<UnexpectedError>,
+}
+
 impl fmt::Display for ConnectError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            ConnectError::MissingEssentialPackets => write!(
+                f,
+                "Packet registry has not registered the essential packets."
+            ),
             ConnectError::Timeout => write!(f, "Server took a long time to respond."),
             ConnectError::InvalidProtocolCommunication => {
                 write!(f, "Server did not communicate correctly.")

@@ -459,6 +459,10 @@ impl Client {
         let task_runner_exit = Arc::clone(&task_runner);
 
         let bind_result_body = async move {
+            if !packet_registry.check_essential() {
+                return Err(ConnectError::MissingEssentialPackets);
+            }
+
             let client_private_key = EphemeralSecret::random_from_rng(OsRng);
             let client_public_key = PublicKey::from(&client_private_key);
             let client_public_key_bytes = client_public_key.as_bytes();
