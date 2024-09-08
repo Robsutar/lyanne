@@ -127,5 +127,6 @@ tokio-rustls = { version = "^0.26.0", optional = true }
 rustls-pemfile = { version = "^2.0.0", optional = true }
 
 [package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
 features = ["rt_smol", "client", "server", "sd_bincode"]
 all-features = false
