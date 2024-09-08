@@ -83,7 +83,7 @@ pub mod messages;
 pub mod packets;
 pub(crate) mod rt;
 pub(crate) mod sd;
-pub mod utils;
+pub(crate) mod utils;
 
 #[cfg(feature = "client")]
 pub mod client;
