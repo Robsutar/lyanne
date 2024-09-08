@@ -14,20 +14,35 @@ impl DurationMonitor {
     /// * `duration` - The initial duration to fill the buffer with.
     /// * `size` - The size of the buffer.
     ///
+    /// # Errors
+    ///
+    /// If the size exceeds the maximum allowable size (`u32::MAX`).
+    pub fn try_filled_with(duration: Duration, size: usize) -> Result<Self, ()> {
+        if size > u32::MAX as usize {
+            Err(())
+        } else {
+            let mut stored = VecDeque::new();
+            stored.resize(size, duration);
+            Ok(Self {
+                stored,
+                total: duration * size as u32,
+            })
+        }
+    }
+
+    /// Initializes the DurationMonitor with a fixed-size buffer filled with the given initial duration.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The initial duration to fill the buffer with.
+    /// * `size` - The size of the buffer.
+    ///
     /// # Panics
     ///
     /// Panics if the size exceeds the maximum allowable size (`u32::MAX`).
     pub fn filled_with(duration: Duration, size: usize) -> Self {
-        if size > u32::MAX as usize {
-            panic!("size exceeded the maximum DurationMonitor size");
-        } else {
-            let mut stored = VecDeque::new();
-            stored.resize(size, duration);
-            Self {
-                stored,
-                total: duration * size as u32,
-            }
-        }
+        DurationMonitor::try_filled_with(duration, size)
+            .expect("Size exceeded the maximum DurationMonitor size.")
     }
 
     /// Adds a new duration to the buffer, updates the total and the average duration.
@@ -126,7 +141,7 @@ mod tests {
     #[test]
     fn test_push_replaces_oldest_duration() {
         let initial_duration = Duration::from_secs(1);
-        let mut monitor = DurationMonitor::filled_with(initial_duration, 3);
+        let mut monitor = DurationMonitor::try_filled_with(initial_duration, 3);
 
         monitor.push(Duration::from_secs(2));
         assert_eq!(
