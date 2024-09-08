@@ -101,24 +101,22 @@ pub enum ConnectError {
     InvalidProtocolCommunication,
     /// Invalid dns name.
     InvalidDnsName,
+    /// IO error on UDP socket binding/connecting.
+    SocketConnectError(io::Error),
     /// Client addr is ignored by the server.
     Ignored(DeserializedMessage),
-    /// IO error.
-    IoError(io::Error),
+    /// Error connecting authenticator socket.
+    AuthenticatorConnectIoError(io::Error),
+    /// Error writing data in authenticator socket.
+    AuthenticatorWriteIoError(io::Error),
+    /// Error reading data in authenticator socket.
+    AuthenticatorReadIoError(io::Error),
+    /// Error sending authentication bytes.
+    AuthenticationBytesSendIoError(io::Error),
     /// Client disconnected, see [`DisconnectedConnectError`]
     Disconnected(DisconnectedConnectError),
     /// All attempts failed, see [`AuthenticatorMode::AttemptList`].
     AllAttemptsFailed(Vec<ConnectError>),
-}
-
-/// Client disconnected.
-#[derive(Debug)]
-pub struct DisconnectedConnectError {
-    /// The reason to be disconnected at the connection.
-    pub reason: ServerDisconnectReason,
-    /// Errors since the start of the connection.
-    #[cfg(feature = "store_unexpected")]
-    pub unexpected_errors: Vec<UnexpectedError>,
 }
 
 impl fmt::Display for ConnectError {
@@ -133,27 +131,40 @@ impl fmt::Display for ConnectError {
                 write!(f, "Server did not communicate correctly.")
             }
             ConnectError::InvalidDnsName => write!(f, "Invalid dns name."),
+            ConnectError::SocketConnectError(e) => write!(f, "Failed to bind UDP socket: {}", e),
             ConnectError::Ignored(_) => write!(f, "Client addr is ignored by the server.",),
-            ConnectError::IoError(ref err) => write!(f, "IO error: {}", err),
+            ConnectError::AuthenticatorConnectIoError(ref err) => {
+                write!(f, "Authenticator connect IO error: {}", err)
+            }
+            ConnectError::AuthenticatorWriteIoError(ref err) => {
+                write!(f, "Authenticator write IO error: {}", err)
+            }
+            ConnectError::AuthenticatorReadIoError(ref err) => {
+                write!(f, "Authenticator read IO error: {}", err)
+            }
+            ConnectError::AuthenticationBytesSendIoError(ref err) => {
+                write!(
+                    f,
+                    "IO error sending authentication bytes by socket: {}",
+                    err
+                )
+            }
             ConnectError::Disconnected(reason) => write!(f, "Client disconnected: {:?}", reason),
             Self::AllAttemptsFailed(errors) => write!(f, "All attempts failed: {:?}", errors),
         }
     }
 }
 
-impl std::error::Error for ConnectError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match *self {
-            ConnectError::IoError(ref err) => Some(err),
-            _ => None,
-        }
-    }
-}
+impl std::error::Error for ConnectError {}
 
-impl From<io::Error> for ConnectError {
-    fn from(error: io::Error) -> Self {
-        ConnectError::IoError(error)
-    }
+/// Client disconnected.
+#[derive(Debug)]
+pub struct DisconnectedConnectError {
+    /// The reason to be disconnected at the connection.
+    pub reason: ServerDisconnectReason,
+    /// Errors since the start of the connection.
+    #[cfg(feature = "store_unexpected")]
+    pub unexpected_errors: Vec<UnexpectedError>,
 }
 
 pub(super) mod connecting {
@@ -209,32 +220,38 @@ pub(super) mod connecting {
                 return Err(ConnectError::Timeout);
             }
 
-            socket.send(&public_key_sent).await?;
+            if let Err(e) = socket.send(&public_key_sent).await {
+                return Err(ConnectError::AuthenticatorWriteIoError(e));
+            }
             match crate::rt::timeout(props.timeout, socket.recv(buf)).await {
-                Ok(len) => {
-                    let len = len?;
-                    if len < MESSAGE_CHANNEL_SIZE {
-                        return Err(ConnectError::InvalidProtocolCommunication);
-                    }
+                Ok(len) => match len {
+                    Ok(len) => {
+                        if len < MESSAGE_CHANNEL_SIZE {
+                            return Err(ConnectError::InvalidProtocolCommunication);
+                        }
 
-                    match buf[0] {
-                        MessageChannel::IGNORED_REASON => {
-                            break Ok((
-                                len,
-                                props.message,
-                                ConnectedAuthenticatorMode::NoCryptography,
-                            ));
+                        match buf[0] {
+                            MessageChannel::IGNORED_REASON => {
+                                break Ok((
+                                    len,
+                                    props.message,
+                                    ConnectedAuthenticatorMode::NoCryptography,
+                                ));
+                            }
+                            MessageChannel::PUBLIC_KEY_SEND => {
+                                break Ok((
+                                    len,
+                                    props.message,
+                                    ConnectedAuthenticatorMode::NoCryptography,
+                                ));
+                            }
+                            _ => (),
                         }
-                        MessageChannel::PUBLIC_KEY_SEND => {
-                            break Ok((
-                                len,
-                                props.message,
-                                ConnectedAuthenticatorMode::NoCryptography,
-                            ));
-                        }
-                        _ => (),
                     }
-                }
+                    Err(e) => {
+                        return Err(ConnectError::AuthenticatorReadIoError(e));
+                    }
+                },
                 _ => (),
             }
         }
@@ -251,13 +268,15 @@ pub(super) mod connecting {
         T: AsyncWriteExt,
         T: Unpin,
     {
-        stream.write_all(&public_key_sent).await?;
+        if let Err(e) = stream.write_all(&public_key_sent).await {
+            return Err(ConnectError::AuthenticatorWriteIoError(e));
+        }
 
         let len = match stream.read(buf).await {
             Ok(0) => return Err(ConnectError::InvalidProtocolCommunication),
             Ok(len) => len,
             Err(e) => {
-                return Err(ConnectError::IoError(e));
+                return Err(ConnectError::AuthenticatorReadIoError(e));
             }
         };
 
@@ -276,7 +295,12 @@ pub(super) mod connecting {
         props: AuthenticationProperties,
     ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
         match crate::rt::timeout(props.timeout, async {
-            let tcp_stream = TcpStream::connect(auth_mode.server_addr).await?;
+            let tcp_stream = match TcpStream::connect(auth_mode.server_addr).await {
+                Ok(tcp_stream) => tcp_stream,
+                Err(e) => {
+                    return Err(ConnectError::AuthenticatorConnectIoError(e));
+                }
+            };
             connect_require_tcp_based_match_arm(buf, public_key_sent, tcp_stream).await
         })
         .await
@@ -301,8 +325,18 @@ pub(super) mod connecting {
             let config = Arc::new(auth_mode.new_client_config());
             let connector = TlsConnector::from(config);
 
-            let stream = TcpStream::connect(auth_mode.server_addr).await?;
-            let tls_stream = connector.connect(server_name, stream).await?;
+            let stream = match TcpStream::connect(auth_mode.server_addr).await {
+                Ok(tcp_stream) => tcp_stream,
+                Err(e) => {
+                    return Err(ConnectError::AuthenticatorConnectIoError(e));
+                }
+            };
+            let tls_stream = match connector.connect(server_name, stream).await {
+                Ok(tls_stream) => tls_stream,
+                Err(e) => {
+                    return Err(ConnectError::AuthenticatorConnectIoError(e));
+                }
+            };
 
             connect_require_tcp_based_match_arm(buf, public_key_sent, tls_stream).await
         })
@@ -533,7 +567,9 @@ pub(super) mod connecting {
                 return Err(ConnectError::Timeout);
             }
 
-            socket.send(&authentication_bytes).await?;
+            if let Err(e) = socket.send(&authentication_bytes).await {
+                return Err(ConnectError::AuthenticationBytesSendIoError(e));
+            }
 
             let pre_read_next_bytes_result =
                 ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;

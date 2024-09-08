@@ -475,8 +475,16 @@ impl Client {
 
             let mut buf = [0u8; 1024];
 
-            let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
-            socket.connect(remote_addr).await?;
+            let socket = match UdpSocket::bind("0.0.0.0:0").await {
+                Ok(socket) => Arc::new(socket),
+                Err(e) => {
+                    return Err(ConnectError::SocketConnectError(e));
+                }
+            };
+
+            if let Err(e) = socket.connect(remote_addr).await {
+                return Err(ConnectError::SocketConnectError(e));
+            }
 
             let (len, auth_message, connected_authentication_mode) =
                 connecting::connect_auth_mode_match_arm(
