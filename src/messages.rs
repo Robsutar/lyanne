@@ -14,20 +14,20 @@ pub type MessageId = u16;
 pub type MessagePartId = u16;
 pub type MessagePartType = u8;
 
-pub const MESSAGE_ID_SIZE: usize = size_of::<MessageId>();
-pub const MESSAGE_PART_ID_SIZE: usize = size_of::<MessagePartId>();
-pub const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
+pub(crate) const MESSAGE_ID_SIZE: usize = size_of::<MessageId>();
+pub(crate) const MESSAGE_PART_ID_SIZE: usize = size_of::<MessagePartId>();
+pub(crate) const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
 
-pub const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
+pub(crate) const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
 
-pub const MINIMAL_SERIALIZED_PACKET_SIZE: usize = 1;
+pub(crate) const MINIMAL_SERIALIZED_PACKET_SIZE: usize = 1;
 
-pub const MINIMAL_PART_BYTES_SIZE: usize = 4 + MINIMAL_SERIALIZED_PACKET_SIZE;
+pub(crate) const MINIMAL_PART_BYTES_SIZE: usize = 4 + MINIMAL_SERIALIZED_PACKET_SIZE;
 
-pub const NONCE_SIZE: usize = 12;
+pub(crate) const NONCE_SIZE: usize = 12;
 
 // TODO: use this size to check the maximum authentication message sent by the client
-pub const PUBLIC_KEY_SIZE: usize = 32;
+pub(crate) const PUBLIC_KEY_SIZE: usize = 32;
 
 struct MessagePartTypes;
 
@@ -166,7 +166,7 @@ impl MessagePart {
     }
 }
 
-pub struct DeserializedMessageCheck {
+pub(crate) struct DeserializedMessageCheck {
     kind: DeserializedMessageCheckKind,
 }
 
@@ -383,18 +383,19 @@ impl DeserializedMessage {
     }
 }
 
-pub enum MessagePartMapTryInsertResult {
+pub(crate) enum MessagePartMapTryInsertResult {
     PastMessageId,
     Stored,
 }
 
+#[derive(Debug)]
 pub enum MessagePartMapTryReadResult {
     PendingParts,
     ErrorInCompleteMessageDeserialize(std::io::Error),
     SuccessfullyCreated(DeserializedMessage),
 }
 
-pub struct MessagePartMap {
+pub(crate) struct MessagePartMap {
     next_message_id: MessageId,
     maps: BTreeMap<MessageId, (BTreeMap<MessagePartId, MessagePart>, usize)>,
 }
