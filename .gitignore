@@ -25,3 +25,6 @@ rustc-ice*
 
 # Internal TODO file
 TODO.md
+
+# Internal exampels check file
+check-all.bash
