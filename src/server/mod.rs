@@ -88,6 +88,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fmt,
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
@@ -265,8 +266,25 @@ pub enum BindError {
     /// IO error on UDP socket binding.
     SocketBindError(io::Error),
     /// IO error on authenticator binding.
-    AuthenticatorError(io::Error),
+    AuthenticatorConnectIoError(io::Error),
 }
+
+impl fmt::Display for BindError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BindError::MissingEssentialPackets => write!(
+                f,
+                "Packet registry has not registered the essential packets."
+            ),
+            BindError::SocketBindError(e) => write!(f, "Failed to bind UDP socket: {}", e),
+            BindError::AuthenticatorConnectIoError(ref err) => {
+                write!(f, "Authenticator connect IO error: {}", err)
+            }
+        }
+    }
+}
+
+impl std::error::Error for BindError {}
 
 /// Server tick flow state.
 #[derive(Debug, PartialEq, Eq)]
@@ -706,7 +724,7 @@ impl Server {
             });
 
             if let Err(e) = authenticator_mode_build.apply(&server).await {
-                return Err(BindError::AuthenticatorError(e));
+                return Err(BindError::AuthenticatorConnectIoError(e));
             }
 
             let server_downgraded = Arc::downgrade(&server);
