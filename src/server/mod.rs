@@ -218,8 +218,10 @@ pub enum ServerDisconnectClientState {
     Confirmed,
     /// The client did not respond in time.
     ConfirmationTimeout,
-    /// Error sending/receiving the bytes of the client.
-    IoError(io::Error),
+    /// Error sending the bytes of the client.
+    SendIoError(io::Error),
+    /// Error receiving the bytes of the client.
+    ReceiveIoError(io::Error),
 }
 
 /// The disconnection state.
@@ -1419,8 +1421,10 @@ impl Server {
                         if now == last_sent_time_copy || time_diff >= packet_loss_timeout_copy {
                             *last_sent_time = now;
                             if let Err(e) = socket.send_to(&context.finished_bytes, addr).await {
-                                addrs_confirmed
-                                    .insert(addr.clone(), ServerDisconnectClientState::IoError(e));
+                                addrs_confirmed.insert(
+                                    addr.clone(),
+                                    ServerDisconnectClientState::SendIoError(e),
+                                );
                             } else {
                                 min_try_read_time = Duration::ZERO;
                             }
@@ -1458,7 +1462,7 @@ impl Server {
                             for (addr, _) in confirmations_pending {
                                 confirmations.insert(
                                     addr,
-                                    ServerDisconnectClientState::IoError(io::Error::new(
+                                    ServerDisconnectClientState::ReceiveIoError(io::Error::new(
                                         io::ErrorKind::Other,
                                         format!("Error trying read data from udp socket: {}", e),
                                     )),
