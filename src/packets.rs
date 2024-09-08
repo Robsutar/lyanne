@@ -1,3 +1,5 @@
+//! Packets are the sets of data that are transferred over the network, represented by structs.
+
 use std::{
     any::{Any, TypeId},
     collections::HashMap,

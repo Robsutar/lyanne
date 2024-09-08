@@ -1,3 +1,5 @@
+//! Server exclusive module.
+//!
 //! Connecting a client:
 //!
 //! ```rust,no_run

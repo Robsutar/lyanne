@@ -1,3 +1,5 @@
+//! Server exclusive module.
+//!
 //! Binding a server:
 //!
 //! ```rust,no_run

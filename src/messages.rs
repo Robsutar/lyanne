@@ -1,3 +1,5 @@
+//! Module related to the messaging by the client and server.
+
 use std::{collections::BTreeMap, io};
 
 use crate::{
