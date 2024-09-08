@@ -571,35 +571,22 @@ impl Client {
         &self.internal.authentication_mode
     }
 
-    /// Client periodic tick start.
-    ///
-    /// This function call rate should be at least a little bit higher than server tick ratio.
-    ///
-    /// It handles:
-    /// - Server sent packets
-    /// - General client cyclic management
-    ///
-    /// # Panics
-    /// If [`Client::tick_after_message`] call is pending.
-    pub fn tick_start(&self) -> ClientTickResult {
+    pub fn try_tick_start(&self) -> Result<ClientTickResult, ()> {
         let internal = &self.internal;
         {
             let tick_state = internal.tick_state.read().unwrap();
             if *tick_state != ClientTickState::TickStartPending {
-                panic!(
-                    "Invalid client tick state, next pending is {:?}",
-                    tick_state
-                );
+                return Err(());
             }
         }
 
         if self.is_disconnected() {
-            return ClientTickResult::Disconnected;
+            return Ok(ClientTickResult::Disconnected);
         }
 
         if let Ok(reason) = internal.reason_to_disconnect_receiver.try_recv() {
             *internal.disconnect_reason.write().unwrap() = Some(Some(reason));
-            return ClientTickResult::Disconnected;
+            return Ok(ClientTickResult::Disconnected);
         }
 
         let now = Instant::now();
@@ -617,7 +604,7 @@ impl Client {
                     *internal.disconnect_reason.write().unwrap() = Some(Some(
                         ServerDisconnectReason::PendingMessageConfirmationTimeout,
                     ));
-                    return ClientTickResult::Disconnected;
+                    return Ok(ClientTickResult::Disconnected);
                 }
                 for sent_part in pending_part_id_map.values_mut() {
                     if now - sent_part.last_sent_time > average_packet_loss_rtt {
@@ -662,47 +649,53 @@ impl Client {
 
                 internal.try_check_read_handler();
 
-                return ClientTickResult::ReceivedMessage(ReceivedMessageClientTickResult {
-                    message,
-                    #[cfg(feature = "store_unexpected")]
-                    unexpected_errors,
-                });
+                return Ok(ClientTickResult::ReceivedMessage(
+                    ReceivedMessageClientTickResult {
+                        message,
+                        #[cfg(feature = "store_unexpected")]
+                        unexpected_errors,
+                    },
+                ));
             } else if now - messaging.last_received_message_instant
                 >= internal.messaging_properties.timeout_interpretation
             {
                 *internal.disconnect_reason.write().unwrap() =
                     Some(Some(ServerDisconnectReason::MessageReceiveTimeout));
-                return ClientTickResult::Disconnected;
+                return Ok(ClientTickResult::Disconnected);
             } else {
-                return ClientTickResult::PendingMessage;
+                return Ok(ClientTickResult::PendingMessage);
             }
         } else if now - *server.last_messaging_write.read().unwrap()
             >= internal.messaging_properties.timeout_interpretation
         {
             *internal.disconnect_reason.write().unwrap() =
                 Some(Some(ServerDisconnectReason::WriteUnlockTimeout));
-            return ClientTickResult::Disconnected;
+            return Ok(ClientTickResult::Disconnected);
         } else {
-            return ClientTickResult::WriteLocked;
+            return Ok(ClientTickResult::WriteLocked);
         }
     }
 
-    /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::tick_start`]
+    /// Client periodic tick start.
+    ///
+    /// This function call rate should be at least a little bit higher than server tick ratio.
     ///
     /// It handles:
-    /// - Unification of packages to be sent to server.
+    /// - Server sent packets
+    /// - General client cyclic management
     ///
     /// # Panics
-    /// If is not called after [`Client::tick_start`]
-    pub fn tick_after_message(&self) {
+    /// If [`Client::tick_after_message`] call is pending.
+    pub fn tick_start(&self) -> ClientTickResult {
+        self.try_tick_start().expect("Invalid client tick state.")
+    }
+
+    pub fn try_tick_after_message(&self) -> Result<(), ()> {
         let internal = &self.internal;
         {
             let mut tick_state = internal.tick_state.write().unwrap();
             if *tick_state != ClientTickState::TickAfterMessagePending {
-                panic!(
-                    "Invalid server tick state, next pending is {:?}",
-                    tick_state
-                );
+                return Err(());
             } else {
                 *tick_state = ClientTickState::TickStartPending;
             }
@@ -716,6 +709,20 @@ impl Client {
             .packets_to_send_sender
             .try_send(None)
             .unwrap();
+
+        Ok(())
+    }
+
+    /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::tick_start`]
+    ///
+    /// It handles:
+    /// - Unification of packages to be sent to server.
+    ///
+    /// # Panics
+    /// If is not called after [`Client::tick_start`]
+    pub fn tick_after_message(&self) {
+        self.try_tick_after_message()
+            .expect("Invalid client tick state.")
     }
 
     /// Disconnect the client from the server gracefully if there is some message.

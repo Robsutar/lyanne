@@ -286,6 +286,29 @@ impl fmt::Display for BindError {
 
 impl std::error::Error for BindError {}
 
+/// Possible reasons why a authentication was unsuccessful with [`Server::try_authenticate`].
+///
+/// All reasons are related to wrong usage of [`AuthMode`] and [`Server::try_authenticate`].
+#[derive(Debug)]
+pub enum BadAuthenticateUsageError {
+    AlreadyConnected,
+    NotMarkedToAuthenticate,
+}
+
+impl fmt::Display for BadAuthenticateUsageError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BadAuthenticateUsageError::AlreadyConnected => write!(f, "Addr is already connected."),
+            BadAuthenticateUsageError::NotMarkedToAuthenticate => write!(
+                f,
+                "Addr was not marked in the last tick to be possibly authenticated."
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BadAuthenticateUsageError {}
+
 /// Server tick flow state.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ServerTickState {
@@ -788,32 +811,12 @@ impl Server {
         &self.internal.server_properties
     }
 
-    /// Server periodic tick start.
-    ///
-    /// The server tick ratio is based on this function call.
-    ///
-    /// It handles:
-    /// - Pending authentications
-    /// - Pending disconnections
-    /// - Clients sent packets
-    /// - General server cyclic management
-    ///
-    /// # Panics
-    /// If [`Server::tick_end`] call is pending. That is, the cycle must be:
-    /// - [`Server::tick_start`]
-    /// - [`Server::tick_end`]
-    /// - [`Server::tick_start`]
-    /// - [`Server::tick_end`]
-    /// - ...
-    pub fn tick_start(&self) -> ServerTickResult {
+    pub fn try_tick_start(&self) -> Result<ServerTickResult, ()> {
         let internal = &self.internal;
         {
             let mut tick_state = internal.tick_state.write().unwrap();
             if *tick_state != ServerTickState::TickStartPending {
-                panic!(
-                    "Invalid server tick state, next pending is {:?}",
-                    tick_state
-                );
+                return Err(());
             } else {
                 *tick_state = ServerTickState::TickEndPending;
             }
@@ -1006,31 +1009,42 @@ impl Server {
 
         internal.try_check_read_handler();
 
-        ServerTickResult {
+        Ok(ServerTickResult {
             received_messages,
             to_auth,
             disconnected,
             #[cfg(feature = "store_unexpected")]
             unexpected_errors,
-        }
+        })
     }
 
-    /// Server periodic tick end.
+    /// Server periodic tick start.
+    ///
+    /// The server tick ratio is based on this function call.
     ///
     /// It handles:
-    /// - Unification of packages to be sent to clients.
+    /// - Pending authentications
+    /// - Pending disconnections
+    /// - Clients sent packets
+    /// - General server cyclic management
     ///
     /// # Panics
-    /// If is not called after [`Server::tick_start`]
-    pub fn tick_end(&self) {
+    /// If [`Server::tick_end`] call is pending. That is, the cycle must be:
+    /// - [`Server::tick_start`]
+    /// - [`Server::tick_end`]
+    /// - [`Server::tick_start`]
+    /// - [`Server::tick_end`]
+    /// - ...
+    pub fn tick_start(&self) -> ServerTickResult {
+        self.try_tick_start().expect("Invalid server tick state.")
+    }
+
+    pub fn try_tick_end(&self) -> Result<(), ()> {
         let internal = &self.internal;
         {
             let mut tick_state = internal.tick_state.write().unwrap();
             if *tick_state != ServerTickState::TickEndPending {
-                panic!(
-                    "Invalid server tick state, next pending is {:?}",
-                    tick_state
-                );
+                return Err(());
             } else {
                 *tick_state = ServerTickState::TickStartPending;
             }
@@ -1042,32 +1056,37 @@ impl Server {
             self.send_packet_serialized(&client, tick_packet_serialized.clone());
             client.packets_to_send_sender.try_send(None).unwrap();
         }
+
+        Ok(())
     }
 
-    /// Connect a client.
+    /// Server periodic tick end.
     ///
-    /// Should only be used with [`AddrToAuth`] that were created after the last server tick start,
-    /// if another tick server tick comes up, the `addr_to_auth` will not be valid.
+    /// It handles:
+    /// - Unification of packages to be sent to clients.
     ///
     /// # Panics
-    /// - if addr is already connected.
-    /// - if addr was not marked in the last tick to be possibly authenticated.
-    pub fn authenticate(
+    /// If is not called after [`Server::tick_start`]
+    pub fn tick_end(&self) {
+        self.try_tick_end().expect("Invalid server tick state.")
+    }
+
+    pub fn try_authenticate(
         &self,
         addr: SocketAddr,
         addr_to_auth: AddrToAuth,
         initial_message: SerializedPacketList,
-    ) {
+    ) -> Result<(), BadAuthenticateUsageError> {
         let internal = &self.internal;
         if internal.connected_clients.contains_key(&addr) {
-            panic!("Addr is already connected.",)
+            Err(BadAuthenticateUsageError::AlreadyConnected)
         } else if !internal
             .assigned_addrs_in_auth
             .write()
             .unwrap()
             .remove(&addr)
         {
-            panic!("Addr was not marked to be authenticated in the last server tick.",)
+            Err(BadAuthenticateUsageError::NotMarkedToAuthenticate)
         } else {
             match &internal.authenticator_mode {
                 AuthenticatorModeInternal::NoCryptography(auth_mode) => {
@@ -1178,6 +1197,53 @@ impl Server {
             });
 
             internal.connected_clients.insert(addr, client);
+
+            Ok(())
+        }
+    }
+
+    /// Connect a client.
+    ///
+    /// Should only be used with [`AddrToAuth`] that were created after the last server tick start,
+    /// if another tick server tick comes up, the `addr_to_auth` will not be valid.
+    ///
+    /// # Panics
+    /// - if addr is already connected.
+    /// - if addr was not marked in the last tick to be possibly authenticated.
+    ///
+    /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
+    pub fn authenticate(
+        &self,
+        addr: SocketAddr,
+        addr_to_auth: AddrToAuth,
+        initial_message: SerializedPacketList,
+    ) {
+        self.try_authenticate(addr, addr_to_auth, initial_message)
+            .unwrap()
+    }
+
+    pub fn try_refuse(
+        &self,
+        addr: SocketAddr,
+        message: SerializedPacketList,
+    ) -> Result<(), BadAuthenticateUsageError> {
+        let internal = &self.internal;
+        if internal.connected_clients.contains_key(&addr) {
+            Err(BadAuthenticateUsageError::AlreadyConnected)
+        } else if !internal
+            .assigned_addrs_in_auth
+            .write()
+            .unwrap()
+            .remove(&addr)
+        {
+            Err(BadAuthenticateUsageError::NotMarkedToAuthenticate)
+        } else {
+            internal.pending_rejection_confirm.insert(
+                addr,
+                JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
+            );
+
+            Ok(())
         }
     }
 
@@ -1193,23 +1259,10 @@ impl Server {
     /// # Panics
     /// - if addr is already connected.
     /// - if addr was not marked in the last tick to be possibly authenticated.
+    ///
+    /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
     pub fn refuse(&self, addr: SocketAddr, message: SerializedPacketList) {
-        let internal = &self.internal;
-        if internal.connected_clients.contains_key(&addr) {
-            panic!("Addr is already connected.",)
-        } else if !internal
-            .assigned_addrs_in_auth
-            .write()
-            .unwrap()
-            .remove(&addr)
-        {
-            panic!("Addr was not marked to be authenticated in the last server tick.",)
-        } else {
-            internal.pending_rejection_confirm.insert(
-                addr,
-                JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
-            );
-        }
+        self.try_refuse(addr, message).unwrap()
     }
 
     /// Mark that client to be disconnected in the next tick.
