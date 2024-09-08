@@ -633,6 +633,10 @@ impl Server {
         let task_runner_exit = Arc::clone(&task_runner);
 
         let bind_result_body = async move {
+            if !packet_registry.check_essential() {
+                return Err(BindError::MissingEssentialPackets);
+            }
+
             let socket = match UdpSocket::bind(addr).await {
                 Ok(socket) => Arc::new(socket),
                 Err(e) => return Err(BindError::SocketBindError(e)),
