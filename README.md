@@ -2,7 +2,7 @@
 
 Efficient, tick-oriented communication framework for server-client architectures.
 
-- ✅ **Flexible Runtimes**: Choose between `rt_tokio` or `rt_bevy` runtime environments for seamless integration with your ecosystem.
+- ✅ **Flexible Runtimes**: Choose between `rt_async_executor`, `rt_async_std`, `rt_bevy`, `rt_smol` or `rt_tokio` runtime environments for seamless integration with your ecosystem.
 - ✅ **Custom Serialization**: Use the `sd_bincode` feature for efficient packet serialization and deserialization.
 - ❗ **Cryptography**: Secure your communication with the `auth_tls` feature using rustls for TLS encryption, or opt for `auth_tcp` with a reverse proxy like NGINX for encrypted TCP communication. **WARNING**: Further testing is required to validate the security of authenticators.
 - ✅ **Tick-Based Synchronization**: Optimized for round-trip (tick) oriented communication, ensuring precise timing and synchronization.
@@ -24,13 +24,13 @@ Adding lyanne dependency in server:
 ```toml
 [dependencies]
 lyanne = { version = "0.3", features = [
-    "rt_bevy", # We need one runtime.
+    "rt_smol", # We need one runtime.
     "sd_bincode", # Serde + Bincode will help our packet serialization/deserialization.
     "server", # Server exclusive feature.
 ] }
 
 # Our runtime.
-bevy = "^0.14.0"
+smol = "^2.0.0"
 
 # Our serializer.
 serde = { version = "^1.0.0", features = ["derive"] }
