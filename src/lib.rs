@@ -60,10 +60,6 @@
 //! }
 //! ```
 //!
-//! See [`server`] module.
-//!
-//! See [`client`] module.
-//!
 
 #[cfg(feature = "bevy_packet_schedules")]
 pub use bevy_ecs;
