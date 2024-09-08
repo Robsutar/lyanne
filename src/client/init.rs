@@ -180,10 +180,6 @@ pub mod server {
                                 break 'l1;
                             }
                         }
-                        MessageChannel::AUTH_MESSAGE => {
-                            // TODO: check if server actually send that channel, if do, update the doc below.
-                            // Client probably multiple authentication packets before being authenticated
-                        }
                         _ => {
                             let _ = client
                                 .reason_to_disconnect_sender

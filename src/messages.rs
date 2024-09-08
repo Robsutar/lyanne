@@ -58,7 +58,6 @@ impl MessagePart {
         Self { bytes }
     }
 
-    // TODO: maybe Vec<u8> can be replaced by &[u8]
     pub fn deserialize(bytes: Vec<u8>) -> io::Result<Self> {
         if bytes.len() < MINIMAL_PART_BYTES_SIZE {
             return Err(io::Error::new(

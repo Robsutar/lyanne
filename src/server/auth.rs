@@ -562,8 +562,7 @@ where
                 } else {
                     let mut sent_server_public_key: [u8; PUBLIC_KEY_SIZE] = [0; PUBLIC_KEY_SIZE];
                     sent_server_public_key.copy_from_slice(
-                        &bytes[MESSAGE_CHANNEL_SIZE
-                            ..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE/*+ NONCE_SIZE*/)], // TODO: why the NONCE_SIZE is here???
+                        &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
                     );
                     let sent_server_public_key = PublicKey::from(sent_server_public_key);
 
@@ -625,7 +624,7 @@ where
                     }
                 }
             } else {
-                todo!("")
+                return ReadClientBytesResult::InvalidPendingAuth;
             }
         } else {
             ReadClientBytesResult::PendingPendingAuth
