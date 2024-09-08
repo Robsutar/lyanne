@@ -433,7 +433,7 @@ impl ClientInternal {
     }
 }
 
-/// Connected server.
+/// Connected client.
 ///
 /// # Info
 /// **See more information about the client creation and management in [`client`](crate::client) module.**

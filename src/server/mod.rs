@@ -288,7 +288,7 @@ impl std::error::Error for BindError {}
 
 /// Possible reasons why a authentication was unsuccessful with [`Server::try_authenticate`].
 ///
-/// All reasons are related to wrong usage of [`AuthMode`] and [`Server::try_authenticate`].
+/// All reasons are related to wrong usage of [`AddrToAuth`] and [`Server::try_authenticate`].
 #[derive(Debug)]
 pub enum BadAuthenticateUsageError {
     AlreadyConnected,
