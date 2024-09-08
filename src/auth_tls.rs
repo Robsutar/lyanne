@@ -91,8 +91,19 @@ impl ServerCertProvider {
                     Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e)),
                 }
             }
-            ServerCertProvider::SingleCertOCSP(_, _) => todo!(),
-            ServerCertProvider::Resolver(_) => todo!(),
+            ServerCertProvider::SingleCertOCSP(cert_key, ocsp) => {
+                match config.with_single_cert_with_ocsp(
+                    cert_key.cert_chain.clone(),
+                    cert_key.key.clone_key(),
+                    ocsp.clone(),
+                ) {
+                    Ok(config) => Ok(config),
+                    Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e)),
+                }
+            }
+            ServerCertProvider::Resolver(cert_resolver) => {
+                Ok(config.with_cert_resolver(Arc::clone(&cert_resolver)))
+            }
         }
     }
 }
