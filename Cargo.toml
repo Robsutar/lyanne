@@ -37,15 +37,7 @@ version = "0.3.0"
 edition = "2021"
 authors = ["Robsutar"]
 description = "Tick-based communication framework for server-client architectures."
-keywords = [
-    "networking",
-    "low-latency",
-    "tick-based",
-    "udp",
-    "tcp",
-    "tls",
-    "cryptography",
-]
+keywords = ["networking", "low-latency", "tick-based", "cryptography"]
 categories = ["network-programming", "game-development"]
 readme = "README.md"
 repository = "https://github.com/Robsutar/lyanne/"
