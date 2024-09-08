@@ -102,7 +102,7 @@ deserialized_message_map = []
 store_unexpected = []
 
 [dependencies]
-lyanne-derive = { path = "derive" }
+lyanne-derive = { path = "derive", version = "0.1.0" }
 rand = "^0.8.0"
 dashmap = "^6.0.0"
 x25519-dalek = "^2.0.0"

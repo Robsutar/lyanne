@@ -2,6 +2,12 @@
 name = "lyanne-derive"
 version = "0.1.0"
 edition = "2021"
+authors = ["Robsutar"]
+description = "Provides packet derive implementations for Lyanne"
+readme = "README.md"
+repository = "https://github.com/Robsutar/lyanne/"
+documentation = "https://docs.rs/lyanne"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 syn = "^2.0.0"
