@@ -1,4 +1,4 @@
-//! Server exclusive module.
+//! Client exclusive module.
 //!
 //! Connecting a client:
 //!
