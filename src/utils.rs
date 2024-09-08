@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn test_push_replaces_oldest_duration() {
         let initial_duration = Duration::from_secs(1);
-        let mut monitor = DurationMonitor::try_filled_with(initial_duration, 3);
+        let mut monitor = DurationMonitor::filled_with(initial_duration, 3);
 
         monitor.push(Duration::from_secs(2));
         assert_eq!(
