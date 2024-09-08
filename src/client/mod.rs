@@ -433,7 +433,10 @@ impl ClientInternal {
     }
 }
 
-/// Connected client.
+/// Connected server.
+///
+/// # Info
+/// **See more information about the client creation and management in [`client`](crate::client) module.**
 pub struct Client {
     internal: Arc<ClientInternal>,
 }

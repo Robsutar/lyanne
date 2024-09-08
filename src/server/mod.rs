@@ -626,6 +626,9 @@ impl ServerInternal {
 }
 
 /// Connected server.
+///
+/// # Info
+/// **See more information about the server creation and management in [`server`](crate::server) module.**
 pub struct Server {
     internal: Arc<ServerInternal>,
 }
