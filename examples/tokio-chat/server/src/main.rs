@@ -76,6 +76,7 @@ fn use_tick_result(
 
                 server.refuse(
                     addr,
+                    addr_to_auth,
                     LimitedMessage::new(SerializedPacketList::single(
                         server
                             .packet_registry()
