@@ -33,7 +33,7 @@ members = [
 
 [package]
 name = "lyanne"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 authors = ["Robsutar"]
 description = "Tick-based communication framework for server-client architectures."
