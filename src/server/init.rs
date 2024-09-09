@@ -80,23 +80,7 @@ pub mod client {
                             }
                         }
                         MessageChannel::MESSAGE_PART_SEND => {
-                            let message_part_bytes = match &messaging.inner_auth {
-                                InnerAuth::NoCryptography => {
-                                    if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE {
-                                        Err(InnerAuth::insufficient_minimal_bytes_error())
-                                    } else {
-                                        Ok(bytes[MESSAGE_CHANNEL_SIZE..].to_vec())
-                                    }
-                                },
-                                #[cfg(feature = "auth_tcp")]
-                                InnerAuth::RequireTcp(props) => {
-                                    props.extract(&bytes)
-                                }
-                                #[cfg(feature = "auth_tls")]
-                                InnerAuth::RequireTls(props) => {
-                                    props.extract(&bytes)
-                                }
-                            };
+                            let message_part_bytes = messaging.inner_auth.extract_after_channel(&bytes);
 
                             let message_part_bytes = match message_part_bytes {
                                 Ok(message_part_bytes) => message_part_bytes,

@@ -17,8 +17,8 @@ pub(super) struct InnerAuthTcpBased {
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 impl InnerAuthTcpBased {
-    pub(crate) fn extract(&self, bytes: &Vec<u8>) -> io::Result<Vec<u8>> {
-        if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_PART_BYTES_SIZE + NONCE_SIZE {
+    fn extract_after_channel(&self, bytes: &Vec<u8>) -> io::Result<Vec<u8>> {
+        if bytes.len() < MESSAGE_CHANNEL_SIZE + NONCE_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE {
             Err(InnerAuth::insufficient_minimal_bytes_error())
         } else {
             let nonce = Nonce::from_slice(
@@ -46,6 +46,22 @@ pub(super) enum InnerAuth {
 }
 
 impl InnerAuth {
+    pub fn extract_after_channel(&self, bytes: &Vec<u8>) -> io::Result<Vec<u8>> {
+        match self {
+            InnerAuth::NoCryptography => {
+                if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE {
+                    Err(InnerAuth::insufficient_minimal_bytes_error())
+                } else {
+                    Ok(bytes[MESSAGE_CHANNEL_SIZE..].to_vec())
+                }
+            }
+            #[cfg(feature = "auth_tcp")]
+            InnerAuth::RequireTcp(props) => props.extract_after_channel(&bytes),
+            #[cfg(feature = "auth_tls")]
+            InnerAuth::RequireTls(props) => props.extract_after_channel(&bytes),
+        }
+    }
+
     pub fn insufficient_minimal_bytes_error() -> io::Error {
         io::Error::new(io::ErrorKind::InvalidData, "Insufficient minimal bytes.")
     }
