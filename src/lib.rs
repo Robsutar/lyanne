@@ -259,9 +259,9 @@ impl LimitedMessage {
         self.list
     }
 
-    pub(crate) fn clone(&self) -> Self {
-        Self {
-            list: self.list.clone(),
+    pub(crate) fn clone(message: &LimitedMessage) -> LimitedMessage {
+        LimitedMessage {
+            list: SerializedPacketList::clone(&message.list),
         }
     }
 }

@@ -462,9 +462,9 @@ impl SerializedPacketList {
         SerializedPacketList::non_empty(vec![stored])
     }
 
-    pub(crate) fn clone(&self) -> Self {
-        Self {
-            bytes: self.bytes.clone(),
+    pub(crate) fn clone(list: &SerializedPacketList) -> SerializedPacketList {
+        SerializedPacketList {
+            bytes: list.bytes.clone(),
         }
     }
 }
