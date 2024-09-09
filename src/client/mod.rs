@@ -422,7 +422,7 @@ impl ClientInternal {
     async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
         let mut messaging = self.connected_server.messaging.lock().await;
         // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
-        messaging.tick_bytes_len += bytes.len() + 8 + 20;
+        messaging.tick_bytes_len += bytes.len() + 8 + 40;
         if messaging.tick_bytes_len > self.messaging_properties.max_tick_bytes_len {
             ReadServerBytesResult::ServerMaxTickByteLenOverflow
         } else {
