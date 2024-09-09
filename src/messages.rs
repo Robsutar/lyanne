@@ -20,9 +20,11 @@ pub(crate) const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
 
 pub(crate) const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
 
-pub(crate) const MINIMAL_SERIALIZED_PACKET_SIZE: usize = 1;
+// 2 for PacketId + 1 for minimal packet content.
+pub(crate) const MINIMAL_SERIALIZED_PACKET_SIZE: usize = 2 + 1;
 
-pub(crate) const MINIMAL_PART_BYTES_SIZE: usize = 4 + MINIMAL_SERIALIZED_PACKET_SIZE;
+// 2 for MessagePartId and 1 for MessagePartType
+pub(crate) const MINIMAL_PART_BYTES_SIZE: usize = 2 + 1 + MINIMAL_SERIALIZED_PACKET_SIZE;
 
 pub(crate) const NONCE_SIZE: usize = 12;
 pub(crate) const ENCRYPTION_SPACE: usize = 16;
