@@ -95,7 +95,7 @@ use std::{
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::Aead, AeadCore, ChaCha20Poly1305, Nonce};
-use messages::NONCE_SIZE;
+use messages::{ENCRYPTION_SPACE, NONCE_SIZE};
 
 use crate::{
     messages::{MessagePart, MessagePartId},
@@ -139,8 +139,8 @@ pub struct MessagingProperties {
 impl Default for MessagingProperties {
     fn default() -> Self {
         Self {
-            // 1024 buffer size, 16 for encryption
-            part_limit: 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - 16,
+            // 1024 buffer size
+            part_limit: 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - ENCRYPTION_SPACE,
             timeout_interpretation: Duration::from_secs(10),
             disconnect_reason_resend_delay: Duration::from_secs(3),
             disconnect_reason_resend_cancel: Duration::from_secs(10),
@@ -242,7 +242,7 @@ impl LimitedMessage {
     /// # Errors
     /// If the list reached the max allowed size.
     pub fn try_new(list: SerializedPacketList) -> Result<Self, ()> {
-        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE {
+        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - ENCRYPTION_SPACE {
             Err(())
         } else {
             Ok(LimitedMessage { list })
