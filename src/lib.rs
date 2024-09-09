@@ -62,6 +62,28 @@
 //! }
 //! ```
 //!
+//! # Cargo Features
+//! No feature is enabled by default, but at least one runtime feature is required.
+//!
+//! Each feature is being used by at least one example inside [examples](https://github.com/Robsutar/lyanne/tree/main/examples),
+//! see [README](https://github.com/Robsutar/lyanne/tree/main/examples#examples) for more information.
+//!
+//! |feature|description|
+//! |-|-|
+//! |client|Enable client exclusive module|
+//! |server|Enable server exclusive module|
+//! |rt_async_executor|Uses async-executor as runtime|
+//! |rt_async_std|Uses async-std as runtime|
+//! |rt_bevy|Uses bevy_tasks as runtime|
+//! |rt_smol|Uses smol as runtime|
+//! |rt_tokio|Uses tokio as runtime|
+//! |sd_bincode|Uses serde + bincode as packet serializer/deserializer|
+//! |auth_tcp|Uses Tcp socket to exchange keys to encrypt the udp communication. **Warning**: this feature alone is not responsible to encrypt the entire connection, some additional cryptography in that Tcp port is needed,such as a reverse proxy, like nginx.|
+//! |auth_tls|Uses Tcp socket with tls (using rustls) to exchange keys to encrypt the udp communication. **Warning**: The encryption of the crate with rustls has not yet been subjected to a series of tests.|
+//! |bevy_packet_schedules|Creates Scheduled Labels for structs that derive from Packet.|
+//! |deserialized_message_map|Received packets will be read in maps (with the keys being the packet IDs), instead of being stored in a list. This does not affect communication, only the way the data is stored for reading.|
+//! |store_unexpected|Stores unexpected communication errors in each tick, such as incorrect communication. It is generally a debugging tool and adds a small overhead.|
+//!
 
 #[cfg(feature = "bevy_packet_schedules")]
 pub use bevy_ecs;
