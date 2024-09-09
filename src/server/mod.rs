@@ -242,8 +242,6 @@ pub enum ServerDisconnectState {
 
 /// General properties for the server management.
 pub struct ServerProperties {
-    /// Maximum number of ignore justifications to be sent per tick.
-    pub max_ignored_addrs_asking_reason: usize,
     /// TODO: field not used in TCP based auth.
     pub pending_auth_packet_loss_interpretation: Duration,
 }
@@ -251,7 +249,6 @@ pub struct ServerProperties {
 impl Default for ServerProperties {
     fn default() -> Self {
         Self {
-            max_ignored_addrs_asking_reason: 50,
             pending_auth_packet_loss_interpretation: Duration::from_secs(3),
         }
     }
@@ -531,8 +528,8 @@ struct ServerInternal {
     /// Map of connected clients, keyed by their socket address.
     connected_clients: DashMap<SocketAddr, Arc<ConnectedClient>>,
 
-    /// Map of ignored addresses with reasons for ignoring them.
-    ignored_ips: DashMap<IpAddr, IgnoredAddrReason>,
+    /// Set of ignored ips.
+    ignored_ips: DashSet<IpAddr>,
     /// Map of temporarily ignored addresses with the time until they are ignored.
     temporary_ignored_ips: DashMap<IpAddr, Instant>,
 
@@ -550,13 +547,13 @@ struct ServerInternal {
 }
 
 impl ServerInternal {
-    fn ignore_ip(&self, ip: IpAddr, reason: IgnoredAddrReason) {
+    fn ignore_ip(&self, ip: IpAddr) {
         self.temporary_ignored_ips.remove(&ip);
-        self.ignored_ips.insert(ip, reason);
+        self.ignored_ips.insert(ip);
     }
 
-    fn ignore_ip_temporary(&self, ip: IpAddr, reason: IgnoredAddrReason, until_to: Instant) {
-        self.ignored_ips.insert(ip, reason);
+    fn ignore_ip_temporary(&self, ip: IpAddr, until_to: Instant) {
+        self.ignored_ips.insert(ip);
         self.temporary_ignored_ips.insert(ip, until_to);
     }
 
@@ -742,7 +739,7 @@ impl Server {
 
                 server_properties,
                 connected_clients: DashMap::new(),
-                ignored_ips: DashMap::new(),
+                ignored_ips: DashSet::new(),
                 temporary_ignored_ips: DashMap::new(),
 
                 assigned_addrs_in_auth: RwLock::new(HashSet::new()),
@@ -1304,18 +1301,18 @@ impl Server {
     /// If that client is already ignored, the reason will be replaced.
     ///
     /// If that client is temporary ignored, it will be permanently ignored.
-    pub fn ignore_ip(&self, ip: IpAddr, reason: IgnoredAddrReason) {
+    pub fn ignore_ip(&self, ip: IpAddr) {
         let internal = &self.internal;
-        internal.ignore_ip(ip, reason);
+        internal.ignore_ip(ip);
     }
 
     /// The messages of this addr will be ignored, for the expected time, then,
     /// it will be cleared and the addr will be able to send messages for the server.
     ///
     /// If that client is already ignored, the reason will be replaced.
-    pub fn ignore_ip_temporary(&self, ip: IpAddr, reason: IgnoredAddrReason, until_to: Instant) {
+    pub fn ignore_ip_temporary(&self, ip: IpAddr, until_to: Instant) {
         let internal = &self.internal;
-        internal.ignore_ip_temporary(ip, reason, until_to);
+        internal.ignore_ip_temporary(ip, until_to);
     }
 
     /// Removes the specified addr from the ignored list, even if it is temporary ignored.
