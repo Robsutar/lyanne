@@ -13,7 +13,7 @@ use lyanne::client::{
     ConnectResult, ConnectedAuthenticatorMode,
 };
 use lyanne::{client::ClientProperties, packets::SerializedPacketList};
-use lyanne::{MessagingProperties, ReadHandlerProperties};
+use lyanne::{LimitedMessage, MessagingProperties, ReadHandlerProperties};
 
 #[derive(Component)]
 struct ClientConnecting {
@@ -50,10 +50,12 @@ fn init(mut commands: Commands) {
     let authenticator_mode = AuthenticatorMode::AttemptList(vec![
         AuthenticatorMode::RequireTls(
             AuthenticationProperties {
-                message: SerializedPacketList::single(packet_managers.packet_registry.serialize(
-                    &AuthenticationPacket {
-                        player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTls),
-                    },
+                message: LimitedMessage::new(SerializedPacketList::single(
+                    packet_managers
+                        .packet_registry
+                        .serialize(&AuthenticationPacket {
+                            player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTls),
+                        }),
                 )),
                 timeout: Duration::from_secs(3),
             },
@@ -68,10 +70,12 @@ fn init(mut commands: Commands) {
         ),
         AuthenticatorMode::RequireTcp(
             AuthenticationProperties {
-                message: SerializedPacketList::single(packet_managers.packet_registry.serialize(
-                    &AuthenticationPacket {
-                        player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTcp),
-                    },
+                message: LimitedMessage::new(SerializedPacketList::single(
+                    packet_managers
+                        .packet_registry
+                        .serialize(&AuthenticationPacket {
+                            player_name: my_name_of(&ConnectedAuthenticatorMode::RequireTcp),
+                        }),
                 )),
                 timeout: Duration::from_secs(3),
             },
@@ -80,10 +84,12 @@ fn init(mut commands: Commands) {
             },
         ),
         AuthenticatorMode::NoCryptography(AuthenticationProperties {
-            message: SerializedPacketList::single(packet_managers.packet_registry.serialize(
-                &AuthenticationPacket {
-                    player_name: my_name_of(&ConnectedAuthenticatorMode::NoCryptography),
-                },
+            message: LimitedMessage::new(SerializedPacketList::single(
+                packet_managers
+                    .packet_registry
+                    .serialize(&AuthenticationPacket {
+                        player_name: my_name_of(&ConnectedAuthenticatorMode::NoCryptography),
+                    }),
             )),
             timeout: Duration::from_secs(3),
         }),

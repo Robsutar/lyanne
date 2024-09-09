@@ -12,9 +12,11 @@ fn main() {
     let client_properties = Arc::new(ClientProperties::default());
     let authenticator_mode = AuthenticatorMode::RequireTls(
         AuthenticationProperties {
-            message: SerializedPacketList::single(packet_registry.serialize(&HelloPacket {
-                player_name: "Josh".to_owned(),
-            })),
+            message: LimitedMessage::new(SerializedPacketList::single(packet_registry.serialize(
+                &HelloPacket {
+                    player_name: "Josh".to_owned(),
+                },
+            ))),
             timeout: Duration::from_secs(10),
         },
         lyanne::auth_tls::AuthTlsClientProperties {

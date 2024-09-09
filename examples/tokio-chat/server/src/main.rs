@@ -76,13 +76,15 @@ fn use_tick_result(
 
                 server.refuse(
                     addr,
-                    SerializedPacketList::single(server.packet_registry().serialize(
-                        &AuthenticationFailedPacket {
-                            justification: format!(
-                                "Another {} is already connected",
-                                hello_packet.player_name
-                            ),
-                        },
+                    LimitedMessage::new(SerializedPacketList::single(
+                        server
+                            .packet_registry()
+                            .serialize(&AuthenticationFailedPacket {
+                                justification: format!(
+                                    "Another {} is already connected",
+                                    hello_packet.player_name
+                                ),
+                            }),
                     )),
                 )
             } else {
