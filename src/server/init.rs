@@ -16,10 +16,7 @@ use crate::{
     rt::TaskHandle,
 };
 
-use crate::{
-    MessageChannel,
-    MESSAGE_CHANNEL_SIZE,
-};
+use crate::MessageChannel;
 
 use super::*;
 
@@ -147,15 +144,21 @@ pub mod client {
                             }
                         }
                         MessageChannel::REJECTION_JUSTIFICATION => {
-                            // 4 for the minimal SerializedPacket
-                            if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
-                                let _ = server.clients_to_disconnect_sender.try_send((
-                                    addr,
-                                    (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                                ));
-                                break 'l1;
-                            } else if let Ok(message) =
-                                DeserializedMessage::deserialize_single_list(&bytes[MESSAGE_CHANNEL_SIZE..], &server.packet_registry)
+                            let justification_bytes = client.inner_auth.extract_after_channel(&bytes);
+
+                            let justification_bytes = match justification_bytes {
+                                Ok(justification_bytes) => justification_bytes,
+                                Err(_) => {
+                                    let _ = server.clients_to_disconnect_sender.try_send((
+                                        addr,
+                                        (ClientDisconnectReason::InvalidProtocolCommunication, None),
+                                    ));
+                                    break 'l1;
+                                }
+                            };
+
+                            if let Ok(message) =
+                                DeserializedMessage::deserialize_single_list(&justification_bytes, &server.packet_registry)
                             {
                                 server.recently_disconnected.insert(addr.clone(), Instant::now());
                                 server.rejections_to_confirm.insert(addr.clone());

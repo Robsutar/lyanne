@@ -4,10 +4,10 @@ use std::{io, time::Instant};
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::{messages::NONCE_SIZE, MESSAGE_CHANNEL_SIZE};
+use crate::messages::NONCE_SIZE;
 use crate::{
     messages::{MessagePart, MINIMAL_SERIALIZED_PACKET_SIZE},
-    JustifiedRejectionContext, LimitedMessage, SentMessagePart,
+    JustifiedRejectionContext, LimitedMessage, SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]

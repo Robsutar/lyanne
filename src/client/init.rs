@@ -17,14 +17,12 @@ use crate::{
 
 use crate::{
     MessageChannel,
-    SentMessagePart, MESSAGE_CHANNEL_SIZE,
+    SentMessagePart,
 };
 
 use super::*;
 
 pub mod server {
-    use crate::messages::MINIMAL_SERIALIZED_PACKET_SIZE;
-
     use super::*;
 
     pub async fn create_receiving_bytes_handler(
@@ -142,18 +140,23 @@ pub mod server {
                             }
                         }
                         MessageChannel::REJECTION_JUSTIFICATION => {
-                            if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE {
-                                let _ = client
-                                    .reason_to_disconnect_sender
-                                    .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
-                                break 'l1;
-                            } else if let Ok(message) =
-                                DeserializedMessage::deserialize_single_list(&bytes[MESSAGE_CHANNEL_SIZE..], &client.packet_registry)
-                            {
-                                {
-                                    let _ = client.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;
-                                }
+                            let justification_bytes = server.inner_auth.extract_after_channel(&bytes);
 
+                            let justification_bytes = match justification_bytes {
+                                Ok(justification_bytes) => justification_bytes,
+                                Err(_) => {
+                                    let _ = client
+                                        .reason_to_disconnect_sender
+                                        .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
+                                    break 'l1;
+                                }
+                            };
+
+                            if let Ok(message) =
+                                DeserializedMessage::deserialize_single_list(&justification_bytes, &client.packet_registry)
+                            {
+                                let _ = client.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;
+                                
                                 let _ = client
                                     .reason_to_disconnect_sender
                                     .try_send(ServerDisconnectReason::DisconnectRequest(message));
