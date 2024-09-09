@@ -14,7 +14,7 @@ use x25519_dalek::EphemeralSecret;
 
 use crate::{
     messages::{DeserializedMessage, MessagePartMap},
-    packets::{ClientTickEndPacket, PacketRegistry, SerializedPacketList},
+    packets::{ClientTickEndPacket, PacketRegistry},
     rt::{Mutex, UdpSocket},
     utils::{DurationMonitor, RttCalculator},
 };
@@ -39,7 +39,7 @@ use crate::rt::{AsyncReadExt, AsyncWriteExt, TcpStream};
 /// Proprieties for handling the client authentication/handshake with the server.
 pub struct AuthenticationProperties {
     /// The authentication message.
-    pub message: SerializedPacketList,
+    pub message: LimitedMessage,
     /// The timeout to wait for a server response.
     pub timeout: Duration,
 }
@@ -181,7 +181,7 @@ pub(super) mod connecting {
         socket: &UdpSocket,
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
-    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
+    ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
         Ok(match authenticator_mode {
             AuthenticatorMode::NoCryptography(props) => {
                 connect_no_cryptography_match_arm(&socket, buf, &public_key_sent, props).await?
@@ -212,7 +212,7 @@ pub(super) mod connecting {
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         props: AuthenticationProperties,
-    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
+    ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
         let sent_time = Instant::now();
         loop {
             let now = Instant::now();
@@ -293,7 +293,7 @@ pub(super) mod connecting {
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTcpClientProperties,
         props: AuthenticationProperties,
-    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
+    ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
         match crate::rt::timeout(props.timeout, async {
             let tcp_stream = match TcpStream::connect(auth_mode.server_addr).await {
                 Ok(tcp_stream) => tcp_stream,
@@ -316,7 +316,7 @@ pub(super) mod connecting {
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTlsClientProperties,
         props: AuthenticationProperties,
-    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
+    ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
         match crate::rt::timeout(props.timeout, async {
             let server_name = match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
                 Ok(server_name) => server_name,
@@ -353,7 +353,7 @@ pub(super) mod connecting {
         buf: &mut [u8; 1024],
         public_key_sent: &Vec<u8>,
         modes: Vec<AuthenticatorMode>,
-    ) -> Result<(usize, SerializedPacketList, ConnectedAuthenticatorMode), ConnectError> {
+    ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
         let mut errors = Vec::<ConnectError>::new();
         for mode in modes {
             match connect_auth_mode_match_arm(
@@ -377,7 +377,7 @@ pub(super) mod connecting {
         socket: Arc<UdpSocket>,
         buf: [u8; 1024],
         _client_private_key: EphemeralSecret,
-        message: SerializedPacketList,
+        message: LimitedMessage,
         packet_registry: Arc<PacketRegistry>,
         messaging_properties: Arc<MessagingProperties>,
         read_handler_properties: Arc<ReadHandlerProperties>,
@@ -392,12 +392,13 @@ pub(super) mod connecting {
 
         let (authentication_bytes, inner_auth) = match &connected_auth_mode {
             &ConnectedAuthenticatorMode::NoCryptography => {
-                let mut authentication_bytes = Vec::with_capacity(
-                    MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + message.bytes.len(),
-                );
+                let list = message.to_list();
+
+                let mut authentication_bytes =
+                    Vec::with_capacity(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + list.bytes.len());
                 authentication_bytes.push(MessageChannel::AUTH_MESSAGE);
                 authentication_bytes.extend_from_slice(&server_public_key_bytes);
-                authentication_bytes.extend(message.bytes);
+                authentication_bytes.extend(list.bytes);
 
                 (authentication_bytes, InnerAuth::NoCryptography)
             }
@@ -619,20 +620,18 @@ pub(super) mod connecting {
     fn connect_auth_cipher_arm(
         server_public_key_bytes: [u8; 32],
         _client_private_key: EphemeralSecret,
-        message: SerializedPacketList,
+        message: LimitedMessage,
     ) -> (ChaCha20Poly1305, Vec<u8>) {
+        let list = message.to_list();
+
         let server_public_key = x25519_dalek::PublicKey::from(server_public_key_bytes);
         let shared_key = _client_private_key.diffie_hellman(&server_public_key);
         let cipher = ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
         let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut rand::rngs::OsRng);
-        let cipher_bytes =
-            SentMessagePart::cryptograph_message_part(&message.bytes, &cipher, &nonce);
+        let cipher_bytes = SentMessagePart::cryptograph_message_part(&list.bytes, &cipher, &nonce);
 
         let mut authentication_bytes = Vec::with_capacity(
-            MESSAGE_CHANNEL_SIZE
-                + server_public_key_bytes.len()
-                + nonce.len()
-                + message.bytes.len(),
+            MESSAGE_CHANNEL_SIZE + server_public_key_bytes.len() + nonce.len() + list.bytes.len(),
         );
         authentication_bytes.push(MessageChannel::AUTH_MESSAGE);
         authentication_bytes.extend_from_slice(&server_public_key_bytes);

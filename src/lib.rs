@@ -232,42 +232,51 @@ impl Default for ReadHandlerProperties {
     }
 }
 
+/// Message limited by maximum socket send/receive bytes.
+pub struct LimitedMessage {
+    /// Packet list with limited size checked.
+    list: SerializedPacketList,
+}
+
+impl LimitedMessage {
+    /// # Errors
+    /// If the list reached the max allowed size.
+    pub fn try_new(list: SerializedPacketList) -> Result<Self, ()> {
+        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE {
+            Err(())
+        } else {
+            Ok(LimitedMessage { list })
+        }
+    }
+
+    /// # Panics
+    /// If the list reached the max allowed size.
+    pub fn new(list: SerializedPacketList) -> Self {
+        LimitedMessage::try_new(list).expect("Message reached the maximum byte length.")
+    }
+
+    pub(crate) fn to_list(self) -> SerializedPacketList {
+        self.list
+    }
+}
+
 /// Justified rejection message.
-#[allow(dead_code)]
-pub struct JustifiedRejectionContext {
+pub(crate) struct JustifiedRejectionContext {
     /// The instant that the disconnection was made.
     rejection_instant: Instant,
-    /// The last instant that the bytes were sent.
-    last_sent_time: Option<Instant>,
     /// The serialized message to send, confirming the disconnect.
     finished_bytes: Vec<u8>,
 }
 
 impl JustifiedRejectionContext {
-    pub fn try_from_serialized_list(
-        rejection_instant: Instant,
-        list: SerializedPacketList,
-    ) -> Result<Self, ()> {
-        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE {
-            Err(())
-        } else {
-            let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
-            finished_bytes.push(MessageChannel::REJECTION_JUSTIFICATION);
-            finished_bytes.extend(list.bytes);
-            Ok(Self {
-                rejection_instant,
-                last_sent_time: None,
-                finished_bytes,
-            })
+    pub fn from_serialized_list(rejection_instant: Instant, message: LimitedMessage) -> Self {
+        let list = message.to_list();
+        let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
+        finished_bytes.push(MessageChannel::REJECTION_JUSTIFICATION);
+        finished_bytes.extend(list.bytes);
+        Self {
+            rejection_instant,
+            finished_bytes,
         }
-    }
-
-    /// Loads from [`SerializedPacketList`].
-    ///
-    /// # Panics
-    /// If the message reached the maximum byte length.
-    pub fn from_serialized_list(rejection_instant: Instant, list: SerializedPacketList) -> Self {
-        JustifiedRejectionContext::try_from_serialized_list(rejection_instant, list)
-            .expect("Message reached the maximum byte length.")
     }
 }

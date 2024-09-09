@@ -377,8 +377,9 @@ pub mod server {
     ) {
         'l1: while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv().await {
             if let Some(server) = server.upgrade() {
-                if let Some(mut context) = server.pending_rejection_confirm.get_mut(&addr) {
-                    context.last_sent_time = Some(Instant::now());
+                if let Some(mut tuple) = server.pending_rejection_confirm.get_mut(&addr) {
+                    let (context, last_sent_time) = tuple.value_mut();
+                    *last_sent_time = Some(Instant::now());
                     let _ = server.socket.send_to(&context.finished_bytes, addr).await;
                 }
             } else {

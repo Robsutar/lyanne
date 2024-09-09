@@ -16,11 +16,11 @@
 //!     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
 //!     let client_properties = Arc::new(ClientProperties::default());
 //!     let authenticator_mode = AuthenticatorMode::NoCryptography(AuthenticationProperties {
-//!         message: SerializedPacketList::create(vec![packet_registry.serialize(
+//!         message: LimitedMessage::new(SerializedPacketList::single(packet_registry.serialize(
 //!             &HelloPacket {
 //!                 player_name: "Josh".to_owned(),
 //!             },
-//!         )]),
+//!         ))),
 //!         timeout: Duration::from_secs(10),
 //!     });
 //!
@@ -87,11 +87,10 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
     messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE},
-    packets::{
-        ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket, SerializedPacketList,
-    },
+    packets::{ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket},
     rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
     utils::{DurationMonitor, RttCalculator},
+    LimitedMessage,
 };
 
 use crate::{
@@ -241,7 +240,7 @@ pub enum ClientTickResult {
 /// Properties to disconnect the client from the server, notifying the server.
 pub struct GracefullyDisconnection {
     /// The message.
-    pub message: SerializedPacketList,
+    pub message: LimitedMessage,
     /// The server response timeout.
     pub timeout: Duration,
 }
@@ -731,11 +730,11 @@ impl Client {
     /// ```no_run
     /// let client: Client = ...;
     ///
-    /// let message = SerializedPacketList::single(
+    /// let message = LimitedMessage::new(SerializedPacketList::single(
     ///     client.packet_registry().serialize(&BarPacket {
     ///         message: "We finished here...".to_owned(),
     ///     }),
-    /// );
+    /// ));
     /// let state = client
     ///     .disconnect(Some(GracefullyDisconnection {
     ///         message,

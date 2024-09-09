@@ -111,6 +111,7 @@ use crate::{
     },
     rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
     utils::{DurationMonitor, RttCalculator},
+    LimitedMessage,
 };
 
 use crate::{
@@ -213,7 +214,7 @@ pub struct GracefullyDisconnection {
     /// The client response timeout.
     pub timeout: Duration,
     /// The message.
-    pub message: SerializedPacketList,
+    pub message: LimitedMessage,
 }
 
 /// The disconnection state of an specific client.
@@ -539,7 +540,7 @@ struct ServerInternal {
     /// Map of clients that were recently disconnected itself.
     recently_disconnected: DashMap<SocketAddr, Instant>,
     /// Map of pending rejection confirmations.
-    pending_rejection_confirm: DashMap<SocketAddr, JustifiedRejectionContext>,
+    pending_rejection_confirm: DashMap<SocketAddr, (JustifiedRejectionContext, Option<Instant>)>,
     /// Set of addresses asking for the rejection confirm.
     rejections_to_confirm: DashSet<SocketAddr>,
 
@@ -948,15 +949,18 @@ impl Server {
             }
         }
 
-        internal.pending_rejection_confirm.retain(|_, context| {
-            now - context.rejection_instant
-                < internal
-                    .messaging_properties
-                    .disconnect_reason_resend_cancel
-        });
-        for context in internal.pending_rejection_confirm.iter() {
-            if let Some(last_sent_time) = context.last_sent_time {
-                if now - last_sent_time
+        internal
+            .pending_rejection_confirm
+            .retain(|_, (context, _)| {
+                now - context.rejection_instant
+                    < internal
+                        .messaging_properties
+                        .disconnect_reason_resend_cancel
+            });
+        for tuple in internal.pending_rejection_confirm.iter() {
+            let (_, last_sent_time) = tuple.value();
+            if let Some(last_sent_time) = last_sent_time {
+                if now - *last_sent_time
                     < internal.messaging_properties.disconnect_reason_resend_delay
                 {
                     continue;
@@ -964,7 +968,7 @@ impl Server {
             }
             internal
                 .pending_rejection_confirm_resend_sender
-                .try_send(context.key().clone())
+                .try_send(tuple.key().clone())
                 .unwrap();
         }
 
@@ -973,7 +977,7 @@ impl Server {
             if let Some(context) = context {
                 internal
                     .pending_rejection_confirm
-                    .insert(addr.clone(), context);
+                    .insert(addr.clone(), (context, None));
             }
             disconnected.insert(addr, reason);
         }
@@ -1226,7 +1230,7 @@ impl Server {
     pub fn try_refuse(
         &self,
         addr: SocketAddr,
-        message: SerializedPacketList,
+        message: LimitedMessage,
     ) -> Result<(), BadAuthenticateUsageError> {
         let internal = &self.internal;
         if internal.connected_clients.contains_key(&addr) {
@@ -1241,7 +1245,10 @@ impl Server {
         } else {
             internal.pending_rejection_confirm.insert(
                 addr,
-                JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
+                (
+                    JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
+                    None,
+                ),
             );
 
             Ok(())
@@ -1262,7 +1269,7 @@ impl Server {
     /// - if addr was not marked in the last tick to be possibly authenticated.
     ///
     /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
-    pub fn refuse(&self, addr: SocketAddr, message: SerializedPacketList) {
+    pub fn refuse(&self, addr: SocketAddr, message: LimitedMessage) {
         self.try_refuse(addr, message).unwrap()
     }
 
@@ -1275,7 +1282,7 @@ impl Server {
     ///
     /// * `message` - `ConnectedClient` message to send to the client, packet loss will be handled.
     /// If is None, no message will be sent to the client. That message has limited size.
-    pub fn disconnect_from(&self, client: &ConnectedClient, message: Option<SerializedPacketList>) {
+    pub fn disconnect_from(&self, client: &ConnectedClient, message: Option<LimitedMessage>) {
         let internal = &self.internal;
         let context = {
             if let Some(list) = message {
@@ -1412,11 +1419,11 @@ impl Server {
     /// ```no_run
     /// let server: Server = ...;
     ///
-    /// let message = SerializedPacketList::single(
+    /// let message = LimitedMessage::new(SerializedPacketList::single(
     ///     server.packet_registry().serialize(&FooPacket {
     ///         message: "We finished here...".to_owned(),
     ///     }),
-    /// );
+    /// ));
     /// let state = server
     ///     .disconnect(Some(GracefullyDisconnection {
     ///         message,
