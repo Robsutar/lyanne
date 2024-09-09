@@ -102,4 +102,4 @@ fn inside_tick(client: &Client) {
 }
 ```
 
-See more complete examples in `examples` folder, and in crate documentation.
+See more complete examples in [examples](https://github.com/Robsutar/lyanne/tree/main/examples) folder, and in crate documentation.
