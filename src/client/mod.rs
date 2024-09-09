@@ -94,8 +94,8 @@ use crate::{
 };
 
 use crate::{
-    JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties,
-    SentMessagePart, MESSAGE_CHANNEL_SIZE,
+    MessageChannel, MessagingProperties, ReadHandlerProperties, SentMessagePart,
+    MESSAGE_CHANNEL_SIZE,
 };
 
 use crate::auth::InnerAuth;
@@ -771,22 +771,27 @@ impl Client {
                     .average_packet_loss_rtt
                     .min(timeout_interpretation);
 
-                drop(self);
+                // TODO: move inner auth from messaging to server, and fix that lock.
+                let rejection_context = self
+                    .internal
+                    .connected_server
+                    .messaging
+                    .try_lock()
+                    .unwrap()
+                    .inner_auth
+                    .rejection_of(Instant::now(), disconnection.message);
 
-                let context = JustifiedRejectionContext::from_serialized_list(
-                    Instant::now(),
-                    disconnection.message,
-                );
+                drop(self);
 
                 let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
 
                 loop {
                     let now = Instant::now();
-                    if now - context.rejection_instant > timeout_interpretation {
+                    if now - rejection_context.rejection_instant > timeout_interpretation {
                         return ClientDisconnectState::ConfirmationTimeout;
                     }
 
-                    if let Err(e) = socket.send(&context.finished_bytes).await {
+                    if let Err(e) = socket.send(&rejection_context.finished_bytes).await {
                         return ClientDisconnectState::SendIoError(e);
                     }
 

@@ -7,7 +7,7 @@ use std::{
 use crate::{
     messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId,
-        MessagePartMapTryInsertResult, MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE,
+        MessagePartMapTryInsertResult, MessagePartMapTryReadResult,
     },
     packets::{
         SerializedPacket, SerializedPacketList,
@@ -23,6 +23,8 @@ use crate::{
 use super::*;
 
 pub mod server {
+    use crate::messages::MINIMAL_SERIALIZED_PACKET_SIZE;
+
     use super::*;
 
     pub async fn create_receiving_bytes_handler(
@@ -140,8 +142,7 @@ pub mod server {
                             }
                         }
                         MessageChannel::REJECTION_JUSTIFICATION => {
-                            // 4 for the minimal SerializedPacket
-                            if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
+                            if bytes.len() < MESSAGE_CHANNEL_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE {
                                 let _ = client
                                     .reason_to_disconnect_sender
                                     .try_send(ServerDisconnectReason::InvalidProtocolCommunication);

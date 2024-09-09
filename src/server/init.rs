@@ -8,7 +8,7 @@ use std::{
 use crate::{
     messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId,
-        MessagePartMapTryInsertResult, MessagePartMapTryReadResult, MINIMAL_PART_BYTES_SIZE,
+        MessagePartMapTryInsertResult, MessagePartMapTryReadResult,
     },
     packets::{
         SerializedPacket, SerializedPacketList,
@@ -18,7 +18,7 @@ use crate::{
 
 use crate::{
     MessageChannel,
-    SentMessagePart, MESSAGE_CHANNEL_SIZE,
+    MESSAGE_CHANNEL_SIZE,
 };
 
 use super::*;

@@ -1230,6 +1230,7 @@ impl Server {
     pub fn try_refuse(
         &self,
         addr: SocketAddr,
+        addr_to_auth: AddrToAuth,
         message: LimitedMessage,
     ) -> Result<(), BadAuthenticateUsageError> {
         let internal = &self.internal;
@@ -1246,7 +1247,9 @@ impl Server {
             internal.pending_rejection_confirm.insert(
                 addr,
                 (
-                    JustifiedRejectionContext::from_serialized_list(Instant::now(), message),
+                    addr_to_auth
+                        .inner_auth
+                        .rejection_of(Instant::now(), message),
                     None,
                 ),
             );
@@ -1269,8 +1272,8 @@ impl Server {
     /// - if addr was not marked in the last tick to be possibly authenticated.
     ///
     /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
-    pub fn refuse(&self, addr: SocketAddr, message: LimitedMessage) {
-        self.try_refuse(addr, message).unwrap()
+    pub fn refuse(&self, addr: SocketAddr, addr_to_auth: AddrToAuth, message: LimitedMessage) {
+        self.try_refuse(addr, addr_to_auth, message).unwrap()
     }
 
     /// Mark that client to be disconnected in the next tick.
@@ -1285,11 +1288,16 @@ impl Server {
     pub fn disconnect_from(&self, client: &ConnectedClient, message: Option<LimitedMessage>) {
         let internal = &self.internal;
         let context = {
-            if let Some(list) = message {
-                Some(JustifiedRejectionContext::from_serialized_list(
-                    Instant::now(),
-                    list,
-                ))
+            if let Some(message) = message {
+                // TODO: move inner_auth from messaging to client and fix that lock
+                Some(
+                    client
+                        .messaging
+                        .try_lock()
+                        .unwrap()
+                        .inner_auth
+                        .rejection_of(Instant::now(), message),
+                )
             } else {
                 None
             }
@@ -1450,14 +1458,10 @@ impl Server {
 
             if let Some(disconnection) = disconnection {
                 let mut confirmations = HashMap::<SocketAddr, ServerDisconnectClientState>::new();
-                let mut confirmations_pending = HashMap::<SocketAddr, (Duration, Instant)>::new();
+                let mut confirmations_pending =
+                    HashMap::<SocketAddr, (Duration, Instant, JustifiedRejectionContext)>::new();
 
                 let timeout_interpretation = disconnection.timeout;
-
-                let context = JustifiedRejectionContext::from_serialized_list(
-                    Instant::now(),
-                    disconnection.message,
-                );
 
                 {
                     let now = Instant::now();
@@ -1470,7 +1474,23 @@ impl Server {
                             .average_packet_loss_rtt
                             .min(timeout_interpretation);
 
-                        confirmations_pending.insert(addr, (packet_loss_timeout, now));
+                        // TODO: move inner_auth from messaging to client and fix that lock
+                        confirmations_pending.insert(
+                            addr,
+                            (
+                                packet_loss_timeout,
+                                now,
+                                connected_client
+                                    .messaging
+                                    .try_lock()
+                                    .unwrap()
+                                    .inner_auth
+                                    .rejection_of(
+                                        Instant::now(),
+                                        LimitedMessage::clone(&disconnection.message),
+                                    ),
+                            ),
+                        );
                     }
                 }
 
@@ -1481,28 +1501,32 @@ impl Server {
 
                 while !confirmations_pending.is_empty() {
                     let now = Instant::now();
-                    if now - context.rejection_instant > timeout_interpretation {
-                        for (addr, _) in confirmations_pending {
-                            confirmations
-                                .insert(addr, ServerDisconnectClientState::ConfirmationTimeout);
-                        }
-                        break;
-                    }
 
                     let mut min_try_read_time = Duration::MAX;
                     let mut addrs_confirmed =
                         HashMap::<SocketAddr, ServerDisconnectClientState>::new();
 
-                    for (addr, (packet_loss_timeout, last_sent_time)) in
+                    for (addr, (packet_loss_timeout, last_sent_time, rejection_context)) in
                         confirmations_pending.iter_mut()
                     {
+                        if now - rejection_context.rejection_instant > timeout_interpretation {
+                            confirmations.insert(
+                                addr.clone(),
+                                ServerDisconnectClientState::ConfirmationTimeout,
+                            );
+                            continue;
+                        }
+
                         let last_sent_time_copy = *last_sent_time;
                         let packet_loss_timeout_copy = *packet_loss_timeout;
                         let time_diff = now - last_sent_time_copy;
 
                         if now == last_sent_time_copy || time_diff >= packet_loss_timeout_copy {
                             *last_sent_time = now;
-                            if let Err(e) = socket.send_to(&context.finished_bytes, addr).await {
+                            if let Err(e) = socket
+                                .send_to(&rejection_context.finished_bytes, addr)
+                                .await
+                            {
                                 addrs_confirmed.insert(
                                     addr.clone(),
                                     ServerDisconnectClientState::SendIoError(e),

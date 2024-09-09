@@ -1,12 +1,13 @@
-use std::io;
+use std::{io, time::Instant};
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+use crate::{messages::NONCE_SIZE, MESSAGE_CHANNEL_SIZE};
 use crate::{
-    messages::{MINIMAL_PART_BYTES_SIZE, NONCE_SIZE},
-    MESSAGE_CHANNEL_SIZE,
+    messages::{MessagePart, MINIMAL_SERIALIZED_PACKET_SIZE},
+    JustifiedRejectionContext, LimitedMessage, SentMessagePart,
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
@@ -76,6 +77,26 @@ impl InnerAuth {
             #[cfg(feature = "auth_tls")]
             InnerAuth::RequireTls(props) => {
                 SentMessagePart::encrypted(sent_instant, part, &props.cipher)
+            }
+        }
+    }
+
+    pub fn rejection_of(
+        &self,
+        sent_instant: Instant,
+        message: LimitedMessage,
+    ) -> JustifiedRejectionContext {
+        match self {
+            InnerAuth::NoCryptography => {
+                JustifiedRejectionContext::no_cryptography(sent_instant, message)
+            }
+            #[cfg(feature = "auth_tcp")]
+            InnerAuth::RequireTcp(props) => {
+                JustifiedRejectionContext::encrypted(sent_instant, message, &props.cipher)
+            }
+            #[cfg(feature = "auth_tls")]
+            InnerAuth::RequireTls(props) => {
+                JustifiedRejectionContext::encrypted(sent_instant, message, &props.cipher)
             }
         }
     }
