@@ -414,8 +414,6 @@ pub struct ServerTickResult {
 
 /// Messaging fields of [`ConnectedClient`].
 struct ConnectedClientMessaging {
-    inner_auth: InnerAuth,
-
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.
     pending_confirmation: BTreeMap<MessageId, (Instant, BTreeMap<MessagePartId, SentMessagePart>)>,
@@ -451,6 +449,8 @@ pub struct ConnectedClient {
 
     /// The socket address of the connected client.
     addr: SocketAddr,
+    /// Authenticator bound to this client.
+    inner_auth: InnerAuth,
 
     /// Messaging-related properties wrapped in an [`Mutex`].
     messaging: Mutex<ConnectedClientMessaging>,
@@ -1120,8 +1120,7 @@ impl Server {
             let initial_next_message_part_id =
                 internal.messaging_properties.initial_next_message_part_id + 1;
 
-            let mut messaging = ConnectedClientMessaging {
-                inner_auth: addr_to_auth.inner_auth,
+            let messaging = ConnectedClientMessaging {
                 pending_confirmation: BTreeMap::new(),
                 incoming_messages: MessagePartMap::new(initial_next_message_part_id),
                 tick_bytes_len: 0,
@@ -1137,25 +1136,27 @@ impl Server {
                 ),
             };
 
-            init::client::push_completed_message_tick(
-                &internal,
-                &mut messaging,
-                &shared_socket_bytes_send_sender,
-                initial_next_message_part_id - 1,
-                initial_message,
-            );
-
             let client = Arc::new(ConnectedClient {
                 receiving_bytes_sender,
                 packets_to_send_sender,
                 message_part_confirmation_sender,
                 shared_socket_bytes_send_sender,
                 addr,
+                inner_auth: addr_to_auth.inner_auth,
                 messaging: Mutex::new(messaging),
                 last_messaging_write: RwLock::new(now),
                 average_latency: RwLock::new(internal.messaging_properties.initial_latency),
                 incoming_messages_total_size: RwLock::new(0),
             });
+
+            init::client::push_completed_message_tick(
+                &internal,
+                &client,
+                &mut client.messaging.try_lock().unwrap(),
+                &client.shared_socket_bytes_send_sender,
+                initial_next_message_part_id - 1,
+                initial_message,
+            );
 
             let server_downgraded = Arc::downgrade(&internal);
             let client_downgraded = Arc::downgrade(&client);
@@ -1289,15 +1290,7 @@ impl Server {
         let internal = &self.internal;
         let context = {
             if let Some(message) = message {
-                // TODO: move inner_auth from messaging to client and fix that lock
-                Some(
-                    client
-                        .messaging
-                        .try_lock()
-                        .unwrap()
-                        .inner_auth
-                        .rejection_of(Instant::now(), message),
-                )
+                Some(client.inner_auth.rejection_of(Instant::now(), message))
             } else {
                 None
             }
@@ -1474,21 +1467,15 @@ impl Server {
                             .average_packet_loss_rtt
                             .min(timeout_interpretation);
 
-                        // TODO: move inner_auth from messaging to client and fix that lock
                         confirmations_pending.insert(
                             addr,
                             (
                                 packet_loss_timeout,
                                 now,
-                                connected_client
-                                    .messaging
-                                    .try_lock()
-                                    .unwrap()
-                                    .inner_auth
-                                    .rejection_of(
-                                        Instant::now(),
-                                        LimitedMessage::clone(&disconnection.message),
-                                    ),
+                                connected_client.inner_auth.rejection_of(
+                                    Instant::now(),
+                                    LimitedMessage::clone(&disconnection.message),
+                                ),
                             ),
                         );
                     }

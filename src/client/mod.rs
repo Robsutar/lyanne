@@ -262,8 +262,6 @@ pub enum ClientDisconnectState {
 
 /// Messaging fields of [`ConnectedServer`]
 struct ConnectedServerMessaging {
-    inner_auth: InnerAuth,
-
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.
     pending_confirmation: BTreeMap<MessageId, (Instant, BTreeMap<MessagePartId, SentMessagePart>)>,
@@ -299,6 +297,8 @@ pub struct ConnectedServer {
 
     /// The socket address of the connected server.
     addr: SocketAddr,
+    /// Authenticator bound to the server.
+    inner_auth: InnerAuth,
 
     /// Messaging-related properties wrapped in an `Arc` and `RwLock`.
     messaging: Mutex<ConnectedServerMessaging>,
@@ -771,13 +771,9 @@ impl Client {
                     .average_packet_loss_rtt
                     .min(timeout_interpretation);
 
-                // TODO: move inner auth from messaging to server, and fix that lock.
                 let rejection_context = self
                     .internal
                     .connected_server
-                    .messaging
-                    .try_lock()
-                    .unwrap()
                     .inner_auth
                     .rejection_of(Instant::now(), disconnection.message);
 

@@ -434,7 +434,6 @@ pub(super) mod connecting {
             async_channel::unbounded();
 
         let messaging = Mutex::new(ConnectedServerMessaging {
-            inner_auth,
             pending_confirmation: BTreeMap::new(),
             incoming_messages: MessagePartMap::new(
                 messaging_properties.initial_next_message_part_id,
@@ -453,6 +452,7 @@ pub(super) mod connecting {
             message_part_confirmation_sender,
             shared_socket_bytes_send_sender,
             addr: remote_addr,
+            inner_auth,
             messaging,
             last_messaging_write: RwLock::new(Instant::now()),
             average_latency: RwLock::new(messaging_properties.initial_latency),

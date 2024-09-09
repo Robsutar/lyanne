@@ -78,7 +78,7 @@ pub mod server {
                             }
                         }
                         MessageChannel::MESSAGE_PART_SEND => {
-                            let message_part_bytes = messaging.inner_auth.extract_after_channel(&bytes);
+                            let message_part_bytes = server.inner_auth.extract_after_channel(&bytes);
 
                             let message_part_bytes = match message_part_bytes {
                                 Ok(message_part_bytes) => message_part_bytes,
@@ -212,7 +212,7 @@ pub mod server {
                             let part_id: u16 = part.id();
                             let part_message_id = part.message_id();
 
-                            let sent_part = match &messaging.inner_auth {
+                            let sent_part = match &server.inner_auth {
                                 InnerAuth::NoCryptography => {
                                     SentMessagePart::no_cryptography(sent_instant, part)
                                 },

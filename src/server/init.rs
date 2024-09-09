@@ -80,7 +80,7 @@ pub mod client {
                             }
                         }
                         MessageChannel::MESSAGE_PART_SEND => {
-                            let message_part_bytes = messaging.inner_auth.extract_after_channel(&bytes);
+                            let message_part_bytes = client.inner_auth.extract_after_channel(&bytes);
 
                             let message_part_bytes = match message_part_bytes {
                                 Ok(message_part_bytes) => message_part_bytes,
@@ -210,7 +210,7 @@ pub mod client {
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
 
                         let serialized_packet_list = SerializedPacketList::non_empty(packets_to_send);
-                        push_completed_message_tick(&server, &mut messaging, &client.shared_socket_bytes_send_sender, next_message_id, serialized_packet_list);
+                        push_completed_message_tick(&server, &client, &mut messaging, &client.shared_socket_bytes_send_sender, next_message_id, serialized_packet_list);
 
                         next_message_id = next_message_id.wrapping_add(1);
                     } else {
@@ -225,6 +225,7 @@ pub mod client {
 
     pub fn push_completed_message_tick(
         server: &ServerInternal, 
+        client: &ConnectedClient,
         messaging: &mut ConnectedClientMessaging,
         shared_socket_bytes_send_sender: &async_channel::Sender<Arc<Vec<u8>>>,
         message_id: MessageId, 
@@ -244,7 +245,7 @@ pub mod client {
             let part_id = part.id();
             let part_message_id = part.message_id();
 
-            let sent_part = messaging.inner_auth.sent_part_of(sent_instant, part);
+            let sent_part = client.inner_auth.sent_part_of(sent_instant, part);
 
             let finished_bytes = Arc::clone(&sent_part.finished_bytes);
     
