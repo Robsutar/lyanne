@@ -258,6 +258,12 @@ impl LimitedMessage {
     pub(crate) fn to_list(self) -> SerializedPacketList {
         self.list
     }
+
+    pub(crate) fn clone(&self) -> Self {
+        Self {
+            list: self.list.clone(),
+        }
+    }
 }
 
 /// Justified rejection message.
@@ -269,14 +275,41 @@ pub(crate) struct JustifiedRejectionContext {
 }
 
 impl JustifiedRejectionContext {
-    pub fn from_serialized_list(rejection_instant: Instant, message: LimitedMessage) -> Self {
-        let list = message.to_list();
-        let mut finished_bytes = Vec::with_capacity(1 + list.bytes.len());
-        finished_bytes.push(MessageChannel::REJECTION_JUSTIFICATION);
-        finished_bytes.extend(list.bytes);
+    pub fn no_cryptography(rejection_instant: Instant, message: LimitedMessage) -> Self {
+        let list_bytes = message.to_list().bytes;
+        let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + list_bytes.len());
+        exit.push(MessageChannel::REJECTION_JUSTIFICATION);
+        exit.extend(list_bytes);
         Self {
             rejection_instant,
-            finished_bytes,
+            finished_bytes: exit,
         }
+    }
+    #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+    pub fn encrypted(
+        rejection_instant: Instant,
+        message: LimitedMessage,
+        cipher: &ChaCha20Poly1305,
+    ) -> Self {
+        let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut rand::rngs::OsRng);
+        let cipher_bytes =
+            SentMessagePart::cryptograph_message_part(&message.to_list().bytes, cipher, &nonce);
+        let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + nonce.len() + cipher_bytes.len());
+        exit.push(MessageChannel::REJECTION_JUSTIFICATION);
+        exit.extend_from_slice(&nonce);
+        exit.extend(cipher_bytes);
+        Self {
+            rejection_instant,
+            finished_bytes: exit,
+        }
+    }
+
+    #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
+    pub fn cryptograph_message_part(
+        message_bytes: &[u8],
+        cipher: &ChaCha20Poly1305,
+        nonce: &Nonce,
+    ) -> Vec<u8> {
+        cipher.encrypt(&nonce, message_bytes).unwrap()
     }
 }
