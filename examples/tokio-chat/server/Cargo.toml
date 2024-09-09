@@ -11,5 +11,6 @@ lyanne = { path = "../../../", features = [
     "server",
     "store_unexpected",
     "deserialized_message_map",
+    "auth_tls",
 ] }
 tokio = { version = "^1.0.0", features = ["full"] }

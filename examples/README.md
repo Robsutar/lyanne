@@ -34,4 +34,4 @@ Example that uses a server and two clients to create a match of the game [Pong](
 ## tokio-chat
 Example that makes a simple public chat. Uses `deserialized_message_map` to store packages in maps, instead of storing them in lists, making it quick and easy to search for packages of the same type.
 
-**Used features**: rt_tokio, deserialized_message_map, store_unexpected, sd_bincode, client, server.
+**Used features**: rt_tokio, auth_tls, deserialized_message_map, store_unexpected, sd_bincode, client, server.

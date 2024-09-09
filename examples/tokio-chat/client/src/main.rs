@@ -23,12 +23,22 @@ async fn main() {
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let client_properties = Arc::new(ClientProperties::default());
-    let authenticator_mode = AuthenticatorMode::NoCryptography(AuthenticationProperties {
-        message: LimitedMessage::new(SerializedPacketList::single(
-            packet_registry.serialize(&HelloPacket { player_name }),
-        )),
-        timeout: Duration::from_secs(10),
-    });
+    let authenticator_mode = AuthenticatorMode::RequireTls(
+        AuthenticationProperties {
+            message: LimitedMessage::new(SerializedPacketList::single(
+                packet_registry.serialize(&HelloPacket { player_name }),
+            )),
+            timeout: Duration::from_secs(10),
+        },
+        lyanne::auth_tls::AuthTlsClientProperties {
+            server_name: "localhost",
+            server_addr: "127.0.0.1:4443".parse().unwrap(),
+            root_cert_store: lyanne::auth_tls::RootCertStoreProvider::from_file(
+                "examples/tls_certificates/ca_cert.pem",
+            )
+            .unwrap(),
+        },
+    );
 
     let connect_handle = Client::connect(
         remote_addr,

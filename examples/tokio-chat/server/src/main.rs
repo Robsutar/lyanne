@@ -19,7 +19,18 @@ async fn main() {
     let messaging_properties = Arc::new(MessagingProperties::default());
     let read_handler_properties = Arc::new(ReadHandlerProperties::default());
     let server_properties = Arc::new(ServerProperties::default());
-    let authenticator_mode = AuthenticatorMode::NoCryptography;
+    let authenticator_mode =
+        AuthenticatorMode::RequireTls(lyanne::auth_tls::AuthTlsServerProperties {
+            server_name: "localhost",
+            server_addr: "127.0.0.1:4443".parse().unwrap(),
+            server_cert: lyanne::auth_tls::ServerCertProvider::SingleCert(
+                lyanne::auth_tls::CertKey::from_file(
+                    "examples/tls_certificates/server_cert.pem",
+                    "examples/tls_certificates/server_key.pem",
+                )
+                .unwrap(),
+            ),
+        });
 
     let bind_handle = Server::bind(
         addr,
