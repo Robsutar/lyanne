@@ -15,10 +15,7 @@ use crate::{
     rt::TaskHandle,
 };
 
-use crate::{
-    MessageChannel,
-    SentMessagePart,
-};
+use crate::MessageChannel;
 
 use super::*;
 
@@ -214,20 +211,8 @@ pub mod server {
                         for part in message_parts {
                             let part_id: u16 = part.id();
                             let part_message_id = part.message_id();
-
-                            let sent_part = match &server.inner_auth {
-                                InnerAuth::NoCryptography => {
-                                    SentMessagePart::no_cryptography(sent_instant, part)
-                                },
-                                #[cfg(feature = "auth_tcp")]
-                                InnerAuth::RequireTcp(props) => {
-                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher)
-                                },
-                                #[cfg(feature = "auth_tls")]
-                                InnerAuth::RequireTls(props) => {
-                                    SentMessagePart::encrypted(sent_instant, part, &props.cipher)
-                                },
-                            };
+                            
+                            let sent_part = server.inner_auth.sent_part_of(sent_instant, part);
 
                             let finished_bytes = Arc::clone(&sent_part.finished_bytes);
 
