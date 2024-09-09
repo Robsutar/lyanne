@@ -64,7 +64,11 @@
 //!                 hello_packet.player_name, addr
 //!             );
 //!
-//!             server.authenticate(addr, addr_to_auth);
+//!             server.authenticate(
+//!                 addr,
+//!                 addr_to_auth,
+//!                 server.packet_registry().empty_serialized_list(),
+//!             );
 //!         }
 //!     }
 //! }
