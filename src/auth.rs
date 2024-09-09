@@ -49,4 +49,18 @@ impl InnerAuth {
     pub fn insufficient_minimal_bytes_error() -> io::Error {
         io::Error::new(io::ErrorKind::InvalidData, "Insufficient minimal bytes.")
     }
+
+    pub fn sent_part_of(&self, sent_instant: Instant, part: MessagePart) -> SentMessagePart {
+        match self {
+            InnerAuth::NoCryptography => SentMessagePart::no_cryptography(sent_instant, part),
+            #[cfg(feature = "auth_tcp")]
+            InnerAuth::RequireTcp(props) => {
+                SentMessagePart::encrypted(sent_instant, part, &props.cipher)
+            }
+            #[cfg(feature = "auth_tls")]
+            InnerAuth::RequireTls(props) => {
+                SentMessagePart::encrypted(sent_instant, part, &props.cipher)
+            }
+        }
+    }
 }
