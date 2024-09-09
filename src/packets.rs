@@ -461,12 +461,6 @@ impl SerializedPacketList {
     pub fn single(stored: SerializedPacket) -> SerializedPacketList {
         SerializedPacketList::non_empty(vec![stored])
     }
-
-    pub(crate) fn clone(list: &SerializedPacketList) -> SerializedPacketList {
-        SerializedPacketList {
-            bytes: list.bytes.clone(),
-        }
-    }
 }
 
 cfg_sd_bincode! {

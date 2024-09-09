@@ -259,9 +259,12 @@ impl LimitedMessage {
         self.list
     }
 
+    #[cfg(feature = "server")]
     pub(crate) fn clone(message: &LimitedMessage) -> LimitedMessage {
         LimitedMessage {
-            list: SerializedPacketList::clone(&message.list),
+            list: SerializedPacketList {
+                bytes: message.list.bytes.clone(),
+            },
         }
     }
 }
