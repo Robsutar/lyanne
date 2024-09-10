@@ -94,6 +94,7 @@ auth_tls = [
 bevy_packet_schedules = ["lyanne-derive/bevy_packet_schedules", "dep:bevy_ecs"]
 deserialized_message_map = []
 store_unexpected = []
+no_panics = []
 
 [dependencies]
 lyanne-derive = { path = "derive", version = "0.1.0", optional = true }
