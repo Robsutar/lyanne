@@ -87,6 +87,8 @@
 
 #[cfg(feature = "bevy_packet_schedules")]
 pub use bevy_ecs;
+#[cfg(all(feature = "bevy_packet_schedules", not(any(feature = "sd_bincode"))))]
+compile_error!("feature \"bevy_packet_schedules\" needs one serializer");
 
 use std::{
     sync::{Arc, RwLock},

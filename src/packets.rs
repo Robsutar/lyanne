@@ -17,7 +17,9 @@ pub use bincode;
 #[cfg(feature = "sd_bincode")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(feature = "sd_bincode"))]
 pub extern crate lyanne_derive;
+#[cfg(any(feature = "sd_bincode"))]
 pub use lyanne_derive::Packet;
 
 pub type PacketId = u16;
