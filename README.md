@@ -74,6 +74,7 @@ Sending packet to clients:
 
 ```rust,no_run
 use lyanne::{server::*};
+// Use your shared crate with the packets.
 use crate::packets::MessagePacket;
 
 fn inside_tick(server: &Server) {
@@ -91,6 +92,7 @@ Sending packet to server:
 
 ```rust,no_run
 use lyanne::{client::*};
+// Use your shared crate with the packets.
 use crate::packets::MessagePacket;
 
 fn inside_tick(client: &Client) {

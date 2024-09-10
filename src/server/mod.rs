@@ -5,6 +5,7 @@
 //! ```rust,no_run
 //! use lyanne::{packets::*, server::*, *};
 //! use std::{net::SocketAddr, sync::Arc};
+//! // Use your shared crate with the packets.
 //! use crate::packets::HelloPacket;
 //!
 //! fn main() {
@@ -32,6 +33,7 @@
 //!
 //! ```rust,no_run
 //! use lyanne::{server::*};
+//! // Use your shared crate with the packets.
 //! use crate::packets::MessagePacket;
 //!
 //! fn inside_tick(server: &Server) {
@@ -49,6 +51,7 @@
 //!
 //! ```rust,no_run
 //! use lyanne::{server::*};
+//! // Use your shared crate with the packets.
 //! use crate::packets::HelloPacket;
 //!
 //! fn use_tick_result(server: &Server, tick_result: ServerTickResult) {
@@ -78,6 +81,7 @@
 //!
 //! ```rust,no_run
 //! use lyanne::server::*;
+//! // Use your shared crate with the packets.
 //! use crate::{use_tick_result,inside_tick};
 //!
 //! fn complete_tick(server: &Server) {
