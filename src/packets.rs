@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     self as lyanne,
-    sd::{cfg_sd_bincode, cfg_sd_none},
+    internal::sd::{cfg_sd_bincode, cfg_sd_none},
 };
 
 #[cfg(feature = "sd_bincode")]

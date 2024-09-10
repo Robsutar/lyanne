@@ -13,14 +13,17 @@ use chacha20poly1305::{
 use x25519_dalek::EphemeralSecret;
 
 use crate::{
-    messages::{DeserializedMessage, MessagePartMap},
+    internal::{
+        messages::{DeserializedMessage, MessagePartMap},
+        rt::{Mutex, UdpSocket},
+        utils::{DurationMonitor, RttCalculator},
+        MessageChannel,
+    },
     packets::{ClientTickEndPacket, PacketRegistry},
-    rt::{Mutex, UdpSocket},
-    utils::{DurationMonitor, RttCalculator},
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::{MessageChannel, MessagingProperties, ReadHandlerProperties, MESSAGE_CHANNEL_SIZE};
+use crate::{MessagingProperties, ReadHandlerProperties, MESSAGE_CHANNEL_SIZE};
 
 use super::*;
 
@@ -34,7 +37,7 @@ use crate::auth_tls::{AuthTlsClientProperties, TlsConnector};
 use crate::auth_tls::rustls;
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::rt::{AsyncReadExt, AsyncWriteExt, TcpStream};
+use crate::internal::rt::{AsyncReadExt, AsyncWriteExt, TcpStream};
 
 /// Proprieties for handling the client authentication/handshake with the server.
 pub struct AuthenticationProperties {
@@ -171,7 +174,7 @@ pub(super) mod connecting {
     #[cfg(feature = "store_unexpected")]
     use client::store_unexpected_error_list_pick;
 
-    use crate::messages::PUBLIC_KEY_SIZE;
+    use crate::internal::messages::PUBLIC_KEY_SIZE;
 
     use super::*;
 
@@ -223,7 +226,7 @@ pub(super) mod connecting {
             if let Err(e) = socket.send(&public_key_sent).await {
                 return Err(ConnectError::AuthenticatorWriteIoError(e));
             }
-            match crate::rt::timeout(props.timeout, socket.recv(buf)).await {
+            match crate::internal::rt::timeout(props.timeout, socket.recv(buf)).await {
                 Ok(len) => match len {
                     Ok(len) => {
                         if len < MESSAGE_CHANNEL_SIZE {
@@ -294,7 +297,7 @@ pub(super) mod connecting {
         auth_mode: AuthTcpClientProperties,
         props: AuthenticationProperties,
     ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
-        match crate::rt::timeout(props.timeout, async {
+        match crate::internal::rt::timeout(props.timeout, async {
             let tcp_stream = match TcpStream::connect(auth_mode.server_addr).await {
                 Ok(tcp_stream) => tcp_stream,
                 Err(e) => {
@@ -317,7 +320,7 @@ pub(super) mod connecting {
         auth_mode: AuthTlsClientProperties,
         props: AuthenticationProperties,
     ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
-        match crate::rt::timeout(props.timeout, async {
+        match crate::internal::rt::timeout(props.timeout, async {
             let server_name = match rustls::pki_types::ServerName::try_from(auth_mode.server_name) {
                 Ok(server_name) => server_name,
                 Err(_) => return Err(ConnectError::InvalidDnsName),

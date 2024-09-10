@@ -4,14 +4,17 @@ use std::{io, time::Instant};
 use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::messages::NONCE_SIZE;
+use crate::internal::messages::NONCE_SIZE;
 use crate::{
-    messages::{MessagePart, MINIMAL_SERIALIZED_PACKET_SIZE},
-    JustifiedRejectionContext, LimitedMessage, SentMessagePart, MESSAGE_CHANNEL_SIZE,
+    internal::{
+        messages::{MessagePart, MINIMAL_SERIALIZED_PACKET_SIZE},
+        JustifiedRejectionContext,
+    },
+    LimitedMessage, SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-pub(super) struct InnerAuthTcpBased {
+pub struct InnerAuthTcpBased {
     /// The cipher used for encrypting and decrypting messages.
     pub cipher: ChaCha20Poly1305,
 }
@@ -38,7 +41,7 @@ impl InnerAuthTcpBased {
     }
 }
 
-pub(super) enum InnerAuth {
+pub enum InnerAuth {
     NoCryptography,
     #[cfg(feature = "auth_tcp")]
     RequireTcp(InnerAuthTcpBased),

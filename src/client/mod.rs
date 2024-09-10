@@ -89,21 +89,22 @@ use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
-    messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE},
+    internal::{
+        auth::InnerAuth,
+        messages::{
+            DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE,
+        },
+        rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        utils::{DurationMonitor, RttCalculator},
+        MessageChannel,
+    },
     packets::{ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket},
-    rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
-    utils::{DurationMonitor, RttCalculator},
-    LimitedMessage,
-};
-
-use crate::{
-    MessageChannel, MessagingProperties, ReadHandlerProperties, SentMessagePart,
+    LimitedMessage, MessagingProperties, ReadHandlerProperties, SentMessagePart,
     MESSAGE_CHANNEL_SIZE,
 };
 
-use crate::auth::InnerAuth;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::auth::InnerAuthTcpBased;
+use crate::internal::auth::InnerAuthTcpBased;
 
 pub use auth::*;
 use init::*;
@@ -403,7 +404,7 @@ impl ClientInternal {
         read_timeout: Duration,
     ) -> io::Result<Vec<u8>> {
         let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, ()> =
-            crate::rt::timeout(read_timeout, async move {
+            crate::internal::rt::timeout(read_timeout, async move {
                 let mut buf = [0u8; 1024];
                 let len = socket.recv(&mut buf).await?;
                 Ok(buf[..len].to_vec())
@@ -455,7 +456,7 @@ impl Client {
         client_properties: Arc<ClientProperties>,
         authenticator_mode: AuthenticatorMode,
         #[cfg(any(feature = "rt_tokio", feature = "rt_async_executor"))]
-        runtime: crate::rt::Runtime,
+        runtime: crate::internal::rt::Runtime,
     ) -> TaskHandle<Result<ConnectResult, ConnectError>> {
         #[cfg(any(feature = "rt_tokio", feature = "rt_async_executor"))]
         let task_runner = Arc::new(TaskRunner { runtime });

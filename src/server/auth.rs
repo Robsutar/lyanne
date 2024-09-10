@@ -14,10 +14,12 @@ use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::messages::NONCE_SIZE;
-use crate::messages::{DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, PUBLIC_KEY_SIZE};
+use crate::internal::messages::NONCE_SIZE;
+use crate::internal::messages::{
+    DeserializedMessage, MINIMAL_SERIALIZED_PACKET_SIZE, PUBLIC_KEY_SIZE,
+};
 
-use crate::{MessageChannel, MESSAGE_CHANNEL_SIZE};
+use crate::MESSAGE_CHANNEL_SIZE;
 
 use super::*;
 
@@ -28,7 +30,7 @@ use crate::auth_tcp::AuthTcpServerProperties;
 use crate::auth_tls::{AuthTlsServerProperties, TlsAcceptor, TlsStream};
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::rt::{AsyncReadExt, AsyncWriteExt, TcpListener, TcpStream};
+use crate::internal::rt::{AsyncReadExt, AsyncWriteExt, TcpListener, TcpStream};
 
 /// Pending auth properties of a addr that is trying to connect.
 pub(super) struct AddrPendingAuthSend {
@@ -278,7 +280,7 @@ where
         'l1: while let Ok(_) = read_signal_receiver.recv().await {
             'l2: loop {
                 if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
-                    let accepted = crate::rt::timeout(
+                    let accepted = crate::internal::rt::timeout(
                         server.read_handler_properties.timeout,
                         listener.accept(),
                     )

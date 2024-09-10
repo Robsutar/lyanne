@@ -6,17 +6,14 @@ use std::{
 };
 
 use crate::{
-    messages::{
+    internal::{messages::{
         DeserializedMessage, MessageId, MessagePart, MessagePartId,
         MessagePartMapTryInsertResult, MessagePartMapTryReadResult,
-    },
+    }, rt::TaskHandle, MessageChannel},
     packets::{
         SerializedPacket, SerializedPacketList,
-    },
-    rt::TaskHandle,
+    }
 };
-
-use crate::MessageChannel;
 
 use super::*;
 

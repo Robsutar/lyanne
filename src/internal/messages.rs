@@ -14,23 +14,23 @@ pub type MessageId = u16;
 pub type MessagePartId = u16;
 pub type MessagePartType = u8;
 
-pub(crate) const MESSAGE_ID_SIZE: usize = size_of::<MessageId>();
-pub(crate) const MESSAGE_PART_ID_SIZE: usize = size_of::<MessagePartId>();
-pub(crate) const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
+pub const MESSAGE_ID_SIZE: usize = size_of::<MessageId>();
+pub const MESSAGE_PART_ID_SIZE: usize = size_of::<MessagePartId>();
+pub const MESSAGE_PART_TYPE_SIZE: usize = size_of::<MessagePartType>();
 
-pub(crate) const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
+pub const MAX_STORABLE_MESSAGE_COUNT: MessageId = MessageId::MAX / 2;
 
 // 2 for PacketId + 1 for minimal packet content.
-pub(crate) const MINIMAL_SERIALIZED_PACKET_SIZE: usize = 2 + 1;
+pub const MINIMAL_SERIALIZED_PACKET_SIZE: usize = 2 + 1;
 
 // 2 for MessagePartId and 1 for MessagePartType
-pub(crate) const MINIMAL_PART_BYTES_SIZE: usize = 2 + 1 + MINIMAL_SERIALIZED_PACKET_SIZE;
+pub const MINIMAL_PART_BYTES_SIZE: usize = 2 + 1 + MINIMAL_SERIALIZED_PACKET_SIZE;
 
-pub(crate) const NONCE_SIZE: usize = 12;
-pub(crate) const ENCRYPTION_SPACE: usize = 16;
+pub const NONCE_SIZE: usize = 12;
+pub const ENCRYPTION_SPACE: usize = 16;
 
 // TODO: use this size to check the maximum authentication message sent by the client
-pub(crate) const PUBLIC_KEY_SIZE: usize = 32;
+pub const PUBLIC_KEY_SIZE: usize = 32;
 
 struct MessagePartTypes;
 
@@ -169,7 +169,7 @@ impl MessagePart {
     }
 }
 
-pub(crate) struct DeserializedMessageCheck {
+pub struct DeserializedMessageCheck {
     kind: DeserializedMessageCheckKind,
 }
 
@@ -344,7 +344,6 @@ impl DeserializedMessage {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn deserialize_single_list(
         buf: &[u8],
         packet_registry: &PacketRegistry,
@@ -386,11 +385,12 @@ impl DeserializedMessage {
     }
 }
 
-pub(crate) enum MessagePartMapTryInsertResult {
+pub enum MessagePartMapTryInsertResult {
     PastMessageId,
     Stored,
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub enum MessagePartMapTryReadResult {
     PendingParts,
@@ -398,7 +398,7 @@ pub enum MessagePartMapTryReadResult {
     SuccessfullyCreated(DeserializedMessage),
 }
 
-pub(crate) struct MessagePartMap {
+pub struct MessagePartMap {
     next_message_id: MessageId,
     maps: BTreeMap<MessageId, (BTreeMap<MessagePartId, MessagePart>, usize)>,
 }

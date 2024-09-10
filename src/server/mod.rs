@@ -109,23 +109,22 @@ use chacha20poly1305::{aead::KeyInit, ChaChaPoly1305, Key};
 use dashmap::{DashMap, DashSet};
 
 use crate::{
-    messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
+    internal::{
+        messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
+        rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        utils::{DurationMonitor, RttCalculator},
+        JustifiedRejectionContext, MessageChannel,
+    },
     packets::{
         Packet, PacketRegistry, SerializedPacket, SerializedPacketList, ServerTickEndPacket,
     },
-    rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
-    utils::{DurationMonitor, RttCalculator},
-    LimitedMessage,
+    LimitedMessage, MessagingProperties, ReadHandlerProperties, SentMessagePart,
+    MESSAGE_CHANNEL_SIZE,
 };
 
-use crate::{
-    JustifiedRejectionContext, MessageChannel, MessagingProperties, ReadHandlerProperties,
-    SentMessagePart, MESSAGE_CHANNEL_SIZE,
-};
-
-use crate::auth::InnerAuth;
+use crate::internal::auth::InnerAuth;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::auth::InnerAuthTcpBased;
+use crate::internal::auth::InnerAuthTcpBased;
 
 pub use auth::*;
 
@@ -593,7 +592,7 @@ impl ServerInternal {
         read_timeout: Duration,
     ) -> io::Result<(SocketAddr, Vec<u8>)> {
         let pre_read_next_bytes_result: Result<io::Result<(SocketAddr, Vec<u8>)>, ()> =
-            crate::rt::timeout(read_timeout, async move {
+            crate::internal::rt::timeout(read_timeout, async move {
                 let mut buf = [0u8; 1024];
                 let (len, addr) = socket.recv_from(&mut buf).await?;
                 Ok((addr, buf[..len].to_vec()))
@@ -674,7 +673,7 @@ impl Server {
         server_properties: Arc<ServerProperties>,
         authenticator_mode: AuthenticatorMode,
         #[cfg(any(feature = "rt_tokio", feature = "rt_async_executor"))]
-        runtime: crate::rt::Runtime,
+        runtime: crate::internal::rt::Runtime,
     ) -> TaskHandle<Result<BindResult, BindError>> {
         #[cfg(any(feature = "rt_tokio", feature = "rt_async_executor"))]
         let task_runner = Arc::new(TaskRunner { runtime });
