@@ -167,6 +167,11 @@ pub enum ReadClientBytesResult {
     InvalidPublicKeySend(u16),
     /// The client tried to authenticate, but it is already connected.
     AlreadyConnected,
+    /// Some address tried to exchange keys with the server,
+    /// but the pending authentication list was full.
+    ///  
+    /// See [`ServerProperties::max_pending_auth`].
+    PendingAuthFull,
 }
 
 impl ReadClientBytesResult {
@@ -189,6 +194,7 @@ impl ReadClientBytesResult {
             ReadClientBytesResult::PendingPendingAuth => true,
             ReadClientBytesResult::InvalidPublicKeySend(_) => true,
             ReadClientBytesResult::AlreadyConnected => true,
+            ReadClientBytesResult::PendingAuthFull => true,
         }
     }
 }
@@ -248,14 +254,19 @@ pub enum ServerDisconnectState {
 
 /// General properties for the server management.
 pub struct ServerProperties {
-    /// TODO: field not used in TCP based auth.
+    // TODO: field not used in TCP based auth.
     pub pending_auth_packet_loss_interpretation: Duration,
+    /// Limits the number of pending authentications.
+    ///
+    /// See [`ReadClientBytesResult::PendingAuthFull`].
+    pub max_pending_auth: usize,
 }
 
 impl Default for ServerProperties {
     fn default() -> Self {
         Self {
             pending_auth_packet_loss_interpretation: Duration::from_secs(3),
+            max_pending_auth: usize::MAX,
         }
     }
 }

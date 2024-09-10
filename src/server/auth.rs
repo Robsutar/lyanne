@@ -176,6 +176,10 @@ impl NoCryptographyAuth {
         } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND
             && bytes.len() == (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
         {
+            if auth_mode.pending_auth.len() >= internal.server_properties.max_pending_auth {
+                return ReadClientBytesResult::PendingAuthFull;
+            }
+
             let mut client_public_key: [u8; PUBLIC_KEY_SIZE] = [0; PUBLIC_KEY_SIZE];
             client_public_key.copy_from_slice(
                 &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
@@ -317,15 +321,15 @@ where
 
     async fn handler_accept(
         &self,
-        server: &ServerInternal,
+        internal: &ServerInternal,
         addr: SocketAddr,
         raw_stream: TcpStream,
     ) -> io::Result<ReadClientBytesResult> {
         let ip = addr.ip();
 
-        if server.ignored_ips.contains(&ip) {
+        if internal.ignored_ips.contains(&ip) {
             return Ok(ReadClientBytesResult::IgnoredClientHandle);
-        } else if server.connected_clients.contains_key(&addr) {
+        } else if internal.connected_clients.contains_key(&addr) {
             return Ok(ReadClientBytesResult::AlreadyConnected);
         } else if self.tcp_based_base().base.addrs_in_auth.contains(&addr) {
             return Ok(ReadClientBytesResult::AddrInAuth);
@@ -351,6 +355,12 @@ where
         if bytes[0] == MessageChannel::PUBLIC_KEY_SEND
             && bytes.len() == (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
         {
+            if self.tcp_based_base().pending_auth.len()
+                >= internal.server_properties.max_pending_auth
+            {
+                return Ok(ReadClientBytesResult::PendingAuthFull);
+            }
+
             let mut client_public_key: [u8; PUBLIC_KEY_SIZE] = [0; PUBLIC_KEY_SIZE];
             client_public_key.copy_from_slice(
                 &bytes[MESSAGE_CHANNEL_SIZE..(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)],
