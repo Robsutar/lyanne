@@ -483,7 +483,7 @@ pub(super) mod connecting {
                 tasks_keeper_handle,
                 socket: Arc::clone(&socket),
                 tick_state: RwLock::new(ClientTickState::TickStartPending),
-                packet_registry: packet_registry.clone(),
+                packet_registry: Arc::clone(&packet_registry),
                 messaging_properties: Arc::clone(&messaging_properties),
                 read_handler_properties: Arc::clone(&read_handler_properties),
                 client_properties: Arc::clone(&client_properties),
