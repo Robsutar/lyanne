@@ -76,7 +76,6 @@ pub mod server {
                             let message_part_bytes = match message_part_bytes {
                                 Ok(message_part_bytes) => message_part_bytes,
                                 Err(_) => {
-                                    drop(messaging);
                                     let _ = client
                                         .reason_to_disconnect_sender
                                         .try_send(ServerDisconnectReason::InvalidProtocolCommunication);

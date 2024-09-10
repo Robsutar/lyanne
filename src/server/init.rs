@@ -65,7 +65,6 @@ pub mod client {
                                     }
                                 }
                             } else {
-                                drop(messaging);
                                 let _ = server.clients_to_disconnect_sender.try_send((
                                     addr,
                                     (ClientDisconnectReason::InvalidProtocolCommunication, None),
@@ -79,7 +78,6 @@ pub mod client {
                             let message_part_bytes = match message_part_bytes {
                                 Ok(message_part_bytes) => message_part_bytes,
                                 Err(_) => {
-                                    drop(messaging);
                                     let _ = server.clients_to_disconnect_sender.try_send((
                                         addr,
                                         (ClientDisconnectReason::InvalidProtocolCommunication, None),
