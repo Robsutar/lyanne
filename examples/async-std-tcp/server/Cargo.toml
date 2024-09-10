@@ -7,7 +7,6 @@ edition = "2021"
 async-std-tcp = { path = "../", features = ["server"] }
 lyanne = { path = "../../../", features = [
     "rt_async_std",
-    "sd_bincode",
     "server",
     "auth_tcp",     # Here the example differ of async-std-simple
 ] }

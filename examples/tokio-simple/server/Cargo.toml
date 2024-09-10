@@ -5,6 +5,6 @@ edition = "2021"
 
 [dependencies]
 tokio-simple = { path = "../", features = ["server"] }
-lyanne = { path = "../../../", features = ["rt_tokio", "sd_bincode", "server"] }
+lyanne = { path = "../../../", features = ["rt_tokio", "server"] }
 tokio = { version = "^1.0.0", features = ["full"] }
 rand = "^0.8.0"

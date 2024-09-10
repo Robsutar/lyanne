@@ -9,7 +9,4 @@ server = ["lyanne/server"]
 
 [dependencies]
 lyanne = { path = "../../", features = ["sd_bincode"] }
-bevy = { version = "^0.14.0" }
-rand = "^0.8.0"
 serde = { version = "^1.0.0", features = ["derive"] }
-bincode = "^1.0.0"

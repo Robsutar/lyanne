@@ -7,13 +7,10 @@ edition = "2021"
 bevy-pong = { path = "../", features = ["server"] }
 bevy = "^0.14.0"
 lyanne = { path = "../../../", features = [
-    "bevy_packet_schedules",
     "rt_bevy",
-    "sd_bincode",
     "store_unexpected",
     "auth_tls",
     "auth_tcp",
     "server",
 ] }
-tokio = { version = "^1.0.0", optional = true, features = ["full"] }
 rand = "^0.8.0"

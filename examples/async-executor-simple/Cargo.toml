@@ -8,8 +8,4 @@ server = ["lyanne/server"]
 
 [dependencies]
 lyanne = { path = "../../", features = ["sd_bincode"] }
-async-executor = { version = "^1.13.0" }
-futures = { version = "^0.3.3" }
-rand = "^0.8.0"
 serde = { version = "^1.0.0", features = ["derive"] }
-bincode = "^1.0.0"

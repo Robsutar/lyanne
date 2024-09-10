@@ -7,7 +7,6 @@ edition = "2021"
 tokio-chat = { path = "../", features = ["server"] }
 lyanne = { path = "../../../", features = [
     "rt_tokio",
-    "sd_bincode",
     "server",
     "store_unexpected",
     "deserialized_message_map",

@@ -6,10 +6,6 @@ edition = "2021"
 [dependencies]
 async-executor-simple = { path = "../", features = ["server"] }
 futures = { version = "^0.3.3" }
-lyanne = { path = "../../../", features = [
-    "rt_async_executor",
-    "sd_bincode",
-    "server",
-] }
+lyanne = { path = "../../../", features = ["rt_async_executor", "server"] }
 async-executor = { version = "^1.13.0" }
 rand = "^0.8.0"
