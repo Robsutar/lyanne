@@ -130,10 +130,8 @@ impl NoCryptographyAuth {
             }
         } else if auth_mode.base().addrs_in_auth.contains(&addr) {
             ReadClientBytesResult::AddrInAuth
-        } else if let Some((_, (pending_auth_send, last_sent_time))) =
-            auth_mode.pending_auth.remove(&addr)
-        {
-            if bytes[0] == MessageChannel::AUTH_MESSAGE {
+        } else if bytes[0] == MessageChannel::AUTH_MESSAGE {
+            if let Some((_, (pending_auth_send, _))) = auth_mode.pending_auth.remove(&addr) {
                 if bytes.len()
                     < MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + MINIMAL_SERIALIZED_PACKET_SIZE
                 {
@@ -173,9 +171,6 @@ impl NoCryptographyAuth {
                     }
                 }
             } else {
-                auth_mode
-                    .pending_auth
-                    .insert(addr, (pending_auth_send, last_sent_time));
                 ReadClientBytesResult::PendingPendingAuth
             }
         } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND
