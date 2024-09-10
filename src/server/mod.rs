@@ -122,6 +122,8 @@ use crate::{
     MESSAGE_CHANNEL_SIZE,
 };
 
+pub use dashmap::{iter::Iter as DashIter, mapref::one::Ref as DashRef};
+
 use crate::internal::auth::InnerAuth;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use crate::internal::auth::InnerAuthTcpBased;
@@ -1337,7 +1339,7 @@ impl Server {
     pub fn get_connected_client(
         &self,
         addr: &SocketAddr,
-    ) -> Option<dashmap::mapref::one::Ref<SocketAddr, Arc<ConnectedClient>>> {
+    ) -> Option<DashRef<SocketAddr, Arc<ConnectedClient>>> {
         let internal = &self.internal;
         internal.connected_clients.get(addr)
     }
@@ -1351,7 +1353,7 @@ impl Server {
 
     /// # Returns
     /// Iterator with the clients connected to the server.
-    pub fn connected_clients_iter(&self) -> dashmap::iter::Iter<SocketAddr, Arc<ConnectedClient>> {
+    pub fn connected_clients_iter(&self) -> DashIter<SocketAddr, Arc<ConnectedClient>> {
         let internal = &self.internal;
         internal.connected_clients.iter()
     }
