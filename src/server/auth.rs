@@ -1,6 +1,6 @@
 use std::{
     io,
-    net::{IpAddr, SocketAddr},
+    net::SocketAddr,
     sync::{Arc, Weak},
     time::{Duration, Instant},
 };
@@ -154,7 +154,7 @@ impl NoCryptographyAuth {
                         if sent_server_public_key != pending_auth_send.server_public_key {
                             ReadClientBytesResult::InvalidPendingAuth
                         } else {
-                            auth_mode.base().addrs_in_auth.insert(addr.clone());
+                            auth_mode.base().addrs_in_auth.insert(addr);
 
                             let _ = internal.clients_to_auth_sender.try_send((
                                 addr,
@@ -226,9 +226,9 @@ impl AuthModeHandler for NoCryptographyAuth {
         });
         for tuple in self.pending_auth.iter() {
             let addr = tuple.key();
-            let (_, last_sent_time) = *tuple.value();
+            let (_, last_sent_time) = tuple.value();
             if let Some(last_sent_time) = last_sent_time {
-                if now - last_sent_time
+                if now - *last_sent_time
                     < internal
                         .server_properties
                         .pending_auth_packet_loss_interpretation
@@ -236,9 +236,7 @@ impl AuthModeHandler for NoCryptographyAuth {
                     continue;
                 }
             }
-            self.pending_auth_resend_sender
-                .try_send(addr.clone())
-                .unwrap();
+            self.pending_auth_resend_sender.try_send(*addr).unwrap();
         }
     }
 
@@ -284,9 +282,6 @@ where
 
                     if let Ok(accepted) = accepted {
                         if let Ok((stream, addr)) = accepted {
-                            #[cfg(feature = "store_unexpected")]
-                            let addr = addr.clone();
-
                             let _result = auth_mode.handler_accept(&server, addr, stream).await;
 
                             #[cfg(feature = "store_unexpected")]
@@ -494,10 +489,7 @@ where
                         &internal.packet_registry,
                     );
                     if let Ok(message) = message {
-                        self.tcp_based_base()
-                            .base
-                            .addrs_in_auth
-                            .insert(addr.clone());
+                        self.tcp_based_base().base.addrs_in_auth.insert(addr);
                         let _ = internal.clients_to_auth_sender.try_send((
                             addr,
                             (

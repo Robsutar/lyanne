@@ -157,8 +157,8 @@ pub mod client {
                             if let Ok(message) =
                                 DeserializedMessage::deserialize_single_list(&justification_bytes, &server.packet_registry)
                             {
-                                server.recently_disconnected.insert(addr.clone(), Instant::now());
-                                server.rejections_to_confirm.insert(addr.clone());
+                                server.recently_disconnected.insert(addr, Instant::now());
+                                server.rejections_to_confirm.insert(addr);
 
                                 let _ = server
                                     .clients_to_disconnect_sender
@@ -371,7 +371,7 @@ pub mod server {
                 for addr in server.rejections_to_confirm.iter() {
                     let _ = server
                         .socket
-                        .send_to(rejection_confirm_bytes, addr.clone())
+                        .send_to(rejection_confirm_bytes, *addr)
                         .await;
                 }
                 server.rejections_to_confirm.clear();

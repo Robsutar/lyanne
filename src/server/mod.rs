@@ -980,13 +980,13 @@ impl Server {
             if let Some(context) = context {
                 internal
                     .pending_rejection_confirm
-                    .insert(addr.clone(), (context, None));
+                    .insert(addr, (context, None));
             }
             disconnected.insert(addr, reason);
         }
 
         for addr in to_auth.keys() {
-            assigned_addrs_in_auth.insert(addr.clone());
+            assigned_addrs_in_auth.insert(*addr);
         }
 
         match &internal.authenticator_mode {
@@ -1301,7 +1301,7 @@ impl Server {
         internal
             .clients_to_disconnect_sender
             .try_send((
-                client.addr.clone(),
+                client.addr,
                 (ClientDisconnectReason::ManualDisconnect, context),
             ))
             .unwrap();
@@ -1500,10 +1500,8 @@ impl Server {
                         confirmations_pending.iter_mut()
                     {
                         if now - rejection_context.rejection_instant > timeout_interpretation {
-                            confirmations.insert(
-                                addr.clone(),
-                                ServerDisconnectClientState::ConfirmationTimeout,
-                            );
+                            confirmations
+                                .insert(*addr, ServerDisconnectClientState::ConfirmationTimeout);
                             continue;
                         }
 
@@ -1517,10 +1515,8 @@ impl Server {
                                 .send_to(&rejection_context.finished_bytes, addr)
                                 .await
                             {
-                                addrs_confirmed.insert(
-                                    addr.clone(),
-                                    ServerDisconnectClientState::SendIoError(e),
-                                );
+                                addrs_confirmed
+                                    .insert(*addr, ServerDisconnectClientState::SendIoError(e));
                             } else {
                                 min_try_read_time = Duration::ZERO;
                             }
