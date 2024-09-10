@@ -115,11 +115,7 @@ impl NoCryptographyAuth {
         bytes: Vec<u8>,
         auth_mode: &NoCryptographyAuth,
     ) -> ReadClientBytesResult {
-        let ip = match addr {
-            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-        };
-
+        let ip = addr.ip();
         if internal.ignored_ips.contains(&ip) {
             ReadClientBytesResult::IgnoredClientHandle
         } else if let Some(client) = internal.connected_clients.get(&addr) {
@@ -335,10 +331,7 @@ where
         addr: SocketAddr,
         raw_stream: TcpStream,
     ) -> io::Result<ReadClientBytesResult> {
-        let ip = match addr {
-            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-        };
+        let ip = addr.ip();
 
         if server.ignored_ips.contains(&ip) {
             return Ok(ReadClientBytesResult::IgnoredClientHandle);
@@ -425,10 +418,7 @@ where
         addr: SocketAddr,
         bytes: Vec<u8>,
     ) -> ReadClientBytesResult {
-        let ip = match addr {
-            SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
-            SocketAddr::V6(v6) => IpAddr::V6(*v6.ip()),
-        };
+        let ip = addr.ip();
 
         if let Some(client) = internal.connected_clients.get(&addr) {
             let mut messaging = client.messaging.lock().await;
