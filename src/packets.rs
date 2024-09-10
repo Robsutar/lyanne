@@ -224,6 +224,14 @@ impl PacketRegistry {
         }
     }
 
+    /// Deserializes a packet.
+    ///
+    /// # Panics
+    /// If the packet is not in the registry, or the bytes deserialization fails.
+    pub fn deserialize(&self, serialized_packet: &SerializedPacket) -> Box<PacketToDowncast> {
+        self.try_deserialize(serialized_packet)
+            .expect("Failed to deserialize packet.")
+    }
     pub fn empty_serialized_list(&self) -> SerializedPacketList {
         SerializedPacketList::single(self.serialize(&EmptyPacket))
     }
