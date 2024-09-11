@@ -13,6 +13,21 @@ fn impl_packet_trait(ast: &DeriveInput) -> TokenStream {
     functions.push(quote::quote! {});
     external.push(quote::quote! {});
 
+    #[cfg(feature = "sd_bincode")]
+    {
+        functions.push(quote::quote! {
+            fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+                lyanne::packets::bincode::serialize::<Self>(self)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+            }
+
+            fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
+                lyanne::packets::bincode::deserialize::<Self>(bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+            }
+        });
+    }
+
     #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
     {
         let client_schedule_ident =
