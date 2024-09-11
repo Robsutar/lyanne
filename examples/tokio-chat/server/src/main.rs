@@ -69,7 +69,7 @@ fn use_tick_result(
     tick_result: ServerTickResult,
     client_registry: &mut ClientRegistry,
 ) {
-    for (addr, (addr_to_auth, message)) in tick_result.to_auth {
+    for (auth_entry, message) in tick_result.to_auth {
         if let Some(mut list) = message
             .to_packet_map()
             .collect_list::<HelloPacket>(&server.packet_registry())
@@ -86,8 +86,7 @@ fn use_tick_result(
                 );
 
                 server.refuse(
-                    addr,
-                    addr_to_auth,
+                    auth_entry,
                     LimitedMessage::new(SerializedPacketList::single(
                         server
                             .packet_registry()
@@ -100,9 +99,9 @@ fn use_tick_result(
                     )),
                 )
             } else {
+                let addr = *auth_entry.addr();
                 server.authenticate(
-                    addr,
-                    addr_to_auth,
+                    auth_entry,
                     SerializedPacketList::single(server.packet_registry().serialize(
                         &ChatContextPacket {
                             connected_players:
@@ -125,7 +124,7 @@ fn use_tick_result(
         } else {
             println!(
                 "Client {:?} did not sent a `HelloPacket`, it will not be authenticated",
-                addr
+                auth_entry.addr()
             );
         }
     }

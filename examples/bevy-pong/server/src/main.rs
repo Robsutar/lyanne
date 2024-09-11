@@ -145,7 +145,7 @@ fn server_tick(
 
                     let clients_to_auth = tick_result.to_auth;
 
-                    for (addr, (addr_to_auth, message)) in clients_to_auth {
+                    for (auth_entry, message) in clients_to_auth {
                         if let Ok(auth_packet) = message
                             .to_packet_list()
                             .remove(0)
@@ -154,12 +154,14 @@ fn server_tick(
                         {
                             info!(
                                 "authenticating client {:?}, authentication packet: {:?}",
-                                addr, auth_packet
+                                auth_entry.addr(),
+                                auth_packet
                             );
-                            server_connected.players.push((addr, *auth_packet));
+                            server_connected
+                                .players
+                                .push((*auth_entry.addr(), *auth_packet));
                             server_connected.server.as_ref().unwrap().authenticate(
-                                addr,
-                                addr_to_auth,
+                                auth_entry,
                                 server_connected
                                     .server
                                     .as_ref()

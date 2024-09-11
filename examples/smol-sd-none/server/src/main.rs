@@ -43,7 +43,7 @@ fn main() {
 }
 
 fn use_tick_result(server: &Server, tick_result: ServerTickResult) {
-    for (addr, (addr_to_auth, message)) in tick_result.to_auth {
+    for (auth_entry, message) in tick_result.to_auth {
         if let Ok(hello_packet) = message
             .to_packet_list()
             .remove(0)
@@ -52,21 +52,18 @@ fn use_tick_result(server: &Server, tick_result: ServerTickResult) {
         {
             println!(
                 "Authenticating client {:?}, addr: {:?}",
-                hello_packet.player_name, addr
+                hello_packet.player_name,
+                auth_entry.addr()
             );
 
             // Here the example differs from smol-simple, using try_ variant function due no_panics.
             server
-                .try_authenticate(
-                    addr,
-                    addr_to_auth,
-                    server.packet_registry().empty_serialized_list(),
-                )
+                .try_authenticate(auth_entry, server.packet_registry().empty_serialized_list())
                 .unwrap();
         } else {
             println!(
                 "Client {:?} did not sent a `HelloPacket`, it will not be authenticated",
-                addr
+                auth_entry.addr()
             );
         }
     }

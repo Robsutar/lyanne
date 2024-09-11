@@ -226,11 +226,10 @@ fn update(mut commands: Commands, mut query: Query<(Entity, &mut Game)>, time: R
             let clients_packets_to_process = tick_result.received_messages;
             let clients_to_auth = tick_result.to_auth;
 
-            for (addr, (addr_to_auth, _)) in clients_to_auth {
-                info!("refusing client {:?}", addr,);
+            for (auth_entry, _) in clients_to_auth {
+                info!("refusing client {:?}", auth_entry.addr());
                 game.server.as_ref().unwrap().refuse(
-                    addr,
-                    addr_to_auth,
+                    auth_entry,
                     LimitedMessage::new(SerializedPacketList::single(
                         game.server.as_ref().unwrap().packet_registry().serialize(
                             &ConnectionRefuseMessage {
