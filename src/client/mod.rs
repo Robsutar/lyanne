@@ -226,7 +226,7 @@ pub struct ReceivedMessageClientTickResult {
     pub unexpected_errors: Vec<UnexpectedError>,
 }
 
-/// Result when calling [`Client::tick_start`]
+/// Result when calling [`Client::try_tick_start`]
 #[derive(Debug)]
 pub enum ClientTickResult {
     /// Message received from the server, see [`ReceivedMessageClientTickResult`].
@@ -879,7 +879,7 @@ impl Client {
     }
 
     /// # Returns
-    /// If the [`Client::tick_start`] returned [`ClientTickResult::Disconnected`] some time.
+    /// If the [`Client::try_tick_start`] returned [`ClientTickResult::Disconnected`] some time.
     pub fn is_disconnected(&self) -> bool {
         let internal = &self.internal;
         let disconnect_reason = internal.disconnect_reason.read().unwrap();

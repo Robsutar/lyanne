@@ -330,9 +330,9 @@ impl std::error::Error for BadAuthenticateUsageError {}
 /// Server tick flow state.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ServerTickState {
-    /// Next call should be [`Server::tick_start`].
+    /// Next call should be [`Server::try_tick_start`].
     TickStartPending,
-    /// Next call should be [`Server::tick_end`].
+    /// Next call should be [`Server::try_tick_end`].
     TickEndPending,
 }
 
@@ -382,7 +382,7 @@ impl StoreUnexpectedErrors {
     }
 }
 
-/// Result when calling [`Server::tick_start`].
+/// Result when calling [`Server::try_tick_start`].
 pub struct ServerTickResult {
     /// Received messages from the clients.
     ///
