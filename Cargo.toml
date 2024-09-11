@@ -100,7 +100,7 @@ store_unexpected = []
 no_panics = []
 
 [dependencies]
-lyanne-derive = { path = "derive", version = "0.1.0", optional = true }
+lyanne-derive = { path = "derive", version = "0.2.0", optional = true }
 rand = "^0.8.0"
 dashmap = "^6.0.0"
 x25519-dalek = "^2.0.0"
