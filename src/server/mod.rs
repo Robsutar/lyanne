@@ -55,7 +55,7 @@
 //! use crate::packets::HelloPacket;
 //!
 //! fn use_tick_result(server: &Server, tick_result: ServerTickResult) {
-//!     for (addr, (addr_to_auth, message)) in tick_result.to_auth {
+//!     for (auth_entry, message) in tick_result.to_auth {
 //!         if let Ok(hello_packet) = message
 //!             .to_packet_list()
 //!             .remove(0)
@@ -64,12 +64,11 @@
 //!         {
 //!             println!(
 //!                 "Authenticating client {:?}, addr: {:?}",
-//!                 hello_packet.player_name, addr
+//!                 hello_packet.player_name, auth_entry.addr()
 //!             );
 //!
 //!             server.authenticate(
-//!                 addr,
-//!                 addr_to_auth,
+//!                 auth_entry,
 //!                 server.packet_registry().empty_serialized_list(),
 //!             );
 //!         }
@@ -381,6 +380,10 @@ impl StoreUnexpectedErrors {
         )
     }
 }
+
+/// The authentication entry of some not connected client.
+///
+/// Used to accept/refuse/ignore the authentication.
 pub struct AuthEntry {
     addr: SocketAddr,
     addr_to_auth: AddrToAuth,
@@ -401,6 +404,8 @@ impl std::hash::Hash for AuthEntry {
 }
 
 impl AuthEntry {
+    /// # Returns
+    /// Socket address of this client.
     pub fn addr(&self) -> &SocketAddr {
         &self.addr
     }
@@ -417,7 +422,7 @@ pub struct ServerTickResult {
     /// # Examples
     /// ```no_run
     /// let tick_result: ServerTickResult = server.tick_start();
-    /// for (addr, (addr_to_auth, message)) in tick_result.to_auth {
+    /// for (auth_entry, message) in tick_result.to_auth {
     ///     if let Ok(hello_packet) = message
     ///         .to_packet_list()
     ///         .remove(0)
@@ -426,17 +431,16 @@ pub struct ServerTickResult {
     ///     {
     ///         println!(
     ///             "Authenticating client {:?}, addr: {:?}",
-    ///             hello_packet.player_name, addr
+    ///             hello_packet.player_name, auth_entry.addr()
     ///         );
     ///
     ///         server.authenticate(
-    ///             addr,
-    ///             addr_to_auth,
+    ///             auth_entry,
     ///             server.packet_registry().empty_serialized_list(),
     ///         );
     ///     } else {
     ///         // Discards the authentication, the client will not know explicitly the refuse.
-    ///         // If is desired to send a justification to the client, see [`Server::refuse`]
+    ///         // If is desired to send a justification to the client, see [`Server::try_refuse`]
     ///         println!(
     ///             "Client {:?} did not sent a `HelloPacket`, it will not be authenticated",
     ///             addr
@@ -1258,14 +1262,14 @@ impl Server {
 
     /// Connect a client.
     ///
-    /// Should only be used with [`AddrToAuth`] that were created after the last server tick start,
-    /// if another tick server tick comes up, the `addr_to_auth` will not be valid.
+    /// Should only be used with [`AuthEntry`] that were created after the last server tick start,
+    /// if another tick server tick comes up, the `auth_entry` will not be valid.
     ///
     /// # Panics
     /// - if addr is already connected.
     /// - if addr was not marked in the last tick to be possibly authenticated.
     ///
-    /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
+    /// All panics are related to the bad usage of this function and of the [`AuthEntry`].
     #[cfg(not(feature = "no_panics"))]
     pub fn authenticate(&self, auth_entry: AuthEntry, initial_message: SerializedPacketList) {
         self.try_authenticate(auth_entry, initial_message).unwrap()
