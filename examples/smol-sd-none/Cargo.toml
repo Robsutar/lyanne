@@ -1,0 +1,12 @@
+[package]
+name = "smol-sd-none"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+client = ["lyanne/client"]
+server = ["lyanne/server"]
+
+[dependencies]
+lyanne = { path = "../../", features = [
+] } # Here the example differs from smol-simple, no sd_bincode feature.

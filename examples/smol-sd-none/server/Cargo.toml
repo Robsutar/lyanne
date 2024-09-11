@@ -1,0 +1,10 @@
+[package]
+name = "smol-sd-none-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+smol-sd-none = { path = "../", features = ["server"] }
+lyanne = { path = "../../../", features = ["rt_smol", "server", "no_panics"] }
+smol = { version = "^2.0.0" }
+rand = "^0.8.0"
