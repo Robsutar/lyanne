@@ -10,7 +10,6 @@ use crate::LimitedMessage;
 pub mod auth;
 pub mod messages;
 pub mod rt;
-pub mod sd;
 pub mod utils;
 
 pub type MessageChannelType = u8;

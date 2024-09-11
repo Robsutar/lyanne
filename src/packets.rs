@@ -7,15 +7,10 @@ use std::{
     io,
 };
 
-use crate::{
-    self as lyanne,
-    internal::sd::{cfg_sd_bincode, cfg_sd_none},
-};
+use crate::{self as lyanne};
 
 #[cfg(feature = "sd_bincode")]
 pub use bincode;
-#[cfg(feature = "sd_bincode")]
-use serde::{Deserialize, Serialize};
 
 #[cfg(any(feature = "sd_bincode"))]
 pub extern crate lyanne_derive;
@@ -24,37 +19,6 @@ pub use lyanne_derive::Packet;
 
 pub type PacketId = u16;
 pub type PacketToDowncast = dyn Any + Send + Sync;
-
-macro_rules! packet_body {
-    () => {
-        #[cfg(not(feature = "sd_bincode"))]
-        fn serialize_packet(&self) -> io::Result<Vec<u8>>;
-        #[cfg(not(feature = "sd_bincode"))]
-        fn deserialize_packet(bytes: &[u8]) -> io::Result<Self>;
-
-        #[cfg(feature = "sd_bincode")]
-        fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
-            lyanne::packets::bincode::serialize::<Self>(self)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        }
-
-        #[cfg(feature = "sd_bincode")]
-        fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
-            lyanne::packets::bincode::deserialize::<Self>(bytes)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        }
-
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-        type ClientSchedule: lyanne::bevy_ecs::schedule::ScheduleLabel;
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-        fn client_schedule() -> Self::ClientSchedule;
-
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-        type ServerSchedule: lyanne::bevy_ecs::schedule::ScheduleLabel;
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-        fn server_schedule() -> Self::ServerSchedule;
-    };
-}
 
 #[macro_export]
 macro_rules! add_essential_packets {
@@ -65,20 +29,19 @@ macro_rules! add_essential_packets {
     };
 }
 
-cfg_sd_bincode! {
-    pub trait Packet:
-        Serialize + for<'de> Deserialize<'de> + Debug + 'static + Any + Send + Sync
-    {
-        packet_body!();
-    }
-}
+pub trait Packet: Sized + Debug + 'static + Any + Send + Sync {
+    fn serialize_packet(&self) -> io::Result<Vec<u8>>;
+    fn deserialize_packet(bytes: &[u8]) -> io::Result<Self>;
 
-cfg_sd_none! {
-    pub trait Packet:
-        Sized + Debug + 'static + Any + Send + Sync
-    {
-        packet_body!();
-    }
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+    type ClientSchedule: lyanne::bevy_ecs::schedule::ScheduleLabel;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+    fn client_schedule() -> Self::ClientSchedule;
+
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    type ServerSchedule: lyanne::bevy_ecs::schedule::ScheduleLabel;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    fn server_schedule() -> Self::ServerSchedule;
 }
 
 #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
@@ -482,144 +445,131 @@ impl SerializedPacketList {
     }
 }
 
-cfg_sd_bincode! {
-    #[derive(Packet, Deserialize, Serialize, Debug)]
-    pub struct ClientTickEndPacket;
+#[derive(Debug)]
+pub struct ClientTickEndPacket;
+impl Packet for ClientTickEndPacket {
+    fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
 
-    #[derive(Packet, Deserialize, Serialize, Debug)]
-    pub struct ServerTickEndPacket;
+    fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
+        Ok(Self)
+    }
 
-    #[derive(Packet, Deserialize, Serialize, Debug)]
-    pub struct EmptyPacket;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+    type ClientSchedule = ClientTickEndPacketClientSchedule;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+    fn client_schedule() -> Self::ClientSchedule {
+        ClientTickEndPacketClientSchedule
+    }
+
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    type ServerSchedule = ClientTickEndPacketServerSchedule;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    fn server_schedule() -> Self::ServerSchedule {
+        ClientTickEndPacketServerSchedule
+    }
 }
+#[allow(dead_code)]
+#[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+#[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClientTickEndPacketClientSchedule;
+#[allow(dead_code)]
+#[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+#[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClientTickEndPacketServerSchedule;
 
-cfg_sd_none! {
-    #[derive(Debug)]
-    pub struct ClientTickEndPacket;
-    impl Packet for ClientTickEndPacket {
-        fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
-            Ok(Vec::new())
-        }
+#[allow(dead_code)]
+#[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ClientTickEndPacketClientSchedule;
+#[allow(dead_code)]
+#[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ClientTickEndPacketServerSchedule;
 
-        fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
-            Ok(Self)
-        }
-
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-        fn run_client_schedule(
-            world: &mut World,
-        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
-            world.try_run_schedule(ClientTickEndPacketClientSchedule)
-        }
-
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-        fn run_server_schedule(
-            world: &mut World,
-        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
-            world.try_run_schedule(ClientTickEndPacketServerSchedule)
-        }
+#[derive(Debug)]
+pub struct ServerTickEndPacket;
+impl Packet for ServerTickEndPacket {
+    fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+        Ok(Vec::new())
     }
-    #[allow(dead_code)]
-    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
-    struct ClientTickEndPacketClientSchedule;
-    #[allow(dead_code)]
-    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
-    struct ClientTickEndPacketServerSchedule;
 
-    #[allow(dead_code)]
-    #[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct ClientTickEndPacketClientSchedule;
-    #[allow(dead_code)]
-    #[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct ClientTickEndPacketServerSchedule;
-
-    #[derive(Debug)]
-    pub struct ServerTickEndPacket;
-    impl Packet for ServerTickEndPacket {
-        fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
-            Ok(Vec::new())
-        }
-
-        fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
-            Ok(Self)
-        }
-
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-        fn run_client_schedule(
-            world: &mut World,
-        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
-            world.try_run_schedule(ServerTickEndPacketClientSchedule)
-        }
-
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-        fn run_server_schedule(
-            world: &mut World,
-        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
-            world.try_run_schedule(ServerTickEndPacketServerSchedule)
-        }
+    fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
+        Ok(Self)
     }
-    #[allow(dead_code)]
+
     #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
-    struct ServerTickEndPacketClientSchedule;
-    #[allow(dead_code)]
-    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
-    struct ServerTickEndPacketServerSchedule;
-
-    #[allow(dead_code)]
-    #[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct ServerTickEndPacketClientSchedule;
-    #[allow(dead_code)]
-    #[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct ServerTickEndPacketServerSchedule;
-
-    #[derive(Debug)]
-    pub struct EmptyPacket;
-    impl Packet for EmptyPacket {
-        fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
-            Ok(Vec::new())
-        }
-
-        fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
-            Ok(Self)
-        }
-
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-        fn run_client_schedule(
-            world: &mut World,
-        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
-            world.try_run_schedule(EmptyPacketClientSchedule)
-        }
-
-        #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-        fn run_server_schedule(
-            world: &mut World,
-        ) -> Result<(), lyanne::bevy_ecs::world::error::TryRunScheduleError> {
-            world.try_run_schedule(EmptyPacketServerSchedule)
-        }
+    type ClientSchedule = ServerTickEndPacketClientSchedule;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+    fn client_schedule() -> Self::ClientSchedule {
+        ServerTickEndPacketClientSchedule
     }
-    #[allow(dead_code)]
-    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
-    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
-    struct EmptyPacketClientSchedule;
-    #[allow(dead_code)]
-    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
-    #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel,Debug, Clone, PartialEq, Eq, Hash)]
-    struct EmptyPacketServerSchedule;
 
-    #[allow(dead_code)]
-    #[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct EmptyPacketClientSchedule;
-    #[allow(dead_code)]
-    #[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct EmptyPacketServerSchedule;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    type ServerSchedule = ServerTickEndPacketServerSchedule;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    fn server_schedule() -> Self::ServerSchedule {
+        ServerTickEndPacketServerSchedule
+    }
 }
+#[allow(dead_code)]
+#[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+#[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ServerTickEndPacketClientSchedule;
+#[allow(dead_code)]
+#[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+#[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ServerTickEndPacketServerSchedule;
+
+#[allow(dead_code)]
+#[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ServerTickEndPacketClientSchedule;
+#[allow(dead_code)]
+#[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ServerTickEndPacketServerSchedule;
+
+#[derive(Debug)]
+pub struct EmptyPacket;
+impl Packet for EmptyPacket {
+    fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn deserialize_packet(_bytes: &[u8]) -> std::io::Result<Self> {
+        Ok(Self)
+    }
+
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+    type ClientSchedule = EmptyPacketClientSchedule;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+    fn client_schedule() -> Self::ClientSchedule {
+        EmptyPacketClientSchedule
+    }
+
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    type ServerSchedule = EmptyPacketServerSchedule;
+    #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+    fn server_schedule() -> Self::ServerSchedule {
+        EmptyPacketServerSchedule
+    }
+}
+#[allow(dead_code)]
+#[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
+#[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EmptyPacketClientSchedule;
+#[allow(dead_code)]
+#[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
+#[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EmptyPacketServerSchedule;
+
+#[allow(dead_code)]
+#[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EmptyPacketClientSchedule;
+#[allow(dead_code)]
+#[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EmptyPacketServerSchedule;
