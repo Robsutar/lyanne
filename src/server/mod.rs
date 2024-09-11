@@ -1056,6 +1056,7 @@ impl Server {
     /// - [`Server::tick_start`]
     /// - [`Server::tick_end`]
     /// - ...
+    #[cfg(not(feature = "no_panics"))]
     pub fn tick_start(&self) -> ServerTickResult {
         self.try_tick_start().expect("Invalid server tick state.")
     }
@@ -1088,6 +1089,7 @@ impl Server {
     ///
     /// # Panics
     /// If is not called after [`Server::tick_start`]
+    #[cfg(not(feature = "no_panics"))]
     pub fn tick_end(&self) {
         self.try_tick_end().expect("Invalid server tick state.")
     }
@@ -1234,6 +1236,7 @@ impl Server {
     /// - if addr was not marked in the last tick to be possibly authenticated.
     ///
     /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
+    #[cfg(not(feature = "no_panics"))]
     pub fn authenticate(
         &self,
         addr: SocketAddr,
@@ -1289,6 +1292,7 @@ impl Server {
     /// - if addr was not marked in the last tick to be possibly authenticated.
     ///
     /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
+    #[cfg(not(feature = "no_panics"))]
     pub fn refuse(&self, addr: SocketAddr, addr_to_auth: AddrToAuth, message: LimitedMessage) {
         self.try_refuse(addr, addr_to_auth, message).unwrap()
     }

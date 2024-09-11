@@ -689,6 +689,7 @@ impl Client {
     ///
     /// # Panics
     /// If [`Client::tick_after_message`] call is pending.
+    #[cfg(not(feature = "no_panics"))]
     pub fn tick_start(&self) -> ClientTickResult {
         self.try_tick_start().expect("Invalid client tick state.")
     }
@@ -723,6 +724,7 @@ impl Client {
     ///
     /// # Panics
     /// If is not called after [`Client::tick_start`]
+    #[cfg(not(feature = "no_panics"))]
     pub fn tick_after_message(&self) {
         self.try_tick_after_message()
             .expect("Invalid client tick state.")

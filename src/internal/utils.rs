@@ -40,6 +40,7 @@ impl DurationMonitor {
     /// # Panics
     ///
     /// Panics if the size exceeds the maximum allowable size (`u32::MAX`).
+    #[cfg(not(feature = "no_panics"))]
     pub fn filled_with(duration: Duration, size: usize) -> Self {
         DurationMonitor::try_filled_with(duration, size)
             .expect("Size exceeded the maximum DurationMonitor size.")

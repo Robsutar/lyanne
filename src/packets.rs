@@ -180,6 +180,7 @@ impl PacketRegistry {
     ///
     /// # Panics
     /// If the packet is not registered.
+    #[cfg(not(feature = "no_panics"))]
     pub fn get_packet_id<P: Packet>(&self) -> &PacketId {
         self.try_get_packet_id::<P>()
             .expect("Packet is not registered.")
@@ -204,6 +205,7 @@ impl PacketRegistry {
     ///
     /// # Panics
     /// If the packet is not in the registry, or the bytes serialization fails.
+    #[cfg(not(feature = "no_panics"))]
     pub fn serialize<P: Packet>(&self, packet: &P) -> SerializedPacket {
         self.try_serialize(packet)
             .expect("Failed to serialize packet.")
@@ -228,10 +230,12 @@ impl PacketRegistry {
     ///
     /// # Panics
     /// If the packet is not in the registry, or the bytes deserialization fails.
+    #[cfg(not(feature = "no_panics"))]
     pub fn deserialize(&self, serialized_packet: &SerializedPacket) -> Box<PacketToDowncast> {
         self.try_deserialize(serialized_packet)
             .expect("Failed to deserialize packet.")
     }
+
     pub fn empty_serialized_list(&self) -> SerializedPacketList {
         SerializedPacketList::single(self.serialize(&EmptyPacket))
     }
@@ -322,6 +326,7 @@ impl DeserializedMessageMap {
     /// # Panics
     /// - If the packet type (`P`) was not registered in `packet_registry`.
     /// - If the packet_map is invalid, and has packets that can not be converted to `P` in the list.
+    #[cfg(not(feature = "no_panics"))]
     pub fn collect_list<P: Packet>(&mut self, packet_registry: &PacketRegistry) -> Option<Vec<P>> {
         self.try_collect_list(packet_registry)
             .expect("Failed to collect packets into list from map.")
@@ -464,6 +469,7 @@ impl SerializedPacketList {
         Some(SerializedPacketList { bytes })
     }
 
+    #[cfg(not(feature = "no_panics"))]
     pub fn non_empty(stored: Vec<SerializedPacket>) -> SerializedPacketList {
         SerializedPacketList::try_non_empty(stored).expect("SerializedPacketList can not be empty")
     }

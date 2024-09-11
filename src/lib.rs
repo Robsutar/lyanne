@@ -193,6 +193,7 @@ impl LimitedMessage {
 
     /// # Panics
     /// If the list reached the max allowed size.
+    #[cfg(not(feature = "no_panics"))]
     pub fn new(list: SerializedPacketList) -> Self {
         LimitedMessage::try_new(list).expect("Message reached the maximum byte length.")
     }
