@@ -31,6 +31,11 @@ Example that uses a server and two clients to create a match of the game [Pong](
 
 **Used features**: rt_bevy, bevy_packet_schedules, store_unexpected, auth_tls, auth_tcp, sd_bincode, client, server.
 
+## smol-sd-none
+Example showing how to create manual serialization/deserialization for packages, without relying on a serializer/deserializer (sd). The example also uses the no_panics feature, but uses unwraps since these panics are related to misuse of the crate.
+
+**Used features**: rt_smol, no_panics, client, server.
+
 ## tokio-chat
 Example that makes a simple public chat. Uses `deserialized_message_map` to store packages in maps, instead of storing them in lists, making it quick and easy to search for packages of the same type.
 
