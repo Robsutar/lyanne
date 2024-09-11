@@ -237,7 +237,10 @@ impl PacketRegistry {
     }
 
     pub fn empty_serialized_list(&self) -> SerializedPacketList {
-        SerializedPacketList::single(self.serialize(&EmptyPacket))
+        SerializedPacketList::single(
+            self.try_serialize(&EmptyPacket)
+                .expect("EmptyPacket was not registered."),
+        )
     }
 }
 
@@ -475,7 +478,7 @@ impl SerializedPacketList {
     }
 
     pub fn single(stored: SerializedPacket) -> SerializedPacketList {
-        SerializedPacketList::non_empty(vec![stored])
+        SerializedPacketList::try_non_empty(vec![stored]).unwrap()
     }
 }
 

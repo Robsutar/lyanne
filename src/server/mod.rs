@@ -1072,7 +1072,10 @@ impl Server {
             }
         }
 
-        let tick_packet_serialized = internal.packet_registry.serialize(&ServerTickEndPacket);
+        let tick_packet_serialized = internal
+            .packet_registry
+            .try_serialize(&ServerTickEndPacket)
+            .unwrap();
 
         for client in internal.connected_clients.iter() {
             self.send_packet_serialized(&client, tick_packet_serialized.clone());
@@ -1148,10 +1151,11 @@ impl Server {
                     internal.messaging_properties.initial_latency,
                 ),
                 average_packet_loss_rtt: internal.messaging_properties.initial_latency,
-                latency_monitor: DurationMonitor::filled_with(
+                latency_monitor: DurationMonitor::try_filled_with(
                     internal.messaging_properties.initial_latency,
                     16,
-                ),
+                )
+                .unwrap(),
             };
 
             let client = Arc::new(ConnectedClient {
@@ -1384,7 +1388,7 @@ impl Server {
     ///
     /// # Panics
     ///
-    /// If the packet serialization fails
+    /// If the packet serialization fails, or if `P` was not registered in PacketRegistry.
     ///
     /// # Examples
     ///
@@ -1399,7 +1403,10 @@ impl Server {
     /// ```
     pub fn send_packet<P: Packet>(&self, client: &ConnectedClient, packet: &P) {
         let internal = &self.internal;
-        let serialized = internal.packet_registry.serialize(packet);
+        let serialized = internal
+            .packet_registry
+            .try_serialize(packet)
+            .expect("Failed to serialize packet");
         self.send_packet_serialized(client, serialized);
     }
     /// Store the packet to be sent to the client after the next server tick.

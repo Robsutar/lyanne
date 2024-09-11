@@ -446,7 +446,11 @@ pub(super) mod connecting {
             received_messages: Vec::new(),
             packet_loss_rtt_calculator: RttCalculator::new(messaging_properties.initial_latency),
             average_packet_loss_rtt: messaging_properties.initial_latency,
-            latency_monitor: DurationMonitor::filled_with(messaging_properties.initial_latency, 16),
+            latency_monitor: DurationMonitor::try_filled_with(
+                messaging_properties.initial_latency,
+                16,
+            )
+            .unwrap(),
         });
 
         let server = Arc::new(ConnectedServer {
@@ -496,7 +500,7 @@ pub(super) mod connecting {
 
         let internal = &client.internal;
 
-        let tick_packet_serialized = packet_registry.serialize(&ClientTickEndPacket);
+        let tick_packet_serialized = packet_registry.try_serialize(&ClientTickEndPacket).unwrap();
 
         let connected_server = &internal.connected_server;
         client.send_packet_serialized(tick_packet_serialized.clone());
@@ -594,10 +598,10 @@ pub(super) mod connecting {
                 Err(_) => {}
             }
 
-            match client.tick_start() {
+            match client.try_tick_start().unwrap() {
                 ClientTickResult::ReceivedMessage(tick_result) => {
                     internal.try_check_read_handler();
-                    client.tick_after_message();
+                    client.try_tick_after_message().unwrap();
                     return Ok(ConnectResult {
                         client,
                         initial_message: tick_result.message,

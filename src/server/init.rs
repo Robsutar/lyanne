@@ -207,7 +207,7 @@ pub mod client {
                         let mut messaging = client.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
 
-                        let serialized_packet_list = SerializedPacketList::non_empty(packets_to_send);
+                        let serialized_packet_list = SerializedPacketList::try_non_empty(packets_to_send).unwrap();
                         push_completed_message_tick(&server, &client, &mut messaging, &client.shared_socket_bytes_send_sender, next_message_id, serialized_packet_list);
 
                         next_message_id = next_message_id.wrapping_add(1);

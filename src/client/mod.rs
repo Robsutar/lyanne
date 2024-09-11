@@ -705,7 +705,10 @@ impl Client {
             }
         }
 
-        let tick_packet_serialized = internal.packet_registry.serialize(&ClientTickEndPacket);
+        let tick_packet_serialized = internal
+            .packet_registry
+            .try_serialize(&ClientTickEndPacket)
+            .unwrap();
 
         let connected_server = &internal.connected_server;
         self.send_packet_serialized(tick_packet_serialized.clone());
@@ -826,7 +829,7 @@ impl Client {
     ///
     /// # Panics
     ///
-    /// If the packet serialization fails
+    /// If the packet serialization fails, or if `P` was not registered in PacketRegistry.
     ///
     /// # Examples
     ///
@@ -839,7 +842,10 @@ impl Client {
     /// ```
     pub fn send_packet<P: Packet>(&self, packet: &P) {
         let internal = &self.internal;
-        let serialized = internal.packet_registry.serialize(packet);
+        let serialized = internal
+            .packet_registry
+            .try_serialize(packet)
+            .expect("Failed to serialize packet");
         self.send_packet_serialized(serialized);
     }
     /// Store the packet to be sent to the client after the next server tick.

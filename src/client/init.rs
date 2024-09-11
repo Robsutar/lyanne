@@ -195,7 +195,7 @@ pub mod server {
                         let mut messaging = server.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
 
-                        let bytes = SerializedPacketList::non_empty(packets_to_send).bytes;
+                        let bytes = SerializedPacketList::try_non_empty(packets_to_send).unwrap().bytes;
                         let message_parts = MessagePart::create_list(
                             &client.messaging_properties,
                             next_message_id,
