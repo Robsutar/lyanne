@@ -381,6 +381,30 @@ impl StoreUnexpectedErrors {
         )
     }
 }
+pub struct AuthEntry {
+    addr: SocketAddr,
+    addr_to_auth: AddrToAuth,
+}
+
+impl PartialEq for AuthEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.addr == other.addr
+    }
+}
+
+impl Eq for AuthEntry {}
+
+impl std::hash::Hash for AuthEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.addr.hash(state);
+    }
+}
+
+impl AuthEntry {
+    pub fn addr(&self) -> &SocketAddr {
+        &self.addr
+    }
+}
 
 /// Result when calling [`Server::try_tick_start`].
 pub struct ServerTickResult {
@@ -420,7 +444,7 @@ pub struct ServerTickResult {
     ///     }
     /// }
     /// ```
-    pub to_auth: HashMap<SocketAddr, (AddrToAuth, DeserializedMessage)>,
+    pub to_auth: HashMap<AuthEntry, DeserializedMessage>,
     /// Disconnected clients since the last tick, and the reason.
     pub disconnected: HashMap<SocketAddr, ClientDisconnectReason>,
     /// Errors emitted since the last server tick.
@@ -883,7 +907,7 @@ impl Server {
         });
 
         let mut received_messages: HashMap<SocketAddr, Vec<DeserializedMessage>> = HashMap::new();
-        let mut to_auth: HashMap<SocketAddr, (AddrToAuth, DeserializedMessage)> = HashMap::new();
+        let mut to_auth: HashMap<AuthEntry, DeserializedMessage> = HashMap::new();
         let mut disconnected: HashMap<SocketAddr, ClientDisconnectReason> = HashMap::new();
 
         let mut addrs_to_disconnect: HashMap<
@@ -891,8 +915,9 @@ impl Server {
             (ClientDisconnectReason, Option<JustifiedRejectionContext>),
         > = HashMap::new();
 
-        while let Ok((addr, addr_to_auth)) = internal.clients_to_auth_receiver.try_recv() {
-            to_auth.insert(addr, addr_to_auth);
+        while let Ok((addr, (addr_to_auth, message))) = internal.clients_to_auth_receiver.try_recv()
+        {
+            to_auth.insert(AuthEntry { addr, addr_to_auth }, message);
         }
 
         while let Ok((addr, reason)) = internal.clients_to_disconnect_receiver.try_recv() {
@@ -998,8 +1023,8 @@ impl Server {
             disconnected.insert(addr, reason);
         }
 
-        for addr in to_auth.keys() {
-            assigned_addrs_in_auth.insert(*addr);
+        for auth_entry in to_auth.keys() {
+            assigned_addrs_in_auth.insert(*auth_entry.addr());
         }
 
         match &internal.authenticator_mode {
@@ -1099,11 +1124,12 @@ impl Server {
 
     pub fn try_authenticate(
         &self,
-        addr: SocketAddr,
-        addr_to_auth: AddrToAuth,
+        auth_entry: AuthEntry,
         initial_message: SerializedPacketList,
     ) -> Result<(), BadAuthenticateUsageError> {
         let internal = &self.internal;
+        let addr = auth_entry.addr;
+        let addr_to_auth = auth_entry.addr_to_auth;
         if internal.connected_clients.contains_key(&addr) {
             Err(BadAuthenticateUsageError::AlreadyConnected)
         } else if !internal
@@ -1241,23 +1267,18 @@ impl Server {
     ///
     /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
     #[cfg(not(feature = "no_panics"))]
-    pub fn authenticate(
-        &self,
-        addr: SocketAddr,
-        addr_to_auth: AddrToAuth,
-        initial_message: SerializedPacketList,
-    ) {
-        self.try_authenticate(addr, addr_to_auth, initial_message)
-            .unwrap()
+    pub fn authenticate(&self, auth_entry: AuthEntry, initial_message: SerializedPacketList) {
+        self.try_authenticate(auth_entry, initial_message).unwrap()
     }
 
     pub fn try_refuse(
         &self,
-        addr: SocketAddr,
-        addr_to_auth: AddrToAuth,
+        auth_entry: AuthEntry,
         message: LimitedMessage,
     ) -> Result<(), BadAuthenticateUsageError> {
         let internal = &self.internal;
+        let addr = auth_entry.addr;
+        let addr_to_auth = auth_entry.addr_to_auth;
         if internal.connected_clients.contains_key(&addr) {
             Err(BadAuthenticateUsageError::AlreadyConnected)
         } else if !internal
@@ -1297,8 +1318,8 @@ impl Server {
     ///
     /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
     #[cfg(not(feature = "no_panics"))]
-    pub fn refuse(&self, addr: SocketAddr, addr_to_auth: AddrToAuth, message: LimitedMessage) {
-        self.try_refuse(addr, addr_to_auth, message).unwrap()
+    pub fn refuse(&self, auth_entry: AuthEntry, message: LimitedMessage) {
+        self.try_refuse(auth_entry, message).unwrap()
     }
 
     /// Mark that client to be disconnected in the next tick.

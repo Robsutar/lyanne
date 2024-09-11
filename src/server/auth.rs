@@ -49,8 +49,8 @@ pub(super) struct AddrPendingAuthSend {
 }
 
 /// The holder to complete a connection with an Addr.
-pub struct AddrToAuth {
-    pub(super) inner_auth: InnerAuth,
+pub(super) struct AddrToAuth {
+    pub inner_auth: InnerAuth,
 }
 pub(super) struct AuthMode {
     /// Set of addrs in the authentication process.
