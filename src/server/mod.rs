@@ -1377,6 +1377,18 @@ impl Server {
         internal.connected_clients.iter()
     }
 
+    pub fn try_send_packet<P: Packet>(
+        &self,
+        client: &ConnectedClient,
+        packet: &P,
+    ) -> Result<(), io::Error> {
+        let internal = &self.internal;
+        let serialized = internal.packet_registry.try_serialize(packet)?;
+        self.send_packet_serialized(client, serialized);
+
+        Ok(())
+    }
+
     /// Serializes, then store the packet to be sent to the client after the next server tick.
     ///
     /// If you need to send the same packet to multiple clients, see [`Server::send_packet_serialized`].
@@ -1401,13 +1413,10 @@ impl Server {
     /// };
     /// server.send_packet(&client, &packet);
     /// ```
+    #[cfg(not(feature = "no_panics"))]
     pub fn send_packet<P: Packet>(&self, client: &ConnectedClient, packet: &P) {
-        let internal = &self.internal;
-        let serialized = internal
-            .packet_registry
-            .try_serialize(packet)
-            .expect("Failed to serialize packet");
-        self.send_packet_serialized(client, serialized);
+        self.try_send_packet(client, packet)
+            .expect("Failed to send packet.");
     }
     /// Store the packet to be sent to the client after the next server tick.
     ///

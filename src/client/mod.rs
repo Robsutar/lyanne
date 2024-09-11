@@ -821,6 +821,13 @@ impl Client {
         })
     }
 
+    pub fn try_send_packet<P: Packet>(&self, packet: &P) -> Result<(), io::Error> {
+        let internal = &self.internal;
+        let serialized = internal.packet_registry.try_serialize(packet)?;
+        self.send_packet_serialized(serialized);
+        Ok(())
+    }
+
     /// Serializes, then store the packet to be sent to the server after the next received server tick.
     ///
     /// # Parameters
@@ -840,13 +847,10 @@ impl Client {
     /// };
     /// client.send_packet(&packet);
     /// ```
+    #[cfg(not(feature = "no_panics"))]
     pub fn send_packet<P: Packet>(&self, packet: &P) {
-        let internal = &self.internal;
-        let serialized = internal
-            .packet_registry
-            .try_serialize(packet)
-            .expect("Failed to serialize packet");
-        self.send_packet_serialized(serialized);
+        self.try_send_packet(packet)
+            .expect("Failed to send packet.");
     }
     /// Store the packet to be sent to the client after the next server tick.
     ///
