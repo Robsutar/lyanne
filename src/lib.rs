@@ -83,6 +83,7 @@
 //! |bevy_packet_schedules|Creates Scheduled Labels for structs that derive from Packet.|
 //! |deserialized_message_map|Received packets will be read in maps (with the keys being the packet IDs), instead of being stored in a list. This does not affect communication, only the way the data is stored for reading.|
 //! |store_unexpected|Stores unexpected communication errors in each tick, such as incorrect communication. It is generally a debugging tool and adds a small overhead.|
+//! |no_panics|Removes the functions that cause panic, leaving only the versions of the same that use the try_ prefix and have the return being a Result.|
 //!
 
 #[cfg(feature = "bevy_packet_schedules")]
