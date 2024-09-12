@@ -511,19 +511,6 @@ impl Client {
             let bytes = &buf[..len];
 
             match bytes[0] {
-                MessageChannel::IGNORED_REASON => {
-                    // 4 for the minimal SerializedPacket
-                    if bytes.len() < MESSAGE_CHANNEL_SIZE + 4 {
-                        return Err(ConnectError::InvalidProtocolCommunication);
-                    } else if let Ok(message) = DeserializedMessage::deserialize_single_list(
-                        &bytes[MESSAGE_CHANNEL_SIZE..],
-                        &packet_registry,
-                    ) {
-                        return Err(ConnectError::Ignored(message));
-                    } else {
-                        return Err(ConnectError::InvalidProtocolCommunication);
-                    }
-                }
                 MessageChannel::PUBLIC_KEY_SEND => {
                     if len != (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE) {
                         return Err(ConnectError::InvalidProtocolCommunication);

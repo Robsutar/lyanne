@@ -106,8 +106,6 @@ pub enum ConnectError {
     InvalidDnsName,
     /// IO error on UDP socket binding/connecting.
     SocketConnectError(io::Error),
-    /// Client addr is ignored by the server.
-    Ignored(DeserializedMessage),
     /// Error connecting authenticator socket.
     AuthenticatorConnectIoError(io::Error),
     /// Error writing data in authenticator socket.
@@ -135,7 +133,6 @@ impl fmt::Display for ConnectError {
             }
             ConnectError::InvalidDnsName => write!(f, "Invalid dns name."),
             ConnectError::SocketConnectError(e) => write!(f, "Failed to bind UDP socket: {}", e),
-            ConnectError::Ignored(_) => write!(f, "Client addr is ignored by the server.",),
             ConnectError::AuthenticatorConnectIoError(ref err) => {
                 write!(f, "Authenticator connect IO error: {}", err)
             }
@@ -174,7 +171,7 @@ pub(super) mod connecting {
     #[cfg(feature = "store_unexpected")]
     use client::store_unexpected_error_list_pick;
 
-    use crate::internal::messages::{UDP_BUFFER_SIZE, PUBLIC_KEY_SIZE};
+    use crate::internal::messages::{PUBLIC_KEY_SIZE, UDP_BUFFER_SIZE};
 
     use super::*;
 
@@ -234,13 +231,6 @@ pub(super) mod connecting {
                         }
 
                         match buf[0] {
-                            MessageChannel::IGNORED_REASON => {
-                                break Ok((
-                                    len,
-                                    props.message,
-                                    ConnectedAuthenticatorMode::NoCryptography,
-                                ));
-                            }
                             MessageChannel::PUBLIC_KEY_SEND => {
                                 break Ok((
                                     len,
