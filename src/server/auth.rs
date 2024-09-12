@@ -337,7 +337,7 @@ where
 
         let mut bound_stream = self.bound_stream(raw_stream).await?;
 
-        let mut buf = [0u8; 1024];
+        let mut buf = [0u8; UDP_BUFFER_SIZE];
 
         let bytes = match bound_stream.read(&mut buf).await {
             Ok(0) => {

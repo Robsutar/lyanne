@@ -93,6 +93,7 @@ use crate::{
         auth::InnerAuth,
         messages::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE,
+            UDP_BUFFER_SIZE,
         },
         rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
@@ -405,7 +406,7 @@ impl ClientInternal {
     ) -> io::Result<Vec<u8>> {
         let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, ()> =
             crate::internal::rt::timeout(read_timeout, async move {
-                let mut buf = [0u8; 1024];
+                let mut buf = [0u8; UDP_BUFFER_SIZE];
                 let len = socket.recv(&mut buf).await?;
                 Ok(buf[..len].to_vec())
             })
@@ -479,7 +480,7 @@ impl Client {
             public_key_sent.push(MessageChannel::PUBLIC_KEY_SEND);
             public_key_sent.extend_from_slice(client_public_key_bytes);
 
-            let mut buf = [0u8; 1024];
+            let mut buf = [0u8; UDP_BUFFER_SIZE];
 
             let socket = match UdpSocket::bind("0.0.0.0:0").await {
                 Ok(socket) => Arc::new(socket),

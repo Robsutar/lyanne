@@ -32,6 +32,8 @@ pub const ENCRYPTION_SPACE: usize = 16;
 // TODO: use this size to check the maximum authentication message sent by the client
 pub const PUBLIC_KEY_SIZE: usize = 32;
 
+pub const UDP_BUFFER_SIZE: usize = 1024;
+
 struct MessagePartTypes;
 
 impl MessagePartTypes {

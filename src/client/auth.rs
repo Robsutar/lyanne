@@ -174,7 +174,7 @@ pub(super) mod connecting {
     #[cfg(feature = "store_unexpected")]
     use client::store_unexpected_error_list_pick;
 
-    use crate::internal::messages::PUBLIC_KEY_SIZE;
+    use crate::internal::messages::{UDP_BUFFER_SIZE, PUBLIC_KEY_SIZE};
 
     use super::*;
 
@@ -182,7 +182,7 @@ pub(super) mod connecting {
         authenticator_mode: AuthenticatorMode,
         client_properties: &ClientProperties,
         socket: &UdpSocket,
-        buf: &mut [u8; 1024],
+        buf: &mut [u8; UDP_BUFFER_SIZE],
         public_key_sent: &Vec<u8>,
     ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
         Ok(match authenticator_mode {
@@ -212,7 +212,7 @@ pub(super) mod connecting {
 
     pub async fn connect_no_cryptography_match_arm(
         socket: &UdpSocket,
-        buf: &mut [u8; 1024],
+        buf: &mut [u8; UDP_BUFFER_SIZE],
         public_key_sent: &Vec<u8>,
         props: AuthenticationProperties,
     ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
@@ -262,7 +262,7 @@ pub(super) mod connecting {
 
     #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
     pub async fn connect_require_tcp_based_match_arm<T>(
-        buf: &mut [u8; 1024],
+        buf: &mut [u8; UDP_BUFFER_SIZE],
         public_key_sent: &Vec<u8>,
         mut stream: T,
     ) -> Result<usize, ConnectError>
@@ -292,7 +292,7 @@ pub(super) mod connecting {
 
     #[cfg(feature = "auth_tcp")]
     pub async fn connect_require_tcp_match_arm(
-        buf: &mut [u8; 1024],
+        buf: &mut [u8; UDP_BUFFER_SIZE],
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTcpClientProperties,
         props: AuthenticationProperties,
@@ -315,7 +315,7 @@ pub(super) mod connecting {
 
     #[cfg(feature = "auth_tls")]
     pub async fn connect_require_tls_match_arm(
-        buf: &mut [u8; 1024],
+        buf: &mut [u8; UDP_BUFFER_SIZE],
         public_key_sent: &Vec<u8>,
         auth_mode: AuthTlsClientProperties,
         props: AuthenticationProperties,
@@ -353,7 +353,7 @@ pub(super) mod connecting {
     pub async fn connect_attempt_list_match_arm(
         client_properties: &ClientProperties,
         socket: &UdpSocket,
-        buf: &mut [u8; 1024],
+        buf: &mut [u8; UDP_BUFFER_SIZE],
         public_key_sent: &Vec<u8>,
         modes: Vec<AuthenticatorMode>,
     ) -> Result<(usize, LimitedMessage, ConnectedAuthenticatorMode), ConnectError> {
@@ -378,7 +378,7 @@ pub(super) mod connecting {
 
     pub async fn connect_public_key_send_match_arm(
         socket: Arc<UdpSocket>,
-        buf: [u8; 1024],
+        buf: [u8; UDP_BUFFER_SIZE],
         _client_private_key: EphemeralSecret,
         message: LimitedMessage,
         packet_registry: Arc<PacketRegistry>,

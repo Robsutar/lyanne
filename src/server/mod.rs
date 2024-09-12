@@ -109,7 +109,9 @@ use dashmap::{DashMap, DashSet};
 
 use crate::{
     internal::{
-        messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
+        messages::{
+            DeserializedMessage, MessageId, MessagePartId, MessagePartMap, UDP_BUFFER_SIZE,
+        },
         rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
@@ -634,7 +636,7 @@ impl ServerInternal {
     ) -> io::Result<(SocketAddr, Vec<u8>)> {
         let pre_read_next_bytes_result: Result<io::Result<(SocketAddr, Vec<u8>)>, ()> =
             crate::internal::rt::timeout(read_timeout, async move {
-                let mut buf = [0u8; 1024];
+                let mut buf = [0u8; UDP_BUFFER_SIZE];
                 let (len, addr) = socket.recv_from(&mut buf).await?;
                 Ok((addr, buf[..len].to_vec()))
             })

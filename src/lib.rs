@@ -97,7 +97,7 @@ use std::{
 };
 
 use internal::{
-    messages::{ENCRYPTION_SPACE, NONCE_SIZE},
+    messages::{ENCRYPTION_SPACE, NONCE_SIZE, UDP_BUFFER_SIZE},
     SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
 
@@ -142,8 +142,7 @@ pub struct MessagingProperties {
 impl Default for MessagingProperties {
     fn default() -> Self {
         Self {
-            // 1024 buffer size
-            part_limit: 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - ENCRYPTION_SPACE,
+            part_limit: UDP_BUFFER_SIZE - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - ENCRYPTION_SPACE,
             timeout_interpretation: Duration::from_secs(10),
             disconnect_reason_resend_delay: Duration::from_secs(3),
             disconnect_reason_resend_cancel: Duration::from_secs(10),
@@ -185,7 +184,8 @@ impl LimitedMessage {
     /// # Errors
     /// If the list reached the max allowed size.
     pub fn try_new(list: SerializedPacketList) -> Result<Self, ()> {
-        if list.bytes.len() > 1024 - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - ENCRYPTION_SPACE {
+        if list.bytes.len() > UDP_BUFFER_SIZE - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - ENCRYPTION_SPACE
+        {
             Err(())
         } else {
             Ok(LimitedMessage { list })
