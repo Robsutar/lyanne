@@ -135,10 +135,17 @@ impl PacketRegistry {
             && self.try_get_packet_id::<EmptyPacket>().is_some()
     }
 
+    /// Get the if of the packet.
+    ///
+    /// # Returns
+    /// - Some(&PacketId) if the packet is not registered.
+    /// - None if the packet is not registered.
     pub fn try_get_packet_id<P: Packet>(&self) -> Option<&PacketId> {
         self.packet_type_ids.get(&TypeId::of::<P>())
     }
 
+    /// Panic version of [`PacketRegistry::try_get_packet_id`].
+    ///
     /// Get the if of the packet.
     ///
     /// # Panics
@@ -149,6 +156,10 @@ impl PacketRegistry {
             .expect("Packet is not registered.")
     }
 
+    /// Serializes a packet.
+    ///
+    /// # Errors
+    /// If the packet is not in the registry, or the bytes serialization fails.
     pub fn try_serialize<P: Packet>(&self, packet: &P) -> io::Result<SerializedPacket> {
         let packet_id = self.try_get_packet_id::<P>();
         if let Some(packet_id) = packet_id {
@@ -164,6 +175,8 @@ impl PacketRegistry {
         }
     }
 
+    /// Panic version of [`PacketRegistry::try_serialize`].
+    ///
     /// Serializes a packet.
     ///
     /// # Panics
@@ -174,6 +187,10 @@ impl PacketRegistry {
             .expect("Failed to serialize packet.")
     }
 
+    /// Deserializes a packet.
+    ///
+    /// # Errors
+    /// If the packet is not in the registry, or the bytes deserialization fails.
     pub fn try_deserialize(
         &self,
         serialized_packet: &SerializedPacket,
@@ -189,6 +206,8 @@ impl PacketRegistry {
         }
     }
 
+    /// Panic version of [`PacketRegistry::try_deserialize`].
+    ///
     /// Deserializes a packet.
     ///
     /// # Panics
@@ -257,6 +276,12 @@ pub struct DeserializedMessageMap {
 }
 
 impl DeserializedMessageMap {
+    /// The list (if there is some) of the packet type (`P`).
+    ///
+    /// That list will never be empty.
+    /// # Errors
+    /// - If the packet type (`P`) was not registered in `packet_registry`.
+    /// - If the packet_map is invalid, and has packets that can not be converted to `P` in the list.
     pub fn try_collect_list<P: Packet>(
         &mut self,
         packet_registry: &PacketRegistry,
@@ -286,6 +311,8 @@ impl DeserializedMessageMap {
         }
     }
 
+    /// Panic version of [`DeserializedMessageMap::try_collect_list`].
+    ///
     /// The list (if there is some) of the packet type (`P`).
     ///
     /// That list will never be empty.
@@ -417,6 +444,10 @@ pub struct SerializedPacketList {
 }
 
 impl SerializedPacketList {
+    /// Creates a SerializedPacketList from `stored`.
+    ///
+    /// # Errors
+    /// If `stored` is empty.
     pub fn try_non_empty(stored: Vec<SerializedPacket>) -> Option<SerializedPacketList> {
         if stored.is_empty() {
             return None;
@@ -435,11 +466,18 @@ impl SerializedPacketList {
         Some(SerializedPacketList { bytes })
     }
 
+    /// Panic version of [`SerializedPacketList::try_non_empty`].
+    ///
+    /// Creates a SerializedPacketList from `stored`.
+    ///
+    /// # Panics
+    /// If `stored` is empty.
     #[cfg(not(feature = "no_panics"))]
     pub fn non_empty(stored: Vec<SerializedPacket>) -> SerializedPacketList {
         SerializedPacketList::try_non_empty(stored).expect("SerializedPacketList can not be empty")
     }
 
+    /// Creates a SerializedPacketList with a single packet.
     pub fn single(stored: SerializedPacket) -> SerializedPacketList {
         SerializedPacketList::try_non_empty(vec![stored]).unwrap()
     }

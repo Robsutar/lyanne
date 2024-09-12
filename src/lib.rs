@@ -83,7 +83,7 @@
 //! |bevy_packet_schedules|Creates Scheduled Labels for structs that derive from Packet.|
 //! |deserialized_message_map|Received packets will be read in maps (with the keys being the packet IDs), instead of being stored in a list. This does not affect communication, only the way the data is stored for reading.|
 //! |store_unexpected|Stores unexpected communication errors in each tick, such as incorrect communication. It is generally a debugging tool and adds a small overhead.|
-//! |no_panics|Removes the public crate functions that cause panic, leaving only the versions of the same that use the try_ prefix and have the return being a Result. The panic of those functions are usually related to unusual scenarios, such as incorrect use of [`server::AddrToAuth`], incorrect use of tick cycle, sending unregistered packets...|
+//! |no_panics|Removes the public crate functions that cause panic, leaving only the versions of the same that use the try_ prefix and have the return being a Result. The panic of those functions are usually related to unusual scenarios, such as incorrect use of [`server::AuthEntry`], incorrect use of tick cycle, sending unregistered packets...|
 //!
 
 #[cfg(feature = "bevy_packet_schedules")]
@@ -192,6 +192,8 @@ impl LimitedMessage {
         }
     }
 
+    /// Panic version of [`LimitedMessage::try_new`].
+    ///
     /// # Panics
     /// If the list reached the max allowed size.
     #[cfg(not(feature = "no_panics"))]

@@ -305,7 +305,7 @@ impl std::error::Error for BindError {}
 
 /// Possible reasons why a authentication was unsuccessful with [`Server::try_authenticate`].
 ///
-/// All reasons are related to wrong usage of [`AddrToAuth`] and [`Server::try_authenticate`].
+/// All reasons are related to wrong usage of [`AuthEntry`] and [`Server::try_authenticate`].
 #[derive(Debug)]
 pub enum BadAuthenticateUsageError {
     AlreadyConnected,
@@ -857,6 +857,23 @@ impl Server {
         &self.internal.server_properties
     }
 
+    /// Server periodic tick start.
+    ///
+    /// The server tick ratio is based on this function call.
+    ///
+    /// It handles:
+    /// - Pending authentications
+    /// - Pending disconnections
+    /// - Clients sent packets
+    /// - General server cyclic management
+    ///
+    /// # Errors
+    /// If [`Server::try_tick_end`] call is pending. That is, the cycle must be:
+    /// - [`Server::try_tick_start`]
+    /// - [`Server::try_tick_end`]
+    /// - [`Server::try_tick_start`]
+    /// - [`Server::try_tick_end`]
+    /// - ...
     pub fn try_tick_start(&self) -> Result<ServerTickResult, ()> {
         let internal = &self.internal;
         {
@@ -1068,6 +1085,8 @@ impl Server {
         })
     }
 
+    /// Panic version of [`Server::try_tick_start`].
+    ///
     /// Server periodic tick start.
     ///
     /// The server tick ratio is based on this function call.
@@ -1090,6 +1109,13 @@ impl Server {
         self.try_tick_start().expect("Invalid server tick state.")
     }
 
+    /// Server periodic tick end.
+    ///
+    /// It handles:
+    /// - Unification of packages to be sent to clients.
+    ///
+    /// # Errors
+    /// If is not called after [`Server::try_tick_start`]
     pub fn try_tick_end(&self) -> Result<(), ()> {
         let internal = &self.internal;
         {
@@ -1114,6 +1140,8 @@ impl Server {
         Ok(())
     }
 
+    /// Panic version of [`Server::try_tick_end`].
+    ///
     /// Server periodic tick end.
     ///
     /// It handles:
@@ -1126,6 +1154,16 @@ impl Server {
         self.try_tick_end().expect("Invalid server tick state.")
     }
 
+    /// Connect a client.
+    ///
+    /// Should only be used with [`AuthEntry`] that were created after the last server tick start,
+    /// if another tick server tick comes up, the `auth_entry` will not be valid.
+    ///
+    /// # Errors
+    /// - if addr is already connected.
+    /// - if addr was not marked in the last tick to be possibly authenticated.
+    ///
+    /// All panics are related to the bad usage of this function and of the [`AuthEntry`].
     pub fn try_authenticate(
         &self,
         auth_entry: AuthEntry,
@@ -1260,6 +1298,8 @@ impl Server {
         }
     }
 
+    /// Panic version of [`Server::try_authenticate`].
+    ///
     /// Connect a client.
     ///
     /// Should only be used with [`AuthEntry`] that were created after the last server tick start,
@@ -1275,6 +1315,20 @@ impl Server {
         self.try_authenticate(auth_entry, initial_message).unwrap()
     }
 
+    /// Refuses a client connection with justification.
+    ///
+    /// If you want to refuse a client, but without any justification, just ignore the [`AuthEntry`].
+    ///
+    /// If that addr was already refused, the new message will replace the old message.
+    ///
+    /// Should only be used with [`AuthEntry`] that were created after the last server tick,
+    /// if another tick server tick comes up, the [`AuthEntry`] will not be valid.
+    ///
+    /// # Errors
+    /// - if addr is already connected.
+    /// - if addr was not marked in the last tick to be possibly authenticated.
+    ///
+    /// All panics are related to the bad usage of this function and of the [`AuthEntry`].
     pub fn try_refuse(
         &self,
         auth_entry: AuthEntry,
@@ -1307,20 +1361,22 @@ impl Server {
         }
     }
 
+    /// Panic version of [`Server::try_refuse`].
+    ///
     /// Refuses a client connection with justification.
     ///
-    /// If you want to refuse a client, but without any justification, just ignore the `AddrToAuth`.
+    /// If you want to refuse a client, but without any justification, just ignore the [`AuthEntry`].
     ///
     /// If that addr was already refused, the new message will replace the old message.
     ///
-    /// Should only be used with [`AddrToAuth`] that were created after the last server tick,
-    /// if another tick server tick comes up, the [`AddrToAuth`] will not be valid.
+    /// Should only be used with [`AuthEntry`] that were created after the last server tick,
+    /// if another tick server tick comes up, the [`AuthEntry`] will not be valid.
     ///
     /// # Panics
     /// - if addr is already connected.
     /// - if addr was not marked in the last tick to be possibly authenticated.
     ///
-    /// All panics are related to the bad usage of this function and of the [`AddrToAuth`].
+    /// All panics are related to the bad usage of this function and of the [`AuthEntry`].
     #[cfg(not(feature = "no_panics"))]
     pub fn refuse(&self, auth_entry: AuthEntry, message: LimitedMessage) {
         self.try_refuse(auth_entry, message).unwrap()
@@ -1402,6 +1458,30 @@ impl Server {
         internal.connected_clients.iter()
     }
 
+    /// Serializes, then store the packet to be sent to the client after the next server tick.
+    ///
+    /// If you need to send the same packet to multiple clients, see [`Server::send_packet_serialized`].
+    ///
+    /// # Parameters
+    ///
+    /// * `client` - `ConnectedClient` to which the packet will be sent.
+    /// * `packet` - packet to be serialized and sent.
+    ///
+    /// # Errors
+    ///
+    /// If the packet serialization fails, or if `P` was not registered in PacketRegistry.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let server: &Server = ...;
+    /// let addr: SocketAddr = ...;
+    /// let client = server.get_connected_client(&addr).unwrap();
+    /// let packet = FooPacket {
+    ///     message: "Hey ya!".to_owned(),
+    /// };
+    /// server.try_send_packet(&client, &packet).unwrap();
+    /// ```
     pub fn try_send_packet<P: Packet>(
         &self,
         client: &ConnectedClient,
@@ -1414,6 +1494,8 @@ impl Server {
         Ok(())
     }
 
+    /// Panic version of [`Server::try_send_packet`].
+    ///
     /// Serializes, then store the packet to be sent to the client after the next server tick.
     ///
     /// If you need to send the same packet to multiple clients, see [`Server::send_packet_serialized`].

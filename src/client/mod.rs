@@ -574,6 +574,16 @@ impl Client {
         &self.internal.authentication_mode
     }
 
+    /// Client periodic tick start.
+    ///
+    /// This function call rate should be at least a little bit higher than server tick ratio.
+    ///
+    /// It handles:
+    /// - Server sent packets
+    /// - General client cyclic management
+    ///
+    /// # Errors
+    /// If [`Client::try_tick_after_message`] call is pending.
     pub fn try_tick_start(&self) -> Result<ClientTickResult, ()> {
         let internal = &self.internal;
         {
@@ -679,6 +689,8 @@ impl Client {
         }
     }
 
+    /// Panic version of [`Client::try_tick_start`].
+    ///
     /// Client periodic tick start.
     ///
     /// This function call rate should be at least a little bit higher than server tick ratio.
@@ -694,6 +706,13 @@ impl Client {
         self.try_tick_start().expect("Invalid client tick state.")
     }
 
+    /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::try_tick_start`]
+    ///
+    /// It handles:
+    /// - Unification of packages to be sent to server.
+    ///
+    /// # Errors
+    /// If is not called after [`Client::try_tick_start`]
     pub fn try_tick_after_message(&self) -> Result<(), ()> {
         let internal = &self.internal;
         {
@@ -720,6 +739,8 @@ impl Client {
         Ok(())
     }
 
+    /// Panic version of [`Client::try_tick_after_message`].
+    ///
     /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::tick_start`]
     ///
     /// It handles:
@@ -821,6 +842,25 @@ impl Client {
         })
     }
 
+    /// Serializes, then store the packet to be sent to the server after the next received server tick.
+    ///
+    /// # Parameters
+    ///
+    /// * `packet` - packet to be serialized and sent.
+    ///
+    /// # Errors
+    ///
+    /// If the packet serialization fails, or if `P` was not registered in PacketRegistry.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let client: &Client = ...;
+    /// let packet = FooPacket {
+    ///     message: "Hey ya!".to_owned(),
+    /// };
+    /// client.try_send_packet(&packet).unwrap();
+    /// ```
     pub fn try_send_packet<P: Packet>(&self, packet: &P) -> Result<(), io::Error> {
         let internal = &self.internal;
         let serialized = internal.packet_registry.try_serialize(packet)?;
@@ -828,6 +868,8 @@ impl Client {
         Ok(())
     }
 
+    /// Panic version of [`Client::try_send_packet`].
+    ///
     /// Serializes, then store the packet to be sent to the server after the next received server tick.
     ///
     /// # Parameters
@@ -852,6 +894,7 @@ impl Client {
         self.try_send_packet(packet)
             .expect("Failed to send packet.");
     }
+
     /// Store the packet to be sent to the client after the next server tick.
     ///
     /// # Parameters
