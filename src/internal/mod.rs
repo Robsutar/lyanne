@@ -24,7 +24,6 @@ impl MessageChannel {
     pub const AUTH_MESSAGE: MessageChannelType = 3;
     pub const PUBLIC_KEY_SEND: MessageChannelType = 4;
     pub const REJECTION_JUSTIFICATION: MessageChannelType = 5;
-    pub const IGNORED_REASON: MessageChannelType = 6;
 }
 
 pub struct SentMessagePart {
