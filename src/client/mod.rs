@@ -263,6 +263,11 @@ pub enum ClientDisconnectState {
     SendIoError(io::Error),
     /// Error receiving the bytes of the server.
     ReceiveIoError(io::Error),
+    /// The client is already disconnected.
+    ///
+    /// - (ServerDisconnectReason) if the reason of the disconnection was not taken.
+    /// - None if the reason of the disconnection was already taken.
+    AlreadyDisconnected(Option<ServerDisconnectReason>),
 }
 
 /// Messaging fields of [`ConnectedServer`]
@@ -789,6 +794,10 @@ impl Client {
                 .take()
                 .unwrap();
             let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
+
+            if self.is_disconnected() {
+                return ClientDisconnectState::AlreadyDisconnected(self.take_disconnect_reason());
+            }
 
             if let Some(disconnection) = disconnection {
                 let socket = Arc::clone(&self.internal.socket);
