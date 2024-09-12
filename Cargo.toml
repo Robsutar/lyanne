@@ -49,7 +49,6 @@ license = "MIT OR Apache-2.0"
 
 [features]
 default = []
-use_derive = ["dep:lyanne-derive"]
 client = ["lyanne-derive/client"]
 server = ["lyanne-derive/server"]
 
