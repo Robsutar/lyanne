@@ -415,7 +415,7 @@ pub mod server {
                     }
                     break 'l1;
                 } else {
-                    let read_timeout = server.read_handler_properties.timeout;
+                    let read_timeout = server.messaging_properties.timeout_interpretation;
                     let socket = Arc::clone(&server.socket);
                     drop(server);
 

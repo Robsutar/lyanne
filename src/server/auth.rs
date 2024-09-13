@@ -2,7 +2,7 @@ use std::{
     io,
     net::SocketAddr,
     sync::{Arc, Weak},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
@@ -278,7 +278,7 @@ where
             'l2: loop {
                 if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
                     let accepted = crate::internal::rt::timeout(
-                        server.read_handler_properties.timeout,
+                        server.messaging_properties.timeout_interpretation,
                         listener.accept(),
                     )
                     .await;

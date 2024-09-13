@@ -158,8 +158,6 @@ impl Default for MessagingProperties {
 pub struct ReadHandlerProperties {
     /// Number of asynchronous tasks that must be slacking when receiving packets.
     pub target_surplus_size: u16,
-    /// Max time to try read `pre_read_next_bytes`.
-    pub timeout: Duration,
     /// Actual number of active asynchronous read handlers.
     pub active_count: Arc<RwLock<u16>>,
 }
@@ -168,7 +166,6 @@ impl Default for ReadHandlerProperties {
     fn default() -> ReadHandlerProperties {
         ReadHandlerProperties {
             target_surplus_size: 5u16,
-            timeout: Duration::from_secs(15),
             active_count: Arc::new(RwLock::new(0u16)),
         }
     }

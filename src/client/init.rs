@@ -357,7 +357,7 @@ pub mod client {
                     }
                     break 'l1;
                 } else {
-                    let read_timeout = client.read_handler_properties.timeout;
+                    let read_timeout = client.messaging_properties.timeout_interpretation;
                     let socket = Arc::clone(&client.socket);
                     drop(client);
                     let pre_read_next_bytes_result =
