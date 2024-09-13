@@ -166,7 +166,11 @@ impl NoCryptographyAuth {
                             ReadClientBytesResult::DonePendingAuth
                         }
                     } else {
-                        internal.ignore_ip_temporary(ip, Instant::now() + Duration::from_secs(5));
+                        if let Some(punishment) =
+                            internal.server_properties.invalid_message_punishment
+                        {
+                            internal.ignore_ip_temporary(ip, Instant::now() + punishment);
+                        }
                         ReadClientBytesResult::InvalidPendingAuth
                     }
                 }
@@ -483,8 +487,11 @@ where
                     let message_part_bytes = match cipher.decrypt(nonce, cipher_text) {
                         Ok(message_part_bytes) => message_part_bytes,
                         Err(_) => {
-                            internal
-                                .ignore_ip_temporary(ip, Instant::now() + Duration::from_secs(5));
+                            if let Some(punishment) =
+                                internal.server_properties.invalid_message_punishment
+                            {
+                                internal.ignore_ip_temporary(ip, Instant::now() + punishment);
+                            }
                             return ReadClientBytesResult::InvalidPendingAuth;
                         }
                     };
@@ -506,7 +513,11 @@ where
                         ));
                         ReadClientBytesResult::DonePendingAuth
                     } else {
-                        internal.ignore_ip_temporary(ip, Instant::now() + Duration::from_secs(5));
+                        if let Some(punishment) =
+                            internal.server_properties.invalid_message_punishment
+                        {
+                            internal.ignore_ip_temporary(ip, Instant::now() + punishment);
+                        }
                         ReadClientBytesResult::InvalidPendingAuth
                     }
                 }

@@ -261,6 +261,8 @@ pub struct ServerProperties {
     ///
     /// See [`ReadClientBytesResult::PendingAuthFull`].
     pub max_pending_auth: usize,
+    /// If an addr sends an invalid message, its IP will be ignored for this duration.
+    pub invalid_message_punishment: Option<Duration>,
 }
 
 impl Default for ServerProperties {
@@ -268,6 +270,7 @@ impl Default for ServerProperties {
         Self {
             pending_auth_packet_loss_interpretation: Duration::from_secs(3),
             max_pending_auth: usize::MAX,
+            invalid_message_punishment: Some(Duration::from_secs(5)),
         }
     }
 }
