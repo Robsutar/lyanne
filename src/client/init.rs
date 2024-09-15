@@ -319,8 +319,8 @@ pub mod client {
     #[cfg(feature = "store_unexpected")]
     pub async fn store_unexpected_error_list_pick(client: &ClientInternal) -> Vec<UnexpectedError> {
         let mut list = Vec::<UnexpectedError>::new();
-        while let Ok(error_list) = client.store_unexpected_errors.error_list_receiver.try_recv() {
-            list.extend(error_list);
+        while let Ok(mut error_list) = client.store_unexpected_errors.error_list_receiver.try_recv() {
+            list.append(&mut error_list);
         }
         while let Ok(error) = client.store_unexpected_errors.error_receiver.try_recv() {
             list.push(error);

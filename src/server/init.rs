@@ -387,8 +387,8 @@ pub mod server {
         'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
             if let Some(server) = server.upgrade() {
                 let mut list = Vec::<UnexpectedError>::new();
-                while let Ok(error_list) = server.store_unexpected_errors.error_list_receiver.try_recv() {
-                    list.extend(error_list);
+                while let Ok(mut error_list) = server.store_unexpected_errors.error_list_receiver.try_recv() {
+                    list.append(&mut error_list);
                 }
                 while let Ok(error) = server.store_unexpected_errors.error_receiver.try_recv() {
                     list.push(error);

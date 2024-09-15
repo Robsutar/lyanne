@@ -35,10 +35,10 @@ pub struct SentMessagePart {
 
 impl SentMessagePart {
     pub fn no_cryptography(sent_instant: Instant, part: MessagePart) -> Self {
-        let part_bytes = part.to_bytes();
+        let mut part_bytes = part.to_bytes();
         let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + part_bytes.len());
         exit.push(MessageChannel::MESSAGE_PART_SEND);
-        exit.extend(part_bytes);
+        exit.append(&mut part_bytes);
         Self {
             last_sent_time: sent_instant,
             finished_bytes: Arc::new(exit),
@@ -47,12 +47,12 @@ impl SentMessagePart {
     #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
     pub fn encrypted(sent_instant: Instant, part: MessagePart, cipher: &ChaCha20Poly1305) -> Self {
         let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut rand::rngs::OsRng);
-        let cipher_bytes =
+        let mut cipher_bytes =
             SentMessagePart::cryptograph_message_part(part.as_bytes(), cipher, &nonce);
         let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + nonce.len() + cipher_bytes.len());
         exit.push(MessageChannel::MESSAGE_PART_SEND);
         exit.extend_from_slice(&nonce);
-        exit.extend(cipher_bytes);
+        exit.append(&mut cipher_bytes);
         Self {
             last_sent_time: sent_instant,
             finished_bytes: Arc::new(exit),
@@ -79,10 +79,10 @@ pub struct JustifiedRejectionContext {
 
 impl JustifiedRejectionContext {
     pub fn no_cryptography(rejection_instant: Instant, message: LimitedMessage) -> Self {
-        let list_bytes = message.to_list().bytes;
+        let mut list_bytes = message.to_list().bytes;
         let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + list_bytes.len());
         exit.push(MessageChannel::REJECTION_JUSTIFICATION);
-        exit.extend(list_bytes);
+        exit.append(&mut list_bytes);
         Self {
             rejection_instant,
             finished_bytes: exit,
@@ -95,12 +95,12 @@ impl JustifiedRejectionContext {
         cipher: &ChaCha20Poly1305,
     ) -> Self {
         let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut rand::rngs::OsRng);
-        let cipher_bytes =
+        let mut cipher_bytes =
             SentMessagePart::cryptograph_message_part(&message.to_list().bytes, cipher, &nonce);
         let mut exit = Vec::with_capacity(MESSAGE_CHANNEL_SIZE + nonce.len() + cipher_bytes.len());
         exit.push(MessageChannel::REJECTION_JUSTIFICATION);
         exit.extend_from_slice(&nonce);
-        exit.extend(cipher_bytes);
+        exit.append(&mut cipher_bytes);
         Self {
             rejection_instant,
             finished_bytes: exit,

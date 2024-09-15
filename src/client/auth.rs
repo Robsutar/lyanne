@@ -385,13 +385,13 @@ pub(super) mod connecting {
 
         let (authentication_bytes, inner_auth) = match &connected_auth_mode {
             &ConnectedAuthenticatorMode::NoCryptography => {
-                let list = message.to_list();
+                let mut list_bytes = message.to_list().bytes;
 
                 let mut authentication_bytes =
-                    Vec::with_capacity(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + list.bytes.len());
+                    Vec::with_capacity(MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE + list_bytes.len());
                 authentication_bytes.push(MessageChannel::AUTH_MESSAGE);
                 authentication_bytes.extend_from_slice(&server_public_key_bytes);
-                authentication_bytes.extend(list.bytes);
+                authentication_bytes.append(&mut list_bytes);
 
                 (authentication_bytes, InnerAuth::NoCryptography)
             }
@@ -625,7 +625,8 @@ pub(super) mod connecting {
         let shared_key = _client_private_key.diffie_hellman(&server_public_key);
         let cipher = ChaChaPoly1305::new(Key::from_slice(shared_key.as_bytes()));
         let nonce: Nonce = ChaCha20Poly1305::generate_nonce(&mut rand::rngs::OsRng);
-        let cipher_bytes = SentMessagePart::cryptograph_message_part(&list.bytes, &cipher, &nonce);
+        let mut cipher_bytes =
+            SentMessagePart::cryptograph_message_part(&list.bytes, &cipher, &nonce);
 
         let mut authentication_bytes = Vec::with_capacity(
             MESSAGE_CHANNEL_SIZE + server_public_key_bytes.len() + nonce.len() + list.bytes.len(),
@@ -633,7 +634,7 @@ pub(super) mod connecting {
         authentication_bytes.push(MessageChannel::AUTH_MESSAGE);
         authentication_bytes.extend_from_slice(&server_public_key_bytes);
         authentication_bytes.extend_from_slice(&nonce);
-        authentication_bytes.extend(cipher_bytes);
+        authentication_bytes.append(&mut cipher_bytes);
 
         (cipher, authentication_bytes)
     }

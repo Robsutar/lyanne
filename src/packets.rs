@@ -101,15 +101,15 @@ impl PacketRegistry {
                 return io::Error::new(io::ErrorKind::InvalidData, "Type mismatch");
             })?;
 
-            let bytes = P::serialize_packet(packet)?;
+            let mut bytes = P::serialize_packet(packet)?;
 
             let packet_length = bytes.len() as PacketId;
             let packet_length_bytes = packet_length.to_le_bytes();
 
             let mut full_bytes: Vec<u8> = Vec::with_capacity(bytes.len() + 4);
             full_bytes.extend_from_slice(&packet_id_bytes);
-            full_bytes.extend_from_slice(&packet_length_bytes);
-            full_bytes.extend_from_slice(&bytes);
+            full_bytes.extend(packet_length_bytes);
+            full_bytes.append(&mut bytes);
 
             Ok(SerializedPacket {
                 packet_id: packet_id_copy,
@@ -459,8 +459,8 @@ impl SerializedPacketList {
             .sum::<usize>();
         let mut bytes = Vec::with_capacity(total_size);
 
-        for packet in stored {
-            bytes.extend(packet.bytes);
+        for mut packet in stored {
+            bytes.append(&mut packet.bytes);
         }
 
         Some(SerializedPacketList { bytes })

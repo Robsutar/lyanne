@@ -53,7 +53,7 @@ impl MessagePart {
         message_id: MessageId,
         id: MessagePartId,
         part_type: MessagePartType,
-        content: Vec<u8>,
+        mut content: Vec<u8>,
     ) -> Self {
         let mut bytes = Vec::with_capacity(
             MESSAGE_ID_SIZE + MESSAGE_PART_ID_SIZE + MESSAGE_PART_TYPE_SIZE + content.len(),
@@ -61,7 +61,7 @@ impl MessagePart {
         bytes.extend(message_id.to_le_bytes());
         bytes.extend(id.to_le_bytes());
         bytes.push(part_type);
-        bytes.extend(content);
+        bytes.append(&mut content);
         Self { bytes }
     }
 
