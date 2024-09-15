@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-//! Efficient, tick-oriented communication framework for server-client architectures.
+//! Efficient, tick-oriented communication library for server-client architectures.
 //!
 //! Lyanne is an abstraction for communication between client and server, greatly
 //! simplifying the process, maintaining low latency and low resource usage.

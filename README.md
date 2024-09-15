@@ -6,7 +6,7 @@
 
 # lyanne
 
-Efficient, tick-oriented communication framework for server-client architectures.
+Efficient, tick-oriented communication library for server-client architectures.
 
 - ✅ **Flexible Runtimes**: Choose between `rt_async_executor`, `rt_async_std`, `rt_bevy`, `rt_smol` or `rt_tokio` runtime environments for seamless integration with your ecosystem.
 - ✅ **Custom Serialization**: Use the `sd_bincode` feature for efficient packet serialization and deserialization.
