@@ -27,43 +27,43 @@ jobs:
       run: cargo test --verbose --features "client,server,rt_smol,sd_bincode"
 
     - name: "Check example: async-executor-simple"
-      run:
+      run: |
         cargo check -p async-executor-simple-client
         cargo check -p async-executor-simple-server
     - name: "Check example: async-std-simple"
-      run:
+      run: |
         cargo check -p async-std-simple-client
         cargo check -p async-std-simple-server
     - name: "Check example: async-std-tcp"
-      run:
+      run: |
         cargo check -p async-std-tcp-client
         cargo check -p async-std-tcp-server
     - name: "Check example: async-std-tls"
-      run:
+      run: |
         cargo check -p async-std-tls-client
         cargo check -p async-std-tls-server
     - name: "Check example: bevy-pong"
-      run:
+      run: |
         cargo check -p bevy-pong-client
         cargo check -p bevy-pong-server
     - name: "Check example: bevy-simple"
-      run:
+      run: |
         cargo check -p bevy-simple-client
         cargo check -p bevy-simple-server
     - name: "Check example: smol-sd-none"
-      run:
+      run: |
         cargo check -p smol-sd-none-client
         cargo check -p smol-sd-none-server
     - name: "Check example: smol-simple"
-      run:
+      run: |
         cargo check -p smol-simple-client
         cargo check -p smol-simple-server
     - name: "Check example: tokio-chat"
-      run:
+      run: |
         cargo check -p tokio-chat-client
         cargo check -p tokio-chat-server
     - name: "Check example: tokio-simple"
-      run:
+      run: |
         cargo check -p tokio-simple-client
         cargo check -p tokio-simple-server
     
