@@ -1624,7 +1624,7 @@ impl Server {
     /// }
     ///
     ///
-    /// fn example_usage(server: Server) {
+    /// async fn example_usage(server: Server) {
     ///     let message = LimitedMessage::new(SerializedPacketList::single(
     ///         server.packet_registry().serialize(&MessagePacket {
     ///             message: "We finished here...".to_owned(),

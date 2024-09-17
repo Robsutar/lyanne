@@ -769,7 +769,7 @@ impl Client {
     ///     message: String,
     /// }
     ///
-    /// fn example_usage(client: Client) {
+    /// async fn example_usage(client: Client) {
     ///     let message = LimitedMessage::new(SerializedPacketList::single(
     ///         client.packet_registry().serialize(&MessagePacket {
     ///             message: "We finished here...".to_owned(),
