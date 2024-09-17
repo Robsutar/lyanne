@@ -6,5 +6,7 @@ edition = "2021"
 [dependencies]
 bevy-simple = { path = "../", features = ["client"] }
 lyanne = { path = "../../../", features = ["rt_bevy", "client"] }
-bevy = { version = "^0.14.0" }
+bevy = { version = "^0.14.0", default-features = false, features = [
+    "multi_threaded",
+] }
 rand = "^0.8.0"

@@ -5,7 +5,9 @@ edition = "2021"
 
 [dependencies]
 bevy-pong = { path = "../", features = ["server"] }
-bevy = "^0.14.0"
+bevy = { version = "^0.14.0", default-features = false, features = [
+    "multi_threaded",
+] }
 lyanne = { path = "../../../", features = [
     "rt_bevy",
     "store_unexpected",

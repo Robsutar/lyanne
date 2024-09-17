@@ -5,7 +5,16 @@ edition = "2021"
 
 [dependencies]
 bevy-pong = { path = "../", features = ["client"] }
-bevy = "^0.14.0"
+bevy = { version = "^0.14.0", default-features = false, features = [
+    "bevy_render",
+    "bevy_text",
+    "bevy_winit",
+    "default_font",
+    "multi_threaded",
+    "bevy_sprite",
+    "webgl2",
+    "x11",
+] }
 lyanne = { path = "../../../", features = [
     "rt_bevy",
     "store_unexpected",
