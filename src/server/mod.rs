@@ -426,6 +426,14 @@ pub struct ServerTickResult {
     /// Client to authenticate, and their authentication message.
     /// # Examples
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct HelloPacket {
+    ///     player_name: String,
+    /// }
+    ///
     /// let tick_result: ServerTickResult = server.tick_start();
     /// for (auth_entry, message) in tick_result.to_auth {
     ///     if let Ok(hello_packet) = message
@@ -1479,10 +1487,19 @@ impl Server {
     /// # Examples
     ///
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct MessagePacket {
+    ///     message: String,
+    /// }
+    ///
+    ///
     /// let server: &Server = ...;
     /// let addr: SocketAddr = ...;
     /// let client = server.get_connected_client(&addr).unwrap();
-    /// let packet = FooPacket {
+    /// let packet = MessagePacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
     /// server.try_send_packet(&client, &packet).unwrap();
@@ -1517,10 +1534,19 @@ impl Server {
     /// # Examples
     ///
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct MessagePacket {
+    ///     player_name: String,
+    /// }
+    ///
+    ///
     /// let server: &Server = ...;
     /// let addr: SocketAddr = ...;
     /// let client = server.get_connected_client(&addr).unwrap();
-    /// let packet = FooPacket {
+    /// let packet = MessagePacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
     /// server.send_packet(&client, &packet);
@@ -1542,10 +1568,18 @@ impl Server {
     /// # Examples
     ///
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct MessagePacket {
+    ///     player_name: String,
+    /// }
+    ///
     /// let server: &Server = ...;
     /// let addr: SocketAddr = ...;
     /// let client = server.get_connected_client(&addr).unwrap();
-    /// let packet = FooPacket {
+    /// let packet = MessagePacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
     /// let packet_serialized = server.packet_registry().serialize(&packet);
@@ -1566,10 +1600,19 @@ impl Server {
     ///
     /// # Examples
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct MessagePacket {
+    ///     player_name: String,
+    /// }
+    ///
+    ///
     /// let server: Server = ...;
     ///
     /// let message = LimitedMessage::new(SerializedPacketList::single(
-    ///     server.packet_registry().serialize(&FooPacket {
+    ///     server.packet_registry().serialize(&MessagePacket {
     ///         message: "We finished here...".to_owned(),
     ///     }),
     /// ));

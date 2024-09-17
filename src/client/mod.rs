@@ -751,10 +751,18 @@ impl Client {
     ///
     /// # Examples
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct MessagePacket {
+    ///     player_name: String,
+    /// }
+    ///
     /// let client: Client = ...;
     ///
     /// let message = LimitedMessage::new(SerializedPacketList::single(
-    ///     client.packet_registry().serialize(&BarPacket {
+    ///     client.packet_registry().serialize(&MessagePacket {
     ///         message: "We finished here...".to_owned(),
     ///     }),
     /// ));
@@ -852,8 +860,16 @@ impl Client {
     /// # Examples
     ///
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct MessagePacket {
+    ///     player_name: String,
+    /// }
+    ///
     /// let client: &Client = ...;
-    /// let packet = FooPacket {
+    /// let packet = MessagePacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
     /// client.try_send_packet(&packet).unwrap();
@@ -880,8 +896,16 @@ impl Client {
     /// # Examples
     ///
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct MessagePacket {
+    ///     player_name: String,
+    /// }
+    ///
     /// let client: &Client = ...;
-    /// let packet = FooPacket {
+    /// let packet = MessagePacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
     /// client.send_packet(&packet);
@@ -902,8 +926,16 @@ impl Client {
     /// # Examples
     ///
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct MessagePacket {
+    ///     player_name: String,
+    /// }
+    ///
     /// let client: &Client = ...;
-    /// let packet = FooPacket {
+    /// let packet = MessagePacket {
     ///     message: "Hey ya!".to_owned(),
     /// };
     /// let packet_serialized = client.packet_registry().serialize(&packet);
