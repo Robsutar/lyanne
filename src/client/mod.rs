@@ -766,7 +766,7 @@ impl Client {
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
     /// struct MessagePacket {
-    ///     player_name: String,
+    ///     message: String,
     /// }
     ///
     /// fn example_usage(client: Client) {
@@ -875,7 +875,7 @@ impl Client {
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
     /// struct MessagePacket {
-    ///     player_name: String,
+    ///     message: String,
     /// }
     ///
     /// fn example_usage(client: &Client) {
@@ -912,7 +912,7 @@ impl Client {
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
     /// struct MessagePacket {
-    ///     player_name: String,
+    ///     message: String,
     /// }
     ///
     /// fn example_usage(client: &Client) {
@@ -943,7 +943,7 @@ impl Client {
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
     /// struct MessagePacket {
-    ///     player_name: String,
+    ///     message: String,
     /// }
     ///
     /// fn example_usage(client: &Client) {
