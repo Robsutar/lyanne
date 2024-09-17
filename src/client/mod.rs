@@ -759,20 +759,20 @@ impl Client {
     ///     player_name: String,
     /// }
     ///
-    /// let client: Client = ...;
-    ///
-    /// let message = LimitedMessage::new(SerializedPacketList::single(
-    ///     client.packet_registry().serialize(&MessagePacket {
-    ///         message: "We finished here...".to_owned(),
-    ///     }),
-    /// ));
-    /// let state = client
-    ///     .disconnect(Some(GracefullyDisconnection {
-    ///         message,
-    ///         timeout: Duration::from_secs(3),
-    ///     }))
-    ///     .await;
-    /// println!("Client disconnected itself: {:?}", state);
+    /// fn example_usage(client: Client) {
+    ///     let message = LimitedMessage::new(SerializedPacketList::single(
+    ///         client.packet_registry().serialize(&MessagePacket {
+    ///             message: "We finished here...".to_owned(),
+    ///         }),
+    ///     ));
+    ///     let state = client
+    ///         .disconnect(Some(GracefullyDisconnection {
+    ///             message,
+    ///             timeout: Duration::from_secs(3),
+    ///         }))
+    ///         .await;
+    ///     println!("Client disconnected itself: {:?}", state);
+    /// }
     /// ```
     pub fn disconnect(
         self,
@@ -868,11 +868,12 @@ impl Client {
     ///     player_name: String,
     /// }
     ///
-    /// let client: &Client = ...;
-    /// let packet = MessagePacket {
-    ///     message: "Hey ya!".to_owned(),
-    /// };
-    /// client.try_send_packet(&packet).unwrap();
+    /// fn example_usage(client: &Client) {
+    ///     let packet = MessagePacket {
+    ///         message: "Hey ya!".to_owned(),
+    ///     };
+    ///     client.try_send_packet(&packet).unwrap();
+    /// }
     /// ```
     pub fn try_send_packet<P: Packet>(&self, packet: &P) -> Result<(), io::Error> {
         let internal = &self.internal;
@@ -904,11 +905,12 @@ impl Client {
     ///     player_name: String,
     /// }
     ///
-    /// let client: &Client = ...;
-    /// let packet = MessagePacket {
-    ///     message: "Hey ya!".to_owned(),
-    /// };
-    /// client.send_packet(&packet);
+    /// fn example_usage(client: &Client) {
+    ///     let packet = MessagePacket {
+    ///         message: "Hey ya!".to_owned(),
+    ///     };
+    ///     client.send_packet(&packet);
+    /// }
     /// ```
     #[cfg(not(feature = "no_panics"))]
     pub fn send_packet<P: Packet>(&self, packet: &P) {
@@ -934,12 +936,13 @@ impl Client {
     ///     player_name: String,
     /// }
     ///
-    /// let client: &Client = ...;
-    /// let packet = MessagePacket {
-    ///     message: "Hey ya!".to_owned(),
-    /// };
-    /// let packet_serialized = client.packet_registry().serialize(&packet);
-    /// client.send_packet_serialized(&packet_serialized);
+    /// fn example_usage(client: &Client) {
+    ///     let packet = MessagePacket {
+    ///         message: "Hey ya!".to_owned(),
+    ///     };
+    ///     let packet_serialized = client.packet_registry().serialize(&packet);
+    ///     client.send_packet_serialized(&packet_serialized);
+    /// }
     /// ```
     pub fn send_packet_serialized(&self, packet_serialized: SerializedPacket) {
         let internal = &self.internal;

@@ -1495,14 +1495,13 @@ impl Server {
     ///     message: String,
     /// }
     ///
-    ///
-    /// let server: &Server = ...;
-    /// let addr: SocketAddr = ...;
-    /// let client = server.get_connected_client(&addr).unwrap();
-    /// let packet = MessagePacket {
-    ///     message: "Hey ya!".to_owned(),
-    /// };
-    /// server.try_send_packet(&client, &packet).unwrap();
+    /// fn example_usage(server: &Server, addr: &SocketAddr) {
+    ///     let client = server.get_connected_client(&addr).expect("Client not found.");
+    ///     let packet = MessagePacket {
+    ///         message: "Hey ya!".to_owned(),
+    ///     };
+    ///     server.try_send_packet(&client, &packet).unwrap();
+    /// }
     /// ```
     pub fn try_send_packet<P: Packet>(
         &self,
@@ -1542,14 +1541,13 @@ impl Server {
     ///     player_name: String,
     /// }
     ///
-    ///
-    /// let server: &Server = ...;
-    /// let addr: SocketAddr = ...;
-    /// let client = server.get_connected_client(&addr).unwrap();
-    /// let packet = MessagePacket {
-    ///     message: "Hey ya!".to_owned(),
-    /// };
-    /// server.send_packet(&client, &packet);
+    /// fn example_usage(server: &Server, addr: &SocketAddr) {
+    ///     let client = server.get_connected_client(&addr).expect("Client not found.");
+    ///     let packet = MessagePacket {
+    ///         message: "Hey ya!".to_owned(),
+    ///     };
+    ///     server.send_packet(&client, &packet);
+    /// }
     /// ```
     #[cfg(not(feature = "no_panics"))]
     pub fn send_packet<P: Packet>(&self, client: &ConnectedClient, packet: &P) {
@@ -1576,14 +1574,14 @@ impl Server {
     ///     player_name: String,
     /// }
     ///
-    /// let server: &Server = ...;
-    /// let addr: SocketAddr = ...;
-    /// let client = server.get_connected_client(&addr).unwrap();
-    /// let packet = MessagePacket {
-    ///     message: "Hey ya!".to_owned(),
-    /// };
-    /// let packet_serialized = server.packet_registry().serialize(&packet);
-    /// server.send_packet_serialized(&client, &packet_serialized);
+    /// fn example_usage(server: &Server, addr: &SocketAddr) {
+    ///     let client = server.get_connected_client(&addr).expect("Client not found.");
+    ///     let packet = MessagePacket {
+    ///         message: "Hey ya!".to_owned(),
+    ///     };
+    ///     let packet_serialized = server.packet_registry().serialize(&packet);
+    ///     server.send_packet_serialized(&client, &packet_serialized);
+    /// }
     /// ```
     pub fn send_packet_serialized(
         &self,
@@ -1609,20 +1607,20 @@ impl Server {
     /// }
     ///
     ///
-    /// let server: Server = ...;
-    ///
-    /// let message = LimitedMessage::new(SerializedPacketList::single(
-    ///     server.packet_registry().serialize(&MessagePacket {
-    ///         message: "We finished here...".to_owned(),
-    ///     }),
-    /// ));
-    /// let state = server
-    ///     .disconnect(Some(GracefullyDisconnection {
-    ///         message,
-    ///         timeout: Duration::from_secs(3),
-    ///     }))
-    ///     .await;
-    /// println!("Server disconnected itself: {:?}", state);
+    /// fn example_usage(server: Server) {
+    ///     let message = LimitedMessage::new(SerializedPacketList::single(
+    ///         server.packet_registry().serialize(&MessagePacket {
+    ///             message: "We finished here...".to_owned(),
+    ///         }),
+    ///     ));
+    ///     let state = server
+    ///         .disconnect(Some(GracefullyDisconnection {
+    ///             message,
+    ///             timeout: Duration::from_secs(3),
+    ///         }))
+    ///         .await;
+    ///     println!("Server disconnected itself: {:?}", state);
+    /// }
     /// ```
     pub fn disconnect(
         self,
