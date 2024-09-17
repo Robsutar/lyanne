@@ -26,13 +26,44 @@ jobs:
     - name: Run tests
       run: cargo test --verbose --features "client,server,rt_smol,sd_bincode"
 
-    - name: Check all examples
-      run: |
-        for example in examples/*; do
-          if [ -f "$example/Cargo.toml" ]; then
-            echo "Checking $example-client..."
-            cargo check --manifest-path $example/client/Cargo.toml
-            echo "Checking $example-server..."
-            cargo check --manifest-path $example/server/Cargo.toml
-          fi
-        done
+    - name: "Check example: async-executor-simple"
+      run:
+        cargo check -p async-executor-simple-client
+        cargo check -p async-executor-simple-server
+    - name: "Check example: async-std-simple"
+      run:
+        cargo check -p async-std-simple-client
+        cargo check -p async-std-simple-server
+    - name: "Check example: async-std-tcp"
+      run:
+        cargo check -p async-std-tcp-client
+        cargo check -p async-std-tcp-server
+    - name: "Check example: async-std-tls"
+      run:
+        cargo check -p async-std-tls-client
+        cargo check -p async-std-tls-server
+    - name: "Check example: bevy-pong"
+      run:
+        cargo check -p bevy-pong-client
+        cargo check -p bevy-pong-server
+    - name: "Check example: bevy-simple"
+      run:
+        cargo check -p bevy-simple-client
+        cargo check -p bevy-simple-server
+    - name: "Check example: smol-sd-none"
+      run:
+        cargo check -p smol-sd-none-client
+        cargo check -p smol-sd-none-server
+    - name: "Check example: smol-simple"
+      run:
+        cargo check -p smol-simple-client
+        cargo check -p smol-simple-server
+    - name: "Check example: tokio-chat"
+      run:
+        cargo check -p tokio-chat-client
+        cargo check -p tokio-chat-server
+    - name: "Check example: tokio-simple"
+      run:
+        cargo check -p tokio-simple-client
+        cargo check -p tokio-simple-server
+    
