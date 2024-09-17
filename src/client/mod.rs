@@ -3,10 +3,14 @@
 //! Connecting a client:
 //!
 //! ```rust,no_run
-//! use lyanne::{client::*, packets::*, *};
 //! use std::{net::SocketAddr, sync::Arc, time::Duration};
-//! // Use your shared crate with the packets.
-//! use crate::packets::HelloPacket;
+//! use lyanne::{client::*, packets::*, *};
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Packet, Deserialize, Serialize, Debug)]
+//! struct HelloPacket {
+//!    player_name: String,
+//! }
 //!
 //! fn main() {
 //!     let mut packet_registry = PacketRegistry::with_essential();
@@ -39,8 +43,12 @@
 //!
 //! ```rust,no_run
 //! use lyanne::{client::*};
-//! // Use your shared crate with the packets.
-//! use crate::packets::MessagePacket;
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Packet, Deserialize, Serialize, Debug)]
+//! struct MessagePacket {
+//!    message: String,
+//! }
 //!
 //! fn inside_tick(client: &Client) {
 //!     let packet = MessagePacket {
@@ -55,14 +63,12 @@
 //!
 //! ```rust,no_run
 //! use lyanne::client::*;
-//! // Use your shared crate with the packets.
-//! use crate::{use_tick_result,inside_tick};
 //!
-//! fn tick_check(server: &Server) {
+//! fn tick_check(client: &Client) {
 //!     match client.tick_start() {
 //!         ClientTickResult::ReceivedMessage(tick_result) => {
 //!             use_tick_result(&client, tick_result);
-//!             inside_tick();
+//!             inside_tick(&client);
 //!             client.tick_after_message();
 //!         }
 //!         ClientTickResult::Disconnected => {
@@ -74,6 +80,10 @@
 //!         _ => (),
 //!     }
 //! }
+//!
+//! fn use_tick_result(client: &Client, tick_result: ReceivedMessageClientTickResult) { /* */ }
+//! fn inside_tick(client: &Client) { /* */ }
+//!
 //! ```
 
 use std::{
@@ -751,7 +761,7 @@ impl Client {
     ///
     /// # Examples
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use lyanne::{client::*, packets::Packet, LimitedMessage};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
@@ -860,7 +870,7 @@ impl Client {
     /// # Examples
     ///
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use lyanne::{client::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
@@ -897,7 +907,7 @@ impl Client {
     /// # Examples
     ///
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use lyanne::{client::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
@@ -928,7 +938,7 @@ impl Client {
     /// # Examples
     ///
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use lyanne::{client::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]

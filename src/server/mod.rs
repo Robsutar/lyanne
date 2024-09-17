@@ -5,8 +5,12 @@
 //! ```rust,no_run
 //! use lyanne::{packets::*, server::*, *};
 //! use std::{net::SocketAddr, sync::Arc};
-//! // Use your shared crate with the packets.
-//! use crate::packets::HelloPacket;
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Packet, Deserialize, Serialize, Debug)]
+//! struct HelloPacket {
+//!    player_name: String,
+//! }
 //!
 //! fn main() {
 //!     let mut packet_registry = PacketRegistry::with_essential();
@@ -32,10 +36,13 @@
 //! Sending packet to clients:
 //!
 //! ```rust,no_run
-//! use lyanne::{server::*};
-//! // Use your shared crate with the packets.
-//! use crate::packets::MessagePacket;
+//! use lyanne::{server::*, packets::Packet};
+//! use serde::{Deserialize, Serialize};
 //!
+//! #[derive(Packet, Deserialize, Serialize, Debug)]
+//! struct MessagePacket {
+//!    message: String,
+//! }
 //! fn inside_tick(server: &Server) {
 //!     let packet = MessagePacket {
 //!         message: "Foo!".to_owned(),
@@ -50,9 +57,13 @@
 //! Authenticating clients:
 //!
 //! ```rust,no_run
-//! use lyanne::{server::*};
-//! // Use your shared crate with the packets.
-//! use crate::packets::HelloPacket;
+//! use lyanne::{server::*, packets::Packet};
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Packet, Deserialize, Serialize, Debug)]
+//! struct HelloPacket {
+//!    player_name: String,
+//! }
 //!
 //! fn use_tick_result(server: &Server, tick_result: ServerTickResult) {
 //!     for (auth_entry, message) in tick_result.to_auth {
@@ -80,8 +91,6 @@
 //!
 //! ```rust,no_run
 //! use lyanne::server::*;
-//! // Use your shared crate with the packets.
-//! use crate::{use_tick_result,inside_tick};
 //!
 //! fn complete_tick(server: &Server) {
 //!     let tick_result = server.tick_start();
@@ -91,6 +100,8 @@
 //!
 //!     server.tick_end();
 //! }
+//! fn use_tick_result(server: &Server, tick_result: ServerTickResult) { /* */ }
+//! fn inside_tick(server: &Server) { /* */ }
 //! ```
 
 use std::{
@@ -426,7 +437,7 @@ pub struct ServerTickResult {
     /// Client to authenticate, and their authentication message.
     /// # Examples
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use lyanne::{server::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
@@ -434,30 +445,32 @@ pub struct ServerTickResult {
     ///     player_name: String,
     /// }
     ///
-    /// let tick_result: ServerTickResult = server.tick_start();
-    /// for (auth_entry, message) in tick_result.to_auth {
-    ///     if let Ok(hello_packet) = message
-    ///         .to_packet_list()
-    ///         .remove(0)
-    ///         .packet
-    ///         .downcast::<HelloPacket>()
-    ///     {
-    ///         println!(
-    ///             "Authenticating client {:?}, addr: {:?}",
-    ///             hello_packet.player_name, auth_entry.addr()
-    ///         );
+    /// fn example_usage(server: &Server) {
+    ///     let tick_result: ServerTickResult = server.tick_start();
+    ///     for (auth_entry, message) in tick_result.to_auth {
+    ///         if let Ok(hello_packet) = message
+    ///             .to_packet_list()
+    ///             .remove(0)
+    ///             .packet
+    ///             .downcast::<HelloPacket>()
+    ///         {
+    ///             println!(
+    ///                 "Authenticating client {:?}, addr: {:?}",
+    ///                 hello_packet.player_name, auth_entry.addr()
+    ///             );
     ///
-    ///         server.authenticate(
-    ///             auth_entry,
-    ///             server.packet_registry().empty_serialized_list(),
-    ///         );
-    ///     } else {
-    ///         // Discards the authentication, the client will not know explicitly the refuse.
-    ///         // If is desired to send a justification to the client, see [`Server::try_refuse`]
-    ///         println!(
-    ///             "Client {:?} did not sent a `HelloPacket`, it will not be authenticated",
-    ///             addr
-    ///         );
+    ///             server.authenticate(
+    ///                 auth_entry,
+    ///                 server.packet_registry().empty_serialized_list(),
+    ///             );
+    ///         } else {
+    ///             // Discards the authentication, the client will not know explicitly the refuse.
+    ///             // If is desired to send a justification to the client, see [`Server::try_refuse`]
+    ///             println!(
+    ///                 "Client {:?} did not sent a `HelloPacket`, it will not be authenticated",
+    ///                 auth_entry.addr()
+    ///             );
+    ///         }
     ///     }
     /// }
     /// ```
@@ -1487,7 +1500,8 @@ impl Server {
     /// # Examples
     ///
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use std::net::SocketAddr;
+    /// use lyanne::{server::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
@@ -1533,12 +1547,13 @@ impl Server {
     /// # Examples
     ///
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use std::net::SocketAddr;
+    /// use lyanne::{server::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
     /// struct MessagePacket {
-    ///     player_name: String,
+    ///     message: String,
     /// }
     ///
     /// fn example_usage(server: &Server, addr: &SocketAddr) {
@@ -1566,12 +1581,13 @@ impl Server {
     /// # Examples
     ///
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use std::net::SocketAddr;
+    /// use lyanne::{server::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
     /// struct MessagePacket {
-    ///     player_name: String,
+    ///     message: String,
     /// }
     ///
     /// fn example_usage(server: &Server, addr: &SocketAddr) {
@@ -1580,7 +1596,7 @@ impl Server {
     ///         message: "Hey ya!".to_owned(),
     ///     };
     ///     let packet_serialized = server.packet_registry().serialize(&packet);
-    ///     server.send_packet_serialized(&client, &packet_serialized);
+    ///     server.send_packet_serialized(&client, packet_serialized);
     /// }
     /// ```
     pub fn send_packet_serialized(
@@ -1598,12 +1614,13 @@ impl Server {
     ///
     /// # Examples
     /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// use std::time::Duration;
+    /// use lyanne::{server::*, packets::{Packet, SerializedPacketList}, LimitedMessage};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
     /// struct MessagePacket {
-    ///     player_name: String,
+    ///     message: String,
     /// }
     ///
     ///
