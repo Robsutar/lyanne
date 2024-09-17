@@ -1,3 +1,5 @@
+[workspace]
+
 [package]
 name = "async-std-simple-client"
 version = "0.1.0"

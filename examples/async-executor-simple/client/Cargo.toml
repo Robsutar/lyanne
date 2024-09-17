@@ -1,3 +1,5 @@
+[workspace]
+
 [package]
 name = "async-executor-simple-client"
 version = "0.1.0"
