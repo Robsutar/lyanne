@@ -42,7 +42,7 @@
 //! Sending packet to server:
 //!
 //! ```rust,no_run
-//! use lyanne::{client::*};
+//! use lyanne::{client::*, packets::Packet};
 //! use serde::{Deserialize, Serialize};
 //!
 //! #[derive(Packet, Deserialize, Serialize, Debug)]
@@ -761,7 +761,8 @@ impl Client {
     ///
     /// # Examples
     /// ```no_run
-    /// use lyanne::{client::*, packets::Packet, LimitedMessage};
+    /// use std::time::Duration;
+    /// use lyanne::{client::*, packets::{Packet, SerializedPacketList}, LimitedMessage};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]
@@ -951,7 +952,7 @@ impl Client {
     ///         message: "Hey ya!".to_owned(),
     ///     };
     ///     let packet_serialized = client.packet_registry().serialize(&packet);
-    ///     client.send_packet_serialized(&packet_serialized);
+    ///     client.send_packet_serialized(packet_serialized);
     /// }
     /// ```
     pub fn send_packet_serialized(&self, packet_serialized: SerializedPacket) {

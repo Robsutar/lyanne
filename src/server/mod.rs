@@ -96,7 +96,7 @@
 //!     let tick_result = server.tick_start();
 //!
 //!     use_tick_result(&server, tick_result);
-//!     inside_tick();
+//!     inside_tick(&server);
 //!
 //!     server.tick_end();
 //! }
