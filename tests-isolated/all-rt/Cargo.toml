@@ -1,0 +1,15 @@
+[package]
+name = "all-rt"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["rt_smol"]
+rt_smol = ["dep:smol", "lyanne/rt_smol"]
+
+[dependencies]
+lyanne = { path = "../../", features = ["server", "client", "sd_bincode"] }
+smol = { version = "^2.0.0", optional = true }
+rand = "^0.8.0"
+serde = "1.0.210"
+futures-timer = "3.0.3"
