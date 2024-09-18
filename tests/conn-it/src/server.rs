@@ -41,8 +41,10 @@ pub async fn start_tick_cycle(server: Server) -> Result<(), Errors> {
                             )),
                         );
 
+                        let client = server.get_connected_client(&addr).unwrap();
+
                         server.send_packet(
-                            server.get_connected_client(&addr).unwrap().value(),
+                            &client,
                             &MessagePacket {
                                 message: SERVER_TO_CLIENT_MESSAGE.to_owned(),
                             },
