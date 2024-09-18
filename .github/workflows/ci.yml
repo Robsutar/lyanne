@@ -77,4 +77,8 @@ jobs:
       run: |
         cargo check -p tokio-simple-client
         cargo check -p tokio-simple-server
+
+    - name: "Run isolated test: all-rt"
+      run: |
+        cargo run -p all-rt
     
