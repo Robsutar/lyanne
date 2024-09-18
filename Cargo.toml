@@ -5,7 +5,7 @@ members = [
     "examples/*/",
     "examples/*/client",
     "examples/*/server",
-    "tests-isolated/*/",
+    "tests/*/",
 ]
 exclude = ["examples/tls_certificates"]
 
