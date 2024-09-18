@@ -28,42 +28,42 @@ jobs:
 
     - name: "Check example: async-executor-simple"
       run: |
-        cargo check --manifest-path examples/async-executor-simple/client/Cargo.toml
-        cargo check --manifest-path examples/async-executor-simple/server/Cargo.toml
+        cargo check -p async-executor-simple-client
+        cargo check -p async-executor-simple-server
     - name: "Check example: async-std-simple"
       run: |
-        cargo check --manifest-path examples/async-std-simple/client/Cargo.toml
-        cargo check --manifest-path examples/async-std-simple/server/Cargo.toml
+        cargo check -p async-std-simple-client
+        cargo check -p async-std-simple-server
     - name: "Check example: async-std-tcp"
       run: |
-        cargo check --manifest-path examples/async-std-tcp/client/Cargo.toml
-        cargo check --manifest-path examples/async-std-tcp/server/Cargo.toml
+        cargo check -p async-std-tcp-client
+        cargo check -p async-std-tcp-server
     - name: "Check example: async-std-tls"
       run: |
-        cargo check --manifest-path examples/async-std-tls/client/Cargo.toml
-        cargo check --manifest-path examples/async-std-tls/server/Cargo.toml
+        cargo check -p async-std-tls-client
+        cargo check -p async-std-tls-server
     - name: "Check example: bevy-pong"
       run: |
-        cargo check --manifest-path examples/bevy-pong/client/Cargo.toml
-        cargo check --manifest-path examples/bevy-pong/server/Cargo.toml
+        cargo check -p bevy-pong-client
+        cargo check -p bevy-pong-server
     - name: "Check example: bevy-simple"
       run: |
-        cargo check --manifest-path examples/bevy-simple/client/Cargo.toml
-        cargo check --manifest-path examples/bevy-simple/server/Cargo.toml
+        cargo check -p bevy-simple-client
+        cargo check -p bevy-simple-server
     - name: "Check example: smol-sd-none"
       run: |
-        cargo check --manifest-path examples/smol-sd-none/client/Cargo.toml
-        cargo check --manifest-path examples/smol-sd-none/server/Cargo.toml
+        cargo check -p smol-sd-none-client
+        cargo check -p smol-sd-none-server
     - name: "Check example: smol-simple"
       run: |
-        cargo check --manifest-path examples/smol-simple/client/Cargo.toml
-        cargo check --manifest-path examples/smol-simple/server/Cargo.toml
+        cargo check -p smol-simple-client
+        cargo check -p smol-simple-server
     - name: "Check example: tokio-chat"
       run: |
-        cargo check --manifest-path examples/tokio-chat/client/Cargo.toml
-        cargo check --manifest-path examples/tokio-chat/server/Cargo.toml
+        cargo check -p tokio-chat-client
+        cargo check -p tokio-chat-server
     - name: "Check example: tokio-simple"
       run: |
-        cargo check --manifest-path examples/tokio-simple/client/Cargo.toml
-        cargo check --manifest-path examples/tokio-simple/server/Cargo.toml
+        cargo check -p tokio-simple-client
+        cargo check -p tokio-simple-server
     

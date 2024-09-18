@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "bevy-pong-server"
 version = "0.1.0"

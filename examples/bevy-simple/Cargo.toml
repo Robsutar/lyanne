@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "bevy-simple"
 version = "0.1.0"
