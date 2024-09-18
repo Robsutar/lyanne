@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["derive", "examples/*/", "examples/*/client", "examples/*/server"]
+members = [
+    "derive",
+    "examples/*/",
+    "examples/*/client",
+    "examples/*/server",
+    "tests-isolated/*/",
+]
 exclude = ["examples/tls_certificates"]
 
 [package]
