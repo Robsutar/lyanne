@@ -1,57 +1,8 @@
 use crate::{
-    error::Errors, packets::*, CLIENT_NAME, CLIENT_TO_SERVER_MESSAGE, SERVER_DISCONNECT_INFO,
-    SERVER_NAME, SERVER_TICK_DELAY, SERVER_TO_CLIENT_MESSAGE, TIMEOUT,
+    error::Errors, packets::*, CLIENT_TO_SERVER_MESSAGE, SERVER_DISCONNECT_INFO, SERVER_TICK_DELAY,
+    SERVER_TO_CLIENT_MESSAGE,
 };
-use lyanne::{client::*, packets::*, *};
-use std::{net::SocketAddr, sync::Arc};
-
-pub async fn create() -> Result<Client, Errors> {
-    let packet_registry = new_packet_registry();
-
-    let addr: SocketAddr = "127.0.0.1:8822".parse().unwrap();
-    let messaging_properties = Arc::new(MessagingProperties::default());
-    let read_handler_properties = Arc::new(ReadHandlerProperties::default());
-    let server_properties = Arc::new(ClientProperties::default());
-    let authenticator_mode = AuthenticatorMode::NoCryptography(AuthenticationProperties {
-        message: LimitedMessage::new(SerializedPacketList::single(packet_registry.serialize(
-            &HelloPacket {
-                name: CLIENT_NAME.to_owned(),
-            },
-        ))),
-        timeout: TIMEOUT,
-    });
-
-    let connect_handle = Client::connect(
-        addr,
-        Arc::new(packet_registry),
-        messaging_properties,
-        read_handler_properties,
-        server_properties,
-        authenticator_mode,
-    );
-
-    match connect_handle.await {
-        Ok(connect_result) => {
-            if let Ok(hello_packet) = connect_result
-                .initial_message
-                .to_packet_list()
-                .remove(0)
-                .packet
-                .downcast::<HelloPacket>()
-            {
-                println!("[CLIENT] reading server name: {:?}", hello_packet.name);
-                if hello_packet.name != SERVER_NAME {
-                    return Err(Errors::UnexpectedHelloPacketName(1873));
-                } else {
-                    return Ok(connect_result.client);
-                }
-            } else {
-                return Err(Errors::InvalidPacketDowncast(126999));
-            }
-        }
-        Err(e) => Err(Errors::ConnectFail(e)),
-    }
-}
+use lyanne::client::*;
 
 pub async fn start_tick_cycle(client: Client) -> Result<(), Errors> {
     // 0 = pending receive from the server

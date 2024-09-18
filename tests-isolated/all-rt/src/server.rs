@@ -3,31 +3,6 @@ use crate::{
     SERVER_NAME, SERVER_TICK_DELAY, SERVER_TO_CLIENT_MESSAGE, TIMEOUT,
 };
 use lyanne::{packets::*, server::*, *};
-use std::{net::SocketAddr, sync::Arc};
-
-pub async fn create() -> Result<Server, Errors> {
-    let packet_registry = new_packet_registry();
-
-    let addr: SocketAddr = "127.0.0.1:8822".parse().unwrap();
-    let messaging_properties = Arc::new(MessagingProperties::default());
-    let read_handler_properties = Arc::new(ReadHandlerProperties::default());
-    let server_properties = Arc::new(ServerProperties::default());
-    let authenticator_mode = AuthenticatorMode::NoCryptography;
-
-    let bind_handle = Server::bind(
-        addr,
-        Arc::new(packet_registry),
-        messaging_properties,
-        read_handler_properties,
-        server_properties,
-        authenticator_mode,
-    );
-
-    match bind_handle.await {
-        Ok(bind_result) => Ok(bind_result.server),
-        Err(e) => Err(Errors::BindFail(e)),
-    }
-}
 
 pub async fn start_tick_cycle(server: Server) -> Result<(), Errors> {
     // 0 = pending connect client and send message to it
