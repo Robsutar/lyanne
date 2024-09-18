@@ -78,7 +78,7 @@ jobs:
         cargo check -p tokio-simple-client
         cargo check -p tokio-simple-server
 
-    - name: "Run isolated test: all-rt"
+    - name: "Run isolated test: conn-it"
       run: |
-        cargo run -p all-rt
+        cargo run -p conn-it
     
