@@ -1703,7 +1703,7 @@ impl Server {
                         confirmations_pending.iter_mut()
                     {
                         if now - rejection_context.rejection_instant > timeout_interpretation {
-                            confirmations
+                            addrs_confirmed
                                 .insert(*addr, ServerDisconnectClientState::ConfirmationTimeout);
                             continue;
                         }
