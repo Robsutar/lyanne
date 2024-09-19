@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display, net::SocketAddr};
 
-use lyanne::server::BindError;
+use lyanne::{client::ConnectError, server::BindError};
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -8,6 +8,7 @@ pub enum Errors {
     BindFail(BindError),
     UnexpectedAddrToAuth(SocketAddr),
     UnexpectedConnectResult,
+    UnexpectedConnectError(ConnectError),
 }
 
 impl Display for Errors {

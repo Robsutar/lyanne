@@ -93,9 +93,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
             println!("[CLIENT] Expected AuthenticatorConnectIoError: {:?}", e);
             Ok(())
         }
-        Err(e) => {
-            panic!("[CLIENT] Unexpected ConnectError: {:?}", e)
-        }
+        Err(e) => return Err(Box::new(Errors::UnexpectedConnectError(e))),
     }
 }
 
