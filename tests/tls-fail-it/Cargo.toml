@@ -1,0 +1,17 @@
+[package]
+name = "tls-fail-it"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lyanne = { path = "../../", features = [
+    "server",
+    "client",
+    "auth_tls",
+    "sd_bincode",
+    "rt_async_std",
+] }
+async-std = { version = "^1.0.0" }
+serde = { version = "^1.0.0", features = ["derive"] }
+futures-timer = { version = "^3.0.0" }
+async-channel = { version = "^2.0.0" }
