@@ -85,4 +85,8 @@ jobs:
     - name: "Run isolated test: tls-fail-it"
       run: |
         cargo run -p tls-fail-it
+      
+    - name: "Run isolated test: tls-done-it"
+      run: |
+        cargo run -p tls-done-it
     
