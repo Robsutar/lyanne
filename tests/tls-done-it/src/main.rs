@@ -117,12 +117,8 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let client_handle = tokio::spawn(client_tick_cycle(client));
 
-    println!("DONE?");
     server_handle.await.unwrap().unwrap();
-    println!("DONE?");
     client_handle.await.unwrap().unwrap();
-
-    println!("DONE?");
 
     Ok(())
 }
@@ -276,15 +272,11 @@ async fn server_tick_cycle(server: Server) -> Result<(), Errors> {
                                             }),
                                         )),
                                     });
-                                    println!("Disconnectiong.......");
                                     match server.disconnect(disconnection).await.unwrap() {
                                         ServerDisconnectState::Confirmations(mut hash_map) => {
-                                            println!("conformations.......");
                                             if let Some(disconnect_state) = hash_map.remove(&addr) {
-                                                println!("try.......");
                                                 match disconnect_state {
                                                     ServerDisconnectClientState::Confirmed => {
-                                                        println!("ok, it finished.......");
                                                         return Ok(());
                                                     }
                                                     e => {
