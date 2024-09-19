@@ -14,4 +14,3 @@ lyanne = { path = "../../", features = [
 async-std = { version = "^1.0.0" }
 serde = { version = "^1.0.0", features = ["derive"] }
 futures-timer = { version = "^3.0.0" }
-async-channel = { version = "^2.0.0" }
