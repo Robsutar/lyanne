@@ -647,9 +647,7 @@ impl ServerInternal {
             if *active_count < self.read_handler_properties.target_surplus_size - 1 {
                 *active_count += 1;
                 let downgraded_server = Arc::downgrade(&self);
-                self.create_async_task(async move {
-                    init::server::create_read_handler(downgraded_server).await;
-                });
+                self.create_async_task(init::server::create_read_handler(downgraded_server));
             }
         }
     }
