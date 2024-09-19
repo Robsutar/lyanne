@@ -1,9 +1,7 @@
 use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
-pub mod client;
 pub mod error;
 pub mod packets;
-pub mod server;
 
 use error::Errors;
 use lyanne::{client::*, packets::*, server::*, *};
@@ -46,7 +44,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         Err(e) => return Err(Box::new(Errors::BindFail(e))),
     };
 
-    let server_handle = smol::spawn(server::start_tick_cycle(server));
+    let server_handle = smol::spawn(server_tick_cycle(server));
 
     let server_properties = Arc::new(ClientProperties::default());
     let authenticator_mode =
@@ -90,10 +88,196 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         Err(e) => return Err(Box::new(Errors::ConnectFail(e))),
     };
 
-    let client_handle = smol::spawn(client::start_tick_cycle(client));
+    let client_handle = smol::spawn(client_tick_cycle(client));
 
     server_handle.await.unwrap();
     client_handle.await.unwrap();
 
     Ok(())
+}
+
+pub async fn client_tick_cycle(client: Client) -> Result<(), Errors> {
+    // 0 = pending receive from the server
+    // 1 = pending send by the client
+    // 2 = waiting server disconnection
+    let mut order_state = 0;
+    loop {
+        match client.tick_start() {
+            ClientTickResult::ReceivedMessage(tick_result) => {
+                match order_state {
+                    0 => {
+                        if let Ok(message_packet) = tick_result
+                            .message
+                            .to_packet_list()
+                            .remove(0)
+                            .packet
+                            .downcast::<MessagePacket>()
+                        {
+                            println!("[CLIENT] message: {:?}", message_packet.message);
+
+                            if message_packet.message != SERVER_TO_CLIENT_MESSAGE {
+                                return Err(Errors::UnexpectedMessageContent(1212));
+                            } else {
+                                order_state = 1;
+                                client.tick_after_message();
+                            }
+                        } else {
+                            return Err(Errors::InvalidPacketDowncast(81275));
+                        }
+                    }
+                    1 => {
+                        println!("[CLIENT] sending client message...");
+                        client.send_packet(&MessagePacket {
+                            message: CLIENT_TO_SERVER_MESSAGE.to_owned(),
+                        });
+                        order_state = 2;
+                        client.tick_after_message();
+                    }
+                    _ => {
+                        return Err(Errors::ServerShouldBeDisconnected);
+                    }
+                };
+            }
+            ClientTickResult::Disconnected => {
+                if order_state == 2 {
+                    println!("[CLIENT] received disconnection...");
+
+                    let disconnect_reason = client.take_disconnect_reason().unwrap();
+                    drop(client);
+                    match disconnect_reason {
+                        ServerDisconnectReason::DisconnectRequest(deserialized_message) => {
+                            if let Ok(goodbye_packet) = deserialized_message
+                                .to_packet_list()
+                                .remove(0)
+                                .packet
+                                .downcast::<GoodbyePacket>()
+                            {
+                                if goodbye_packet.info != SERVER_DISCONNECT_INFO {
+                                    return Err(Errors::UnexpectedServerDisconnectInfo);
+                                } else {
+                                    return Ok(());
+                                }
+                            } else {
+                                return Err(Errors::InvalidPacketDowncast(37816));
+                            }
+                        }
+                        e => return Err(Errors::DisconnectionConfirmFailedByServer(e)),
+                    }
+                } else {
+                    return Err(Errors::ClientUnexpectedDisconnection);
+                }
+            }
+            _ => (),
+        }
+
+        futures_timer::Delay::new(SERVER_TICK_DELAY / 2).await;
+    }
+}
+
+pub async fn server_tick_cycle(server: Server) -> Result<(), Errors> {
+    // 0 = pending connect client and send message to it
+    // 1 = pending message by client and server disconnection
+    let mut order_state = 0;
+    loop {
+        let tick_result = server.tick_start();
+
+        match order_state {
+            0 => {
+                if tick_result.to_auth.len() > 1 {
+                    return Err(Errors::AdditionalAuthentication);
+                }
+
+                for (auth_entry, message) in tick_result.to_auth {
+                    if let Ok(hello_packet) = message
+                        .to_packet_list()
+                        .remove(0)
+                        .packet
+                        .downcast::<HelloPacket>()
+                    {
+                        if hello_packet.name != CLIENT_NAME {
+                            return Err(Errors::UnexpectedHelloPacketName(17263));
+                        }
+
+                        let addr = *auth_entry.addr();
+
+                        println!("[SERVER] Authenticating client {:?}...", addr);
+
+                        server.authenticate(
+                            auth_entry,
+                            SerializedPacketList::single(server.packet_registry().serialize(
+                                &HelloPacket {
+                                    name: SERVER_NAME.to_owned(),
+                                },
+                            )),
+                        );
+
+                        let client = server.get_connected_client(&addr).unwrap();
+
+                        server.send_packet(
+                            &client,
+                            &MessagePacket {
+                                message: SERVER_TO_CLIENT_MESSAGE.to_owned(),
+                            },
+                        );
+                        order_state = 1;
+                    } else {
+                        return Err(Errors::InvalidPacketDowncast(392));
+                    }
+                }
+            }
+            _ => {
+                for (addr, messages) in tick_result.received_messages {
+                    for message in messages {
+                        let mut packet_list = message.to_packet_list();
+                        if packet_list.len() == 2 {
+                            if let Ok(message_packet) =
+                                packet_list.remove(0).packet.downcast::<MessagePacket>()
+                            {
+                                println!("[SERVER] Reading message: {:?}", message_packet.message);
+                                if message_packet.message != CLIENT_TO_SERVER_MESSAGE {
+                                    return Err(Errors::UnexpectedMessageContent(8734));
+                                } else {
+                                    let disconnection = Some(server::GracefullyDisconnection {
+                                        timeout: TIMEOUT,
+                                        message: LimitedMessage::new(SerializedPacketList::single(
+                                            server.packet_registry().serialize(&GoodbyePacket {
+                                                info: SERVER_DISCONNECT_INFO.to_owned(),
+                                            }),
+                                        )),
+                                    });
+                                    match server.disconnect(disconnection).await {
+                                        ServerDisconnectState::Confirmations(mut hash_map) => {
+                                            if let Some(disconnect_state) = hash_map.remove(&addr) {
+                                                match disconnect_state {
+                                                    ServerDisconnectClientState::Confirmed => {
+                                                        return Ok(());
+                                                    }
+                                                    e => {
+                                                        return Err(
+                                                        Errors::DisconnectionConfirmFailedByClient(
+                                                            e,
+                                                        ),
+                                                    );
+                                                    }
+                                                }
+                                            } else {
+                                                return Err(Errors::UnexpectedBehavior(1273));
+                                            }
+                                        }
+                                        ServerDisconnectState::WithoutReason => {
+                                            return Err(Errors::UnexpectedBehavior(4621))
+                                        }
+                                    }
+                                }
+                            } else {
+                                return Err(Errors::InvalidPacketDowncast(27189));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        server.tick_end();
+        futures_timer::Delay::new(SERVER_TICK_DELAY).await;
+    }
 }
