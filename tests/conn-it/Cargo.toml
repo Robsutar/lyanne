@@ -11,6 +11,5 @@ lyanne = { path = "../../", features = [
     "rt_smol",
 ] }
 smol = { version = "^2.0.0" }
-rand = "^0.8.0"
-serde = "1.0.210"
-futures-timer = "3.0.3"
+serde = { version = "^1.0.0", features = ["derive"] }
+futures-timer = { version = "^3.0.0" }
