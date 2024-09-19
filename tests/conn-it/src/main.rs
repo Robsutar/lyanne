@@ -1,20 +1,20 @@
 use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
-pub mod error;
-pub mod packets;
+mod error;
+mod packets;
 
 use error::Errors;
 use lyanne::{client::*, packets::*, server::*, *};
 use packets::*;
 
-pub const TIMEOUT: Duration = Duration::from_secs(10);
-pub const SERVER_TICK_DELAY: Duration = Duration::from_millis(50);
+const TIMEOUT: Duration = Duration::from_secs(10);
+const SERVER_TICK_DELAY: Duration = Duration::from_millis(50);
 
-pub const CLIENT_NAME: &'static str = "Josh";
-pub const SERVER_NAME: &'static str = "Server";
-pub const SERVER_TO_CLIENT_MESSAGE: &'static str = "success: true";
-pub const CLIENT_TO_SERVER_MESSAGE: &'static str = "true: success";
-pub const SERVER_DISCONNECT_INFO: &'static str = "all: done";
+const CLIENT_NAME: &'static str = "Josh";
+const SERVER_NAME: &'static str = "Server";
+const SERVER_TO_CLIENT_MESSAGE: &'static str = "success: true";
+const CLIENT_TO_SERVER_MESSAGE: &'static str = "true: success";
+const SERVER_DISCONNECT_INFO: &'static str = "all: done";
 
 fn main() -> Result<(), Box<dyn Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
@@ -96,7 +96,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub async fn client_tick_cycle(client: Client) -> Result<(), Errors> {
+async fn client_tick_cycle(client: Client) -> Result<(), Errors> {
     // 0 = pending receive from the server
     // 1 = pending send by the client
     // 2 = waiting server disconnection
@@ -174,7 +174,7 @@ pub async fn client_tick_cycle(client: Client) -> Result<(), Errors> {
     }
 }
 
-pub async fn server_tick_cycle(server: Server) -> Result<(), Errors> {
+async fn server_tick_cycle(server: Server) -> Result<(), Errors> {
     // 0 = pending connect client and send message to it
     // 1 = pending message by client and server disconnection
     let mut order_state = 0;

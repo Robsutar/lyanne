@@ -6,6 +6,7 @@ use lyanne::{
 };
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum Errors {
     BindFail(BindError),
     ConnectFail(ConnectError),
@@ -13,7 +14,6 @@ pub enum Errors {
     UnexpectedHelloPacketName(usize),
     UnexpectedMessageContent(usize),
     UnexpectedServerDisconnectInfo,
-    OverflowAuthentications,
     AdditionalAuthentication,
     ClientUnexpectedDisconnection,
     ServerShouldBeDisconnected,
