@@ -46,7 +46,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let server_handle = smol::spawn(server_tick_cycle(server));
 
-    let server_properties = Arc::new(ClientProperties::default());
+    let client_properties = Arc::new(ClientProperties::default());
     let authenticator_mode =
         lyanne::client::AuthenticatorMode::NoCryptography(AuthenticationProperties {
             message: LimitedMessage::new(SerializedPacketList::single(packet_registry.serialize(
@@ -62,7 +62,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         packet_registry,
         messaging_properties,
         read_handler_properties,
-        server_properties,
+        client_properties,
         authenticator_mode,
     );
 
