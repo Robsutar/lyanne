@@ -1,0 +1,15 @@
+[package]
+name = "tls-done-it"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lyanne = { path = "../../", features = [
+    "server",
+    "client",
+    "sd_bincode",
+    "rt_tokio",
+    "auth_tls",
+] }
+tokio = { version = "^1.0.0", features = ["full"] }
+serde = { version = "^1.0.0", features = ["derive"] }
