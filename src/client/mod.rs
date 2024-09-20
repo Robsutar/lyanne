@@ -91,7 +91,7 @@ use std::{
     future::Future,
     io,
     net::SocketAddr,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, Weak},
     time::{Duration, Instant},
 };
 
@@ -105,7 +105,7 @@ use crate::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE,
             UDP_BUFFER_SIZE,
         },
-        rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         MessageChannel,
     },
@@ -280,6 +280,32 @@ pub enum ClientDisconnectState {
     AlreadyDisconnected(Option<ServerDisconnectReason>),
 }
 
+enum ClientState {
+    Active,
+    Inactive,
+}
+
+impl ClientState {
+    /// Returns
+    /// `true` if the lock of `state` could not be acquired
+    /// `true` if the state read value is [`ClientState::Inactive`]
+    fn is_inactive(state: &AsyncRwLock<ClientState>) -> bool {
+        let state = match try_read(state) {
+            Some(state) => state,
+            None => return true,
+        };
+        match *state {
+            ClientState::Active => false,
+            ClientState::Inactive => true,
+        }
+    }
+
+    async fn set_inactive(state: &AsyncRwLock<ClientState>) {
+        let mut state = state.write().await;
+        *state = ClientState::Inactive;
+    }
+}
+
 /// Messaging fields of [`ConnectedServer`]
 struct ConnectedServerMessaging {
     /// Map of message parts pending confirmation.
@@ -391,9 +417,23 @@ struct ClientInternal {
     disconnect_reason: RwLock<Option<Option<ServerDisconnectReason>>>,
 
     task_runner: Arc<TaskRunner>,
+
+    state: AsyncRwLock<ClientState>,
 }
 
 impl ClientInternal {
+    fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
+        if let Some(internal) = downgraded.upgrade() {
+            if ClientState::is_inactive(&internal.state) {
+                None
+            } else {
+                Some(internal)
+            }
+        } else {
+            None
+        }
+    }
+
     fn create_async_task<F>(self: &Arc<Self>, future: F)
     where
         F: Future<Output = ()> + Send + 'static,
@@ -792,6 +832,8 @@ impl Client {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
+            ClientState::set_inactive(&self.internal.state).await;
+
             let tasks_keeper_handle = self
                 .internal
                 .tasks_keeper_handle

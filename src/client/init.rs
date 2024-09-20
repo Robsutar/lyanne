@@ -26,7 +26,7 @@ pub mod server {
         receiving_bytes_receiver: async_channel::Receiver<Vec<u8>>,
     ) {
         'l1: while let Ok(bytes) = receiving_bytes_receiver.recv().await {
-            if let Some(client) = client.upgrade() {
+            if let Some(client) = ClientInternal::try_upgrade(&client) {
                 if let Some(server) = server.upgrade() {
                     let mut messaging = server.messaging.lock().await;
                     match bytes[0] {
@@ -190,7 +190,7 @@ pub mod server {
             if let Some(serialized_packet) = serialized_packet {
                 packets_to_send.push(serialized_packet);
             } else {
-                if let Some(client) = client.upgrade() {
+                if let Some(client) = ClientInternal::try_upgrade(&client) {
                     if let Some(server) = server.upgrade() {
                         let mut messaging = server.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
@@ -243,7 +243,7 @@ pub mod server {
         )>,
     ) {
         'l1: while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
-            if let Some(client) = client.upgrade() {
+            if let Some(client) = ClientInternal::try_upgrade(&client) {
                 let message_id_bytes = message_id.to_be_bytes();
 
                 let bytes = {
@@ -281,7 +281,7 @@ pub mod server {
         shared_socket_bytes_send_receiver: async_channel::Receiver<Arc<Vec<u8>>>,
     ) {
         'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
-            if let Some(client) = client.upgrade() {
+            if let Some(client) = ClientInternal::try_upgrade(&client) {
                 if let Err(e) = client.socket.send(&bytes).await {
                     let _ = client
                         .reason_to_disconnect_sender
@@ -335,7 +335,7 @@ pub mod client {
         create_list_signal_receiver: async_channel::Receiver<()>,
     ) {
         'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
-            if let Some(client) = client.upgrade() {                
+            if let Some(client) = ClientInternal::try_upgrade(&client) {                
                 let _ = client.store_unexpected_errors.error_list_sender.send(store_unexpected_error_list_pick(&client).await).await;
             } else {
                 break 'l1;
@@ -346,7 +346,7 @@ pub mod client {
     pub async fn create_read_handler(weak_client: Weak<ClientInternal>) {
         let mut was_used = false;
         'l1: loop {
-            if let Some(client) = weak_client.upgrade() {
+            if let Some(client) = ClientInternal::try_upgrade(&weak_client) {
                 if *client.read_handler_properties.active_count.write().unwrap()
                     > client.read_handler_properties.target_surplus_size + 1
                 {
@@ -362,7 +362,7 @@ pub mod client {
                     drop(client);
                     let pre_read_next_bytes_result =
                         ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
-                    if let Some(client) = weak_client.upgrade() {
+                    if let Some(client) = ClientInternal::try_upgrade(&weak_client) {
                         match pre_read_next_bytes_result {
                             Ok(result) => {
                                 if !was_used {
