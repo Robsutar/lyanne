@@ -1035,3 +1035,9 @@ impl Client {
         }
     }
 }
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        ClientState::set_inactive(&self.internal.state);
+    }
+}
