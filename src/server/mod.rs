@@ -1676,7 +1676,7 @@ impl Server {
     ///             timeout: Duration::from_secs(3),
     ///         }))
     ///         .await;
-    ///     println!("Server disconnected itself: {:?}", state);'
+    ///     println!("Server disconnected itself: {:?}", state);
     /// }
     /// ```
     pub fn disconnect(
