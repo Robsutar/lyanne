@@ -1819,3 +1819,9 @@ impl Server {
         })
     }
 }
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        ServerState::set_inactive(&self.internal.state);
+    }
+}
