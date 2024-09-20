@@ -1,5 +1,6 @@
 pub use async_std::net::UdpSocket;
 pub use async_std::sync::Mutex;
+pub use async_std::sync::RwLock as AsyncRwLock;
 pub use async_std::task::JoinHandle as TaskHandle;
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
@@ -50,4 +51,8 @@ where
 
 pub fn try_lock<T>(mutex: &Mutex<T>) -> Option<async_std::sync::MutexGuard<'_, T>> {
     mutex.try_lock()
+}
+
+pub fn try_read<T>(rw_lock: &AsyncRwLock<T>) -> Option<async_std::sync::RwLockReadGuard<'_, T>> {
+    rw_lock.try_read()
 }

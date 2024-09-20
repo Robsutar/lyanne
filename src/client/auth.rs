@@ -485,6 +485,8 @@ pub(super) mod connecting {
                 disconnect_reason: RwLock::new(None),
 
                 task_runner,
+
+                state: AsyncRwLock::new(ClientState::Active),
             }),
         };
 

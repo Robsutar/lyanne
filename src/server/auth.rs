@@ -97,7 +97,9 @@ impl NoCryptographyAuth {
         pending_auth_resend_receiver: async_channel::Receiver<SocketAddr>,
     ) {
         'l1: while let Ok(addr) = pending_auth_resend_receiver.recv().await {
-            if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
+            if let (Some(server), Some(auth_mode)) =
+                (ServerInternal::try_upgrade(&server), auth_mode.upgrade())
+            {
                 if let Some(mut tuple) = auth_mode.pending_auth.get_mut(&addr) {
                     let (context, last_sent_time) = &mut *tuple;
                     *last_sent_time = Some(Instant::now());
@@ -276,7 +278,9 @@ where
     ) {
         'l1: while let Ok(_) = read_signal_receiver.recv().await {
             'l2: loop {
-                if let (Some(server), Some(auth_mode)) = (server.upgrade(), auth_mode.upgrade()) {
+                if let (Some(server), Some(auth_mode)) =
+                    (ServerInternal::try_upgrade(&server), auth_mode.upgrade())
+                {
                     let accepted = crate::internal::rt::timeout(
                         server.messaging_properties.timeout_interpretation,
                         listener.accept(),

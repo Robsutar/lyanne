@@ -1,6 +1,7 @@
 pub use tokio::net::UdpSocket;
 pub use tokio::runtime::Handle as Runtime;
 pub use tokio::sync::Mutex;
+pub use tokio::sync::RwLock as AsyncRwLock;
 pub use tokio::task::JoinHandle as TaskHandle;
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
@@ -51,6 +52,13 @@ where
 pub fn try_lock<T>(mutex: &Mutex<T>) -> Option<tokio::sync::MutexGuard<'_, T>> {
     match mutex.try_lock() {
         Ok(v) => Some(v),
+        Err(_) => None,
+    }
+}
+
+pub fn try_read<T>(rw_lock: &AsyncRwLock<T>) -> Option<tokio::sync::RwLockReadGuard<'_, T>> {
+    match rw_lock.try_read() {
+        Ok(read) => Some(read),
         Err(_) => None,
     }
 }

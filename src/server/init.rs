@@ -27,7 +27,7 @@ pub mod client {
         receiving_bytes_receiver: async_channel::Receiver<Vec<u8>>,
     ) {
         'l1: while let Ok(bytes) = receiving_bytes_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
+            if let Some(server) = ServerInternal::try_upgrade(&server) {
                 if let Some(client) = client.upgrade() {
                     let mut messaging = client.messaging.lock().await;
                     match bytes[0] {
@@ -202,7 +202,7 @@ pub mod client {
             if let Some(serialized_packet) = serialized_packet {
                 packets_to_send.push(serialized_packet);
             } else {
-                if let Some(server) = server.upgrade() {
+                if let Some(server) = ServerInternal::try_upgrade(&server) {
                     if let Some(client) = client.upgrade() {
                         let mut messaging = client.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
@@ -267,7 +267,7 @@ pub mod client {
         )>,
     ) {
         'l1: while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
+            if let Some(server) = ServerInternal::try_upgrade(&server) {
                 let message_id_bytes = message_id.to_be_bytes();
 
                 let bytes = {
@@ -307,7 +307,7 @@ pub mod client {
         shared_socket_bytes_send_receiver: async_channel::Receiver<Arc<Vec<u8>>>,
     ) {
         'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
+            if let Some(server) = ServerInternal::try_upgrade(&server) {
                 if let Err(e) = server.socket.send_to(&bytes, addr).await {
                     let _ = server.clients_to_disconnect_sender.try_send((
                         addr,
@@ -347,7 +347,7 @@ pub mod server {
         pending_rejection_confirm_resend_receiver: async_channel::Receiver<SocketAddr>,
     ) {
         'l1: while let Ok(addr) = pending_rejection_confirm_resend_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
+            if let Some(server) = ServerInternal::try_upgrade(&server) {
                 if let Some(mut tuple) = server.pending_rejection_confirm.get_mut(&addr) {
                     let (context, last_sent_time) = tuple.value_mut();
                     *last_sent_time = Some(Instant::now());
@@ -365,7 +365,7 @@ pub mod server {
     ) {
         let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
         'l1: while let Ok(_) = rejections_to_confirm_signal_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
+            if let Some(server) = ServerInternal::try_upgrade(&server) {
                 for addr in server.rejections_to_confirm.iter() {
                     let _ = server
                         .socket
@@ -385,7 +385,7 @@ pub mod server {
         create_list_signal_receiver: async_channel::Receiver<()>,
     ) {
         'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
-            if let Some(server) = server.upgrade() {
+            if let Some(server) = ServerInternal::try_upgrade(&server) {
                 let mut list = Vec::<UnexpectedError>::new();
                 while let Ok(mut error_list) = server.store_unexpected_errors.error_list_receiver.try_recv() {
                     list.append(&mut error_list);
@@ -404,7 +404,7 @@ pub mod server {
     pub async fn create_read_handler(weak_server: Weak<ServerInternal>) {
         let mut was_used = false;
         'l1: loop {
-            if let Some(server) = weak_server.upgrade() {
+            if let Some(server) = ServerInternal::try_upgrade(&weak_server) {
                 if *server.read_handler_properties.active_count.write().unwrap()
                     > server.read_handler_properties.target_surplus_size + 1
                 {
@@ -422,7 +422,7 @@ pub mod server {
                     let pre_read_next_bytes_result =
                         ServerInternal::pre_read_next_bytes(&socket, read_timeout).await;
 
-                    if let Some(server) = weak_server.upgrade() {
+                    if let Some(server) = ServerInternal::try_upgrade(&weak_server) {
                         match pre_read_next_bytes_result {
                             Ok(result) => {
                                 if !was_used {

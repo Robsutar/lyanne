@@ -1,4 +1,5 @@
 pub use async_lock::Mutex;
+pub use async_lock::RwLock as AsyncRwLock;
 pub use async_net::UdpSocket;
 pub use bevy_tasks::Task as TaskHandle;
 
@@ -50,4 +51,8 @@ where
 
 pub fn try_lock<T>(mutex: &Mutex<T>) -> Option<async_lock::MutexGuard<'_, T>> {
     mutex.try_lock()
+}
+
+pub fn try_read<T>(rw_lock: &AsyncRwLock<T>) -> Option<async_lock::RwLockReadGuard<'_, T>> {
+    rw_lock.try_read()
 }

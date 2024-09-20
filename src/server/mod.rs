@@ -110,7 +110,7 @@ use std::{
     future::Future,
     io,
     net::{IpAddr, SocketAddr},
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, Weak},
     time::{Duration, Instant},
 };
 
@@ -123,7 +123,7 @@ use crate::{
         messages::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, UDP_BUFFER_SIZE,
         },
-        rt::{try_lock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
     },
@@ -482,6 +482,32 @@ pub struct ServerTickResult {
     pub unexpected_errors: Vec<UnexpectedError>,
 }
 
+enum ServerState {
+    Active,
+    Inactive,
+}
+
+impl ServerState {
+    /// Returns
+    /// `true` if the lock of `state` could not be acquired
+    /// `true` if the state read value is [`ServerState::Inactive`]
+    fn is_inactive(state: &AsyncRwLock<ServerState>) -> bool {
+        let state = match try_read(state) {
+            Some(state) => state,
+            None => return true,
+        };
+        match *state {
+            ServerState::Active => false,
+            ServerState::Inactive => true,
+        }
+    }
+
+    async fn set_inactive(state: &AsyncRwLock<ServerState>) {
+        let mut state = state.write().await;
+        *state = ServerState::Inactive;
+    }
+}
+
 /// Messaging fields of [`ConnectedClient`].
 struct ConnectedClientMessaging {
     /// Map of message parts pending confirmation.
@@ -615,6 +641,8 @@ struct ServerInternal {
     rejections_to_confirm: DashSet<SocketAddr>,
 
     task_runner: Arc<TaskRunner>,
+
+    state: AsyncRwLock<ServerState>,
 }
 
 impl ServerInternal {
@@ -633,6 +661,18 @@ impl ServerInternal {
         self.temporary_ignored_ips.remove(ip);
     }
 
+    fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
+        if let Some(internal) = downgraded.upgrade() {
+            if ServerState::is_inactive(&internal.state) {
+                None
+            } else {
+                Some(internal)
+            }
+        } else {
+            None
+        }
+    }
+
     fn create_async_task<F>(self: &Arc<Self>, future: F)
     where
         F: Future<Output = ()> + Send + 'static,
@@ -647,9 +687,7 @@ impl ServerInternal {
             if *active_count < self.read_handler_properties.target_surplus_size - 1 {
                 *active_count += 1;
                 let downgraded_server = Arc::downgrade(&self);
-                self.create_async_task(async move {
-                    init::server::create_read_handler(downgraded_server).await;
-                });
+                self.create_async_task(init::server::create_read_handler(downgraded_server));
             }
         }
     }
@@ -819,6 +857,8 @@ impl Server {
                 rejections_to_confirm: DashSet::new(),
 
                 task_runner,
+
+                state: AsyncRwLock::new(ServerState::Active),
             });
 
             if let Err(e) = authenticator_mode_build.apply(&server).await {
@@ -1636,7 +1676,7 @@ impl Server {
     ///             timeout: Duration::from_secs(3),
     ///         }))
     ///         .await;
-    ///     println!("Server disconnected itself: {:?}", state);
+    ///     println!("Server disconnected itself: {:?}", state);'
     /// }
     /// ```
     pub fn disconnect(
@@ -1646,6 +1686,8 @@ impl Server {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
+            ServerState::set_inactive(&self.internal.state).await;
+
             let tasks_keeper_handle = self
                 .internal
                 .tasks_keeper_handle
@@ -1775,5 +1817,11 @@ impl Server {
                 ServerDisconnectState::WithoutReason
             }
         })
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        ServerState::set_inactive(&self.internal.state);
     }
 }
