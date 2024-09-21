@@ -10,6 +10,7 @@ use lyanne::{
 pub enum Errors {
     BindFail(BindError),
     ConnectFail(ConnectError),
+    TimedOut,
     InvalidPacketDowncast(usize),
     UnexpectedHelloPacketName(usize),
     UnexpectedMessageContent(usize),

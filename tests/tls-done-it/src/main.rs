@@ -1,4 +1,9 @@
-use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    error::Error,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 mod error;
 mod packets;
@@ -205,6 +210,8 @@ async fn server_tick_cycle(server: Server) -> Result<(), Errors> {
     // 0 = pending connect client and send message to it
     // 1 = pending message by client and server disconnection
     let mut order_state = 0;
+
+    let start = Instant::now();
     loop {
         let tick_result = server.tick_start();
 
@@ -306,5 +313,9 @@ async fn server_tick_cycle(server: Server) -> Result<(), Errors> {
         }
         server.tick_end();
         tokio::time::sleep(SERVER_TICK_DELAY).await;
+
+        if Instant::now() - start > TIMEOUT {
+            return Err(Errors::TimedOut);
+        }
     }
 }
