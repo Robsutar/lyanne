@@ -304,7 +304,7 @@ pub mod client {
         tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
     ) {
         while let Ok(handle) = tasks_keeper_receiver.recv().await {
-            handle.await.unwrap();
+            let _ = handle.await;
         }
     }
     #[cfg(not(feature = "rt_tokio"))]
