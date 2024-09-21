@@ -89,4 +89,8 @@ jobs:
     - name: "Run integrated test: tls-done-it"
       run: |
         cargo run -p tls-done-it
+
+    - name: "Run integrated test: disconnect-it"
+      run: |
+        cargo run -p disconnect-it
     
