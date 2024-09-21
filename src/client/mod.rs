@@ -280,9 +280,13 @@ pub enum ClientDisconnectState {
     AlreadyDisconnected(Option<ServerDisconnectReason>),
 }
 
+struct ClientInactiveState {
+    received_bytes_sender: async_channel::Sender<Vec<u8>>,
+}
+
 enum ClientState {
     Active,
-    Inactive,
+    Inactive(ClientInactiveState),
 }
 
 impl ClientState {
@@ -296,13 +300,18 @@ impl ClientState {
         };
         match *state {
             ClientState::Active => false,
-            ClientState::Inactive => true,
+            ClientState::Inactive(_) => true,
         }
     }
 
-    async fn set_inactive(state: &AsyncRwLock<ClientState>) {
+    async fn set_inactive(
+        state: &AsyncRwLock<ClientState>,
+        received_bytes_sender: async_channel::Sender<Vec<u8>>,
+    ) {
         let mut state = state.write().await;
-        *state = ClientState::Inactive;
+        *state = ClientState::Inactive(ClientInactiveState {
+            received_bytes_sender,
+        });
     }
 }
 
@@ -428,6 +437,26 @@ impl ClientInternal {
                 None
             } else {
                 Some(internal)
+            }
+        } else {
+            None
+        }
+    }
+
+    async fn try_upgrade_or_get_inactive(
+        downgraded: &Weak<Self>,
+    ) -> Option<Result<Arc<Self>, ClientInactiveState>> {
+        if let Some(internal) = downgraded.upgrade() {
+            let inactive_ref = match &*internal.state.read().await {
+                ClientState::Active => None,
+                ClientState::Inactive(server_inactive_state) => Some(ClientInactiveState {
+                    received_bytes_sender: server_inactive_state.received_bytes_sender.clone(),
+                }),
+            };
+
+            match inactive_ref {
+                Some(server_inactive_state) => Some(Err(server_inactive_state)),
+                None => Some(Ok(internal)),
             }
         } else {
             None
@@ -832,7 +861,8 @@ impl Client {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
-            ClientState::set_inactive(&self.internal.state).await;
+            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
+            ClientState::set_inactive(&self.internal.state, received_bytes_sender).await;
 
             let tasks_keeper_handle = self
                 .internal
@@ -841,7 +871,6 @@ impl Client {
                 .await
                 .take()
                 .unwrap();
-            let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
 
             if self.is_disconnected() {
                 return ClientDisconnectState::AlreadyDisconnected(self.take_disconnect_reason());
@@ -865,35 +894,44 @@ impl Client {
                     .inner_auth
                     .rejection_of(Instant::now(), disconnection.message);
 
-                drop(self);
-
                 let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
 
-                loop {
+                let disconnect_state = loop {
                     let now = Instant::now();
                     if now - rejection_context.rejection_instant > timeout_interpretation {
-                        return ClientDisconnectState::ConfirmationTimeout;
+                        break ClientDisconnectState::ConfirmationTimeout;
                     }
 
                     if let Err(e) = socket.send(&rejection_context.finished_bytes).await {
-                        return ClientDisconnectState::SendIoError(e);
+                        break ClientDisconnectState::SendIoError(e);
                     }
 
-                    let pre_read_next_bytes_result =
-                        ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;
+                    let pre_read_next_bytes_result = {
+                        if let Ok(result) = received_bytes_receiver.try_recv() {
+                            Ok(result)
+                        } else {
+                            ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await
+                        }
+                    };
 
                     match pre_read_next_bytes_result {
                         Ok(result) => {
                             if &result == rejection_confirm_bytes {
-                                return ClientDisconnectState::Confirmed;
+                                break ClientDisconnectState::Confirmed;
                             }
                         }
                         Err(e) if e.kind() == io::ErrorKind::TimedOut => {}
-                        Err(e) => return ClientDisconnectState::ReceiveIoError(e),
+                        Err(e) => break ClientDisconnectState::ReceiveIoError(e),
                     }
-                }
+                };
+
+                drop(self);
+                let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
+
+                disconnect_state
             } else {
                 drop(self);
+                let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
 
                 ClientDisconnectState::WithoutReason
             }

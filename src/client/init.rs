@@ -362,40 +362,49 @@ pub mod client {
                     drop(client);
                     let pre_read_next_bytes_result =
                         ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
-                    if let Some(client) = ClientInternal::try_upgrade(&weak_client) {
-                        match pre_read_next_bytes_result {
-                            Ok(result) => {
-                                if !was_used {
-                                    was_used = true;
-                                    let mut surplus_count = client
-                                        .read_handler_properties
-                                        .active_count
-                                        .write()
-                                        .unwrap();
-                                    *surplus_count -= 1;
-                                }
+                    match ClientInternal::try_upgrade_or_get_inactive(&weak_client).await {
+                        Some(Ok(client)) => {
+                            match pre_read_next_bytes_result {
+                                Ok(result) => {
+                                    if !was_used {
+                                        was_used = true;
+                                        let mut surplus_count = client
+                                            .read_handler_properties
+                                            .active_count
+                                            .write()
+                                            .unwrap();
+                                        *surplus_count -= 1;
+                                    }
 
-                                let _read_result = client.read_next_bytes(result).await;
+                                    let _read_result = client.read_next_bytes(result).await;
 
-                                #[cfg(feature = "store_unexpected")]
-                                if _read_result.is_unexpected() {
-                                    let _ = client.store_unexpected_errors.error_sender.send(UnexpectedError::OfReadServerBytes(_read_result)).await;
+                                    #[cfg(feature = "store_unexpected")]
+                                    if _read_result.is_unexpected() {
+                                        let _ = client.store_unexpected_errors.error_sender.send(UnexpectedError::OfReadServerBytes(_read_result)).await;
+                                    }
                                 }
-                            }
-                            Err(_) => {
-                                if was_used {
-                                    was_used = false;
-                                    let mut surplus_count = client
-                                        .read_handler_properties
-                                        .active_count
-                                        .write()
-                                        .unwrap();
-                                    *surplus_count += 1;
+                                Err(_) => {
+                                    if was_used {
+                                        was_used = false;
+                                        let mut surplus_count = client
+                                            .read_handler_properties
+                                            .active_count
+                                            .write()
+                                            .unwrap();
+                                        *surplus_count += 1;
+                                    }
                                 }
                             }
                         }
-                    } else {
-                        break 'l1;
+                        Some(Err(inactive_state)) => {
+                            if let Ok(result) =  pre_read_next_bytes_result {
+                                let _ = inactive_state.received_bytes_sender.try_send(result);
+                            }
+                            break 'l1;
+                        }
+                        None => {
+                            break 'l1;
+                        }
                     }
                 }
             } else {
