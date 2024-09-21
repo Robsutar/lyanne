@@ -23,7 +23,12 @@ const SERVER_DISCONNECT_INFO: &'static str = "all: done";
 
 fn main() -> Result<(), Box<dyn Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
-    smol::block_on(async_main())
+    let start = Instant::now();
+    println!("TEST START {:?}", start);
+
+    let result = smol::block_on(async_main());
+    println!("TEST ELAPSED TIME: {:?}", Instant::now() - start);
+    result
 }
 
 async fn async_main() -> Result<(), Box<dyn Error>> {

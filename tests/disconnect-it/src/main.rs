@@ -1,7 +1,12 @@
 // TODO: add timeout in server loops
 // TODO: change ids of the errors
 
-use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    error::Error,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 mod error;
 mod packets;
@@ -22,6 +27,8 @@ const CLIENT_DISCONNECT_INFO: &'static str = "all: done";
 
 fn main() -> Result<(), Box<dyn Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
+    let start = Instant::now();
+    println!("TEST START {:?}", start);
 
     let runtime = Arc::new(async_executor::Executor::new());
     let runtime_clone = Arc::clone(&runtime);
@@ -29,7 +36,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         futures::executor::block_on(runtime_clone.run(futures::future::pending::<()>()));
     });
 
-    futures::executor::block_on(async_main(runtime))
+    let result = futures::executor::block_on(async_main(runtime));
+    println!("TEST ELAPSED TIME: {:?}", Instant::now() - start);
+    result
 }
 
 async fn async_main(runtime: Arc<async_executor::Executor<'static>>) -> Result<(), Box<dyn Error>> {

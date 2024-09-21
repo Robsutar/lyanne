@@ -25,7 +25,12 @@ const SERVER_DISCONNECT_INFO: &'static str = "all: done";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
-    async_main().await
+    let start = Instant::now();
+    println!("TEST START {:?}", start);
+
+    let result = async_main().await;
+    println!("TEST ELAPSED TIME: {:?}", Instant::now() - start);
+    result
 }
 
 async fn async_main() -> Result<(), Box<dyn Error>> {

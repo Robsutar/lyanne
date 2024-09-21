@@ -1,4 +1,9 @@
-use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    error::Error,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 mod error;
 mod packets;
@@ -14,7 +19,12 @@ const CLIENT_NAME: &'static str = "Josh";
 
 fn main() -> Result<(), Box<dyn Error>> {
     std::env::set_var("RUST_BACKTRACE", "1");
-    async_std::task::block_on(async_main())
+    let start = Instant::now();
+    println!("TEST START {:?}", start);
+
+    let result = async_std::task::block_on(async_main());
+    println!("TEST ELAPSED TIME: {:?}", Instant::now() - start);
+    result
 }
 
 async fn async_main() -> Result<(), Box<dyn Error>> {
