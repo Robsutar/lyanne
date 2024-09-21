@@ -1,0 +1,17 @@
+[package]
+name = "disconnect-it"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lyanne = { path = "../../", features = [
+    "server",
+    "client",
+    "sd_bincode",
+    "rt_async_executor",
+    "auth_tcp",
+] }
+futures = { version = "^0.3.3" }
+futures-timer = { version = "^3.0.0" }
+async-executor = { version = "^1.13.0" }
+serde = { version = "^1.0.0", features = ["derive"] }

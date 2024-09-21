@@ -482,9 +482,13 @@ pub struct ServerTickResult {
     pub unexpected_errors: Vec<UnexpectedError>,
 }
 
+struct ServerInactiveState {
+    received_bytes_sender: async_channel::Sender<(SocketAddr, Vec<u8>)>,
+}
+
 enum ServerState {
     Active,
-    Inactive,
+    Inactive(ServerInactiveState),
 }
 
 impl ServerState {
@@ -498,13 +502,18 @@ impl ServerState {
         };
         match *state {
             ServerState::Active => false,
-            ServerState::Inactive => true,
+            ServerState::Inactive(_) => true,
         }
     }
 
-    async fn set_inactive(state: &AsyncRwLock<ServerState>) {
+    async fn set_inactive(
+        state: &AsyncRwLock<ServerState>,
+        received_bytes_sender: async_channel::Sender<(SocketAddr, Vec<u8>)>,
+    ) {
         let mut state = state.write().await;
-        *state = ServerState::Inactive;
+        *state = ServerState::Inactive(ServerInactiveState {
+            received_bytes_sender,
+        });
     }
 }
 
@@ -667,6 +676,26 @@ impl ServerInternal {
                 None
             } else {
                 Some(internal)
+            }
+        } else {
+            None
+        }
+    }
+
+    async fn try_upgrade_or_get_inactive(
+        downgraded: &Weak<Self>,
+    ) -> Option<Result<Arc<Self>, ServerInactiveState>> {
+        if let Some(internal) = downgraded.upgrade() {
+            let inactive_ref = match &*internal.state.read().await {
+                ServerState::Active => None,
+                ServerState::Inactive(server_inactive_state) => Some(ServerInactiveState {
+                    received_bytes_sender: server_inactive_state.received_bytes_sender.clone(),
+                }),
+            };
+
+            match inactive_ref {
+                Some(server_inactive_state) => Some(Err(server_inactive_state)),
+                None => Some(Ok(internal)),
             }
         } else {
             None
@@ -1686,7 +1715,8 @@ impl Server {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
-            ServerState::set_inactive(&self.internal.state).await;
+            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
+            ServerState::set_inactive(&self.internal.state, received_bytes_sender).await;
 
             let tasks_keeper_handle = self
                 .internal
@@ -1695,7 +1725,6 @@ impl Server {
                 .await
                 .take()
                 .unwrap();
-            let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
 
             if let Some(disconnection) = disconnection {
                 let mut confirmations = HashMap::<SocketAddr, ServerDisconnectClientState>::new();
@@ -1730,7 +1759,6 @@ impl Server {
                 }
 
                 let socket = Arc::clone(&self.internal.socket);
-                drop(self);
 
                 let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
 
@@ -1782,8 +1810,13 @@ impl Server {
                         break;
                     }
 
-                    let pre_read_next_bytes_result =
-                        ServerInternal::pre_read_next_bytes(&socket, min_try_read_time).await;
+                    let pre_read_next_bytes_result = {
+                        if let Ok(result) = received_bytes_receiver.try_recv() {
+                            Ok(result)
+                        } else {
+                            ServerInternal::pre_read_next_bytes(&socket, min_try_read_time).await
+                        }
+                    };
 
                     match pre_read_next_bytes_result {
                         Ok((addr, result)) => {
@@ -1810,8 +1843,12 @@ impl Server {
                     }
                 }
 
+                let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
+                drop(self);
+
                 ServerDisconnectState::Confirmations(confirmations)
             } else {
+                let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
                 drop(self);
 
                 ServerDisconnectState::WithoutReason
@@ -1822,6 +1859,15 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        ServerState::set_inactive(&self.internal.state);
+        if !ServerState::is_inactive(&self.internal.state) {
+            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
+
+            let internal = Arc::clone(&self.internal);
+            let _ = self.internal.create_async_task(async move {
+                ServerState::set_inactive(&internal.state, received_bytes_sender).await;
+            });
+
+            drop(received_bytes_receiver);
+        }
     }
 }
