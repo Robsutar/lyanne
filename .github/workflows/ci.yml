@@ -37,6 +37,19 @@ jobs:
         toolchain: stable
         override: true
 
+    - name: "Run integrated test: conn-it"
+      run: |
+        cargo run -p conn-it
+    - name: "Run integrated test: tls-fail-it"
+      run: |
+        cargo run -p tls-fail-it
+    - name: "Run integrated test: tls-done-it"
+      run: |
+        cargo run -p tls-done-it
+    - name: "Run integrated test: disconnect-it"
+      run: |
+        cargo run -p disconnect-it
+
     - name: Run tests
       run: cargo test --verbose --features "client,server,rt_smol,sd_bincode"
 
@@ -80,20 +93,4 @@ jobs:
       run: |
         cargo check -p tokio-simple-client
         cargo check -p tokio-simple-server
-
-    - name: "Run integrated test: conn-it"
-      run: |
-        cargo run -p conn-it
-      
-    - name: "Run integrated test: tls-fail-it"
-      run: |
-        cargo run -p tls-fail-it
-      
-    - name: "Run integrated test: tls-done-it"
-      run: |
-        cargo run -p tls-done-it
-
-    - name: "Run integrated test: disconnect-it"
-      run: |
-        cargo run -p disconnect-it
     
