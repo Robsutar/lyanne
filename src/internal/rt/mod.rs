@@ -77,3 +77,8 @@ pub use async_executor::*;
 mod bevy;
 #[cfg(feature = "rt_bevy")]
 pub use bevy::*;
+
+pub enum SelectArm<L, R> {
+    Left(L),
+    Right(R),
+}

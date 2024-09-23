@@ -49,6 +49,23 @@ where
     }
 }
 
+pub async fn select<L, R>(
+    future_left: L,
+    future_right: R,
+) -> super::SelectArm<<L as std::future::Future>::Output, <R as std::future::Future>::Output>
+where
+    L: std::future::Future,
+    R: std::future::Future,
+{
+    futures::pin_mut!(future_left);
+    futures::pin_mut!(future_right);
+
+    match futures::future::select(future_left, future_right).await {
+        futures::future::Either::Left((v, _)) => super::SelectArm::Left(v),
+        futures::future::Either::Right((v, _)) => super::SelectArm::Right(v),
+    }
+}
+
 pub fn try_lock<T>(mutex: &Mutex<T>) -> Option<async_lock::MutexGuard<'_, T>> {
     mutex.try_lock()
 }

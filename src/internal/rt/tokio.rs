@@ -49,6 +49,20 @@ where
     }
 }
 
+pub async fn select<L, R>(
+    future_left: L,
+    future_right: R,
+) -> super::SelectArm<<L as std::future::Future>::Output, <R as std::future::Future>::Output>
+where
+    L: std::future::Future,
+    R: std::future::Future,
+{
+    tokio::select! {
+        v = future_left => super::SelectArm::Left(v),
+        v = future_right => super::SelectArm::Right(v),
+    }
+}
+
 pub fn try_lock<T>(mutex: &Mutex<T>) -> Option<tokio::sync::MutexGuard<'_, T>> {
     match mutex.try_lock() {
         Ok(v) => Some(v),
