@@ -111,24 +111,25 @@ impl NodeType for ClientNode {
 pub struct PartnerMessaging {
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.
-    pending_confirmation: BTreeMap<MessageId, (Instant, BTreeMap<MessagePartId, SentMessagePart>)>,
+    pub pending_confirmation:
+        BTreeMap<MessageId, (Instant, BTreeMap<MessagePartId, SentMessagePart>)>,
 
     /// Map of incoming messages parts.
-    incoming_messages: MessagePartMap,
+    pub incoming_messages: MessagePartMap,
     /// The length of bytes received in the current tick.
-    tick_bytes_len: usize,
+    pub tick_bytes_len: usize,
 
     /// The instant when the last message was received.
-    last_received_message_instant: Instant,
+    pub last_received_message_instant: Instant,
     /// The deserialized messages that have been received and have not been read yet.
-    received_messages: Vec<DeserializedMessage>,
+    pub received_messages: Vec<DeserializedMessage>,
 
     /// Calculator for packet loss round-trip time.
-    packet_loss_rtt_calculator: RttCalculator,
+    pub packet_loss_rtt_calculator: RttCalculator,
     /// The average round-trip time for packet loss.
-    average_packet_loss_rtt: Duration,
+    pub average_packet_loss_rtt: Duration,
     /// Monitor for latency duration.
-    latency_monitor: DurationMonitor,
+    pub latency_monitor: DurationMonitor,
 }
 
 /// Properties of a partner that is connected to the node.
