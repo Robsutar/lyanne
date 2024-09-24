@@ -123,7 +123,7 @@ use crate::{
         messages::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, UDP_BUFFER_SIZE,
         },
-        node::{NodeInternal, NodeState, NodeType, PartnerMessaging},
+        node::{NodeInternal, NodeState, NodeType, PartnerMessaging, StoreUnexpectedErrors},
         rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
@@ -480,7 +480,7 @@ struct ServerNode {
 
     #[cfg(feature = "store_unexpected")]
     /// List of errors emitted in the tick.
-    pub store_unexpected_errors: StoreUnexpectedErrors,
+    pub store_unexpected_errors: StoreUnexpectedErrors<UnexpectedError>,
 
     authenticator_mode: AuthenticatorModeInternal,
 
@@ -830,6 +830,7 @@ impl Server {
 
         #[cfg(feature = "store_unexpected")]
         let unexpected_errors = match internal
+            .node_type
             .store_unexpected_errors
             .error_list_receiver
             .try_recv()
@@ -989,6 +990,7 @@ impl Server {
 
         #[cfg(feature = "store_unexpected")]
         internal
+            .node_type
             .store_unexpected_errors
             .create_list_signal_sender
             .try_send(())
