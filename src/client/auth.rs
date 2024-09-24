@@ -23,7 +23,7 @@ use crate::{
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::{MessagingProperties, ReadHandlerProperties, MESSAGE_CHANNEL_SIZE};
+use crate::{MessagingProperties, ReadHandlerProperties, SentMessagePart, MESSAGE_CHANNEL_SIZE};
 
 use super::*;
 
