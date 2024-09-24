@@ -909,15 +909,6 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        if !NodeState::is_inactive(&self.internal.node_type.state) {
-            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
-
-            let internal = Arc::clone(&self.internal);
-            let _ = self.internal.create_async_task(async move {
-                NodeState::set_inactive(&internal.node_type.state, received_bytes_sender).await;
-            });
-
-            drop(received_bytes_receiver);
-        }
+        NodeInternal::on_holder_drop(&self.internal);
     }
 }

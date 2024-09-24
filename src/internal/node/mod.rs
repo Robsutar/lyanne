@@ -92,7 +92,7 @@ impl<T> NodeState<T> {
 }
 
 pub trait NodeType {
-    type Skt;
+    type Skt: Send + Sync + Sized + 'static;
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
 }
 
@@ -161,7 +161,7 @@ impl Partner {
 }
 
 /// Properties of the node.
-pub struct NodeInternal<T: NodeType> {
+pub struct NodeInternal<T: NodeType + Send + Sync + Sized + 'static> {
     /// Sender for make the spawned tasks keep alive.
     pub tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
 
@@ -180,7 +180,7 @@ pub struct NodeInternal<T: NodeType> {
     pub node_type: T,
 }
 
-impl<T: NodeType> NodeInternal<T> {
+impl<T: NodeType + Send + Sync + Sized + 'static> NodeInternal<T> {
     pub fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
         if let Some(internal) = downgraded.upgrade() {
             if NodeState::is_inactive(&internal.node_type.state()) {
@@ -220,5 +220,18 @@ impl<T: NodeType> NodeInternal<T> {
         let _ = self
             .tasks_keeper_sender
             .try_send(self.task_runner.spawn(future));
+    }
+
+    pub fn on_holder_drop(self: &Arc<Self>) {
+        if !NodeState::is_inactive(&self.node_type.state()) {
+            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
+
+            let internal = Arc::clone(&self);
+            let _ = self.create_async_task(async move {
+                NodeState::set_inactive(&internal.node_type.state(), received_bytes_sender).await;
+            });
+
+            drop(received_bytes_receiver);
+        }
     }
 }
