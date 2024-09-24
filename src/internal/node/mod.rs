@@ -75,6 +75,15 @@ impl StoreUnexpectedErrors {
     }
 }
 
+struct ClientNode {}
+
+struct ServerNode {}
+
+enum NodeType {
+    Client(ClientNode),
+    Server(ServerNode),
+}
+
 struct NodeInactiveState<T> {
     received_bytes_sender: async_channel::Sender<T>,
 }
