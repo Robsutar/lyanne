@@ -1,32 +1,20 @@
-mod init;
-
 use std::{
     collections::BTreeMap,
     future::Future,
-    io,
     net::SocketAddr,
-    ops::Deref,
     sync::{Arc, RwLock, Weak},
     time::{Duration, Instant},
 };
 
-use rand::rngs::OsRng;
-use x25519_dalek::{EphemeralSecret, PublicKey};
-
 use crate::{
     internal::{
         auth::InnerAuth,
-        messages::{
-            DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE,
-            UDP_BUFFER_SIZE,
-        },
-        rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
+        rt::{try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner},
         utils::{DurationMonitor, RttCalculator},
-        MessageChannel,
     },
-    packets::{ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket},
-    LimitedMessage, MessagingProperties, ReadHandlerProperties, SentMessagePart,
-    MESSAGE_CHANNEL_SIZE,
+    packets::{PacketRegistry, SerializedPacket},
+    MessagingProperties, ReadHandlerProperties, SentMessagePart,
 };
 
 #[cfg(feature = "store_unexpected")]

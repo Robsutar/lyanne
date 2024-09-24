@@ -87,11 +87,9 @@
 //! ```
 
 use std::{
-    collections::BTreeMap,
-    future::Future,
     io,
     net::SocketAddr,
-    sync::{Arc, RwLock, Weak},
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -101,18 +99,13 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::{
     internal::{
         auth::InnerAuth,
-        messages::{
-            DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE,
-            UDP_BUFFER_SIZE,
-        },
+        messages::{DeserializedMessage, PUBLIC_KEY_SIZE, UDP_BUFFER_SIZE},
         node::{NodeInternal, NodeState, NodeType, PartnerMessaging},
-        rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
-        utils::{DurationMonitor, RttCalculator},
+        rt::{try_lock, AsyncRwLock, TaskHandle, TaskRunner, UdpSocket},
         MessageChannel,
     },
     packets::{ClientTickEndPacket, Packet, PacketRegistry, SerializedPacket},
-    LimitedMessage, MessagingProperties, ReadHandlerProperties, SentMessagePart,
-    MESSAGE_CHANNEL_SIZE,
+    LimitedMessage, MessagingProperties, ReadHandlerProperties, MESSAGE_CHANNEL_SIZE,
 };
 
 #[cfg(feature = "store_unexpected")]

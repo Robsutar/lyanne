@@ -106,11 +106,9 @@
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fmt,
-    future::Future,
-    io,
+    fmt, io,
     net::{IpAddr, SocketAddr},
-    sync::{Arc, RwLock, Weak},
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -120,19 +118,16 @@ use dashmap::{DashMap, DashSet};
 
 use crate::{
     internal::{
-        messages::{
-            DeserializedMessage, MessageId, MessagePartId, MessagePartMap, UDP_BUFFER_SIZE,
-        },
+        messages::{DeserializedMessage, MessagePartMap, UDP_BUFFER_SIZE},
         node::{NodeInternal, NodeState, NodeType, PartnerMessaging},
-        rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        rt::{try_lock, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
     },
     packets::{
         Packet, PacketRegistry, SerializedPacket, SerializedPacketList, ServerTickEndPacket,
     },
-    LimitedMessage, MessagingProperties, ReadHandlerProperties, SentMessagePart,
-    MESSAGE_CHANNEL_SIZE,
+    LimitedMessage, MessagingProperties, ReadHandlerProperties, MESSAGE_CHANNEL_SIZE,
 };
 
 #[cfg(feature = "store_unexpected")]
