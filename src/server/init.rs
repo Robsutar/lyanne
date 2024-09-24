@@ -224,7 +224,7 @@ pub mod client {
     pub fn push_completed_message_tick(
         node: &NodeInternal<ServerNode>, 
         client: &ConnectedClient,
-        messaging: &mut ConnectedClientMessaging,
+        messaging: &mut PartnerMessaging,
         shared_socket_bytes_send_sender: &async_channel::Sender<Arc<Vec<u8>>>,
         message_id: MessageId, 
         serialized_packet_list: SerializedPacketList) {

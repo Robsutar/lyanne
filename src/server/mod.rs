@@ -123,7 +123,7 @@ use crate::{
         messages::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, UDP_BUFFER_SIZE,
         },
-        node::{NodeInternal, NodeState, NodeType},
+        node::{NodeInternal, NodeState, NodeType, PartnerMessaging},
         rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
@@ -453,30 +453,6 @@ pub struct ServerTickResult {
     pub unexpected_errors: Vec<UnexpectedError>,
 }
 
-/// Messaging fields of [`ConnectedClient`].
-struct ConnectedClientMessaging {
-    /// Map of message parts pending confirmation.
-    /// The tuple is the sent instant, and the map of the message parts of the message.
-    pending_confirmation: BTreeMap<MessageId, (Instant, BTreeMap<MessagePartId, SentMessagePart>)>,
-
-    /// Map of incoming messages parts.
-    incoming_messages: MessagePartMap,
-    /// The length of bytes received in the current tick.
-    tick_bytes_len: usize,
-
-    /// The instant when the last message was received.
-    last_received_message_instant: Instant,
-    /// The deserialized messages that have been received and have not been read yet.
-    received_messages: Vec<DeserializedMessage>,
-
-    /// Calculator for packet loss round-trip time.
-    packet_loss_rtt_calculator: RttCalculator,
-    /// The average round-trip time for packet loss.
-    average_packet_loss_rtt: Duration,
-    /// Monitor for latency duration.
-    latency_monitor: DurationMonitor,
-}
-
 /// Properties of a client that is connected to the server.
 pub struct ConnectedClient {
     /// Sender for receiving bytes.
@@ -494,12 +470,12 @@ pub struct ConnectedClient {
     inner_auth: InnerAuth,
 
     /// Messaging-related properties wrapped in an [`Mutex`].
-    messaging: Mutex<ConnectedClientMessaging>,
+    messaging: Mutex<PartnerMessaging>,
     /// The last instant when a messaging write operation occurred.
     last_messaging_write: RwLock<Instant>,
     /// The average latency duration.
     average_latency: RwLock<Duration>,
-    /// The byte size of [`ConnectedClientMessaging::incoming_messages`]
+    /// The byte size of [`PartnerMessaging::incoming_messages`]
     incoming_messages_total_size: RwLock<usize>,
 }
 
@@ -1199,7 +1175,7 @@ impl Server {
             let initial_next_message_part_id =
                 internal.messaging_properties.initial_next_message_part_id + 1;
 
-            let messaging = ConnectedClientMessaging {
+            let messaging = PartnerMessaging {
                 pending_confirmation: BTreeMap::new(),
                 incoming_messages: MessagePartMap::new(initial_next_message_part_id),
                 tick_bytes_len: 0,
