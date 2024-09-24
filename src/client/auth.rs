@@ -582,6 +582,7 @@ pub(super) mod connecting {
                     #[cfg(feature = "store_unexpected")]
                     if _read_result.is_unexpected() {
                         let _ = internal
+                            .node_type
                             .store_unexpected_errors
                             .error_sender
                             .send(UnexpectedError::OfReadServerBytes(_read_result))

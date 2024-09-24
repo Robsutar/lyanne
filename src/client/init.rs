@@ -319,10 +319,10 @@ pub mod client {
     #[cfg(feature = "store_unexpected")]
     pub async fn store_unexpected_error_list_pick(client: &NodeInternal<ClientNode>) -> Vec<UnexpectedError> {
         let mut list = Vec::<UnexpectedError>::new();
-        while let Ok(mut error_list) = client.store_unexpected_errors.error_list_receiver.try_recv() {
+        while let Ok(mut error_list) = client.node_type.store_unexpected_errors.error_list_receiver.try_recv() {
             list.append(&mut error_list);
         }
-        while let Ok(error) = client.store_unexpected_errors.error_receiver.try_recv() {
+        while let Ok(error) = client.node_type.store_unexpected_errors.error_receiver.try_recv() {
             list.push(error);
         }
 
@@ -336,7 +336,7 @@ pub mod client {
     ) {
         'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
             if let Some(client) = NodeInternal::try_upgrade(&client) {                
-                let _ = client.store_unexpected_errors.error_list_sender.send(store_unexpected_error_list_pick(&client).await).await;
+                let _ = client.node_type.store_unexpected_errors.error_list_sender.send(store_unexpected_error_list_pick(&client).await).await;
             } else {
                 break 'l1;
             }
@@ -380,7 +380,7 @@ pub mod client {
 
                                     #[cfg(feature = "store_unexpected")]
                                     if _read_result.is_unexpected() {
-                                        let _ = node.store_unexpected_errors.error_sender.send(UnexpectedError::OfReadServerBytes(_read_result)).await;
+                                        let _ = node.node_type.store_unexpected_errors.error_sender.send(UnexpectedError::OfReadServerBytes(_read_result)).await;
                                     }
                                 }
                                 Err(_) => {

@@ -115,6 +115,9 @@ use crate::{
     MESSAGE_CHANNEL_SIZE,
 };
 
+#[cfg(feature = "store_unexpected")]
+use crate::internal::node::StoreUnexpectedErrors;
+
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use crate::internal::auth::InnerAuthTcpBased;
 
@@ -199,36 +202,6 @@ pub enum UnexpectedError {
     OfReadServerBytes(ReadServerBytesResult),
 }
 
-#[cfg(feature = "store_unexpected")]
-struct StoreUnexpectedErrors {
-    error_sender: async_channel::Sender<UnexpectedError>,
-    error_receiver: async_channel::Receiver<UnexpectedError>,
-    error_list_sender: async_channel::Sender<Vec<UnexpectedError>>,
-    error_list_receiver: async_channel::Receiver<Vec<UnexpectedError>>,
-
-    create_list_signal_sender: async_channel::Sender<()>,
-}
-
-#[cfg(feature = "store_unexpected")]
-impl StoreUnexpectedErrors {
-    pub fn new() -> (StoreUnexpectedErrors, async_channel::Receiver<()>) {
-        let (error_sender, error_receiver) = async_channel::unbounded();
-        let (error_list_sender, error_list_receiver) = async_channel::unbounded();
-        let (create_list_signal_sender, create_list_signal_receiver) = async_channel::unbounded();
-
-        (
-            StoreUnexpectedErrors {
-                error_sender,
-                error_receiver,
-                error_list_sender,
-                error_list_receiver,
-                create_list_signal_sender,
-            },
-            create_list_signal_receiver,
-        )
-    }
-}
-
 /// Message received from the server what represents a server tick.
 #[derive(Debug)]
 pub struct ReceivedMessageClientTickResult {
@@ -290,7 +263,7 @@ struct ClientNode {
     reason_to_disconnect_receiver: async_channel::Receiver<ServerDisconnectReason>,
 
     #[cfg(feature = "store_unexpected")]
-    store_unexpected_errors: StoreUnexpectedErrors,
+    store_unexpected_errors: StoreUnexpectedErrors<UnexpectedError>,
 
     authentication_mode: ConnectedAuthenticatorMode,
 
@@ -572,7 +545,7 @@ impl Client {
                 messaging.tick_bytes_len = 0;
 
                 #[cfg(feature = "store_unexpected")]
-                let unexpected_errors = match internal
+                let unexpected_errors = match node_type
                     .store_unexpected_errors
                     .error_list_receiver
                     .try_recv()
@@ -582,7 +555,7 @@ impl Client {
                 };
 
                 #[cfg(feature = "store_unexpected")]
-                internal
+                node_type
                     .store_unexpected_errors
                     .create_list_signal_sender
                     .try_send(())
