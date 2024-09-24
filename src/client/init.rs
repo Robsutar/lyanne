@@ -179,7 +179,7 @@ pub mod server {
     }
 
     pub async fn create_packets_to_send_handler(
-        client: Weak<NodeInternal<ClientNode>>,
+        node: Weak<NodeInternal<ClientNode>>,
         server: Weak<ConnectedServer>,
         packets_to_send_receiver: async_channel::Receiver<Option<SerializedPacket>>,
         mut next_message_id: MessagePartId,
@@ -190,14 +190,14 @@ pub mod server {
             if let Some(serialized_packet) = serialized_packet {
                 packets_to_send.push(serialized_packet);
             } else {
-                if let Some(client) = NodeInternal::try_upgrade(&client) {
+                if let Some(node) = NodeInternal::try_upgrade(&node) {
                     if let Some(server) = server.upgrade() {
                         let mut messaging = server.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
 
                         let bytes = SerializedPacketList::try_non_empty(packets_to_send).unwrap().bytes;
                         let message_parts = MessagePart::create_list(
-                            &client.messaging_properties,
+                            &node.messaging_properties,
                             next_message_id,
                             bytes,
                         )
@@ -236,14 +236,14 @@ pub mod server {
     }
 
     pub async fn create_message_part_confirmation_handler(
-        client: Weak<NodeInternal<ClientNode>>,
+        node: Weak<NodeInternal<ClientNode>>,
         message_part_confirmation_receiver: async_channel::Receiver<(
             MessageId,
             Option<MessagePartId>,
         )>,
     ) {
         'l1: while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
-            if let Some(client) = NodeInternal::try_upgrade(&client) {
+            if let Some(node) = NodeInternal::try_upgrade(&node) {
                 let message_id_bytes = message_id.to_be_bytes();
 
                 let bytes = {
@@ -264,8 +264,8 @@ pub mod server {
                         ]
                     }
                 };
-                if let Err(e) = client.node_type.socket.send(&bytes).await {
-                    let _ = client.node_type
+                if let Err(e) = node.node_type.socket.send(&bytes).await {
+                    let _ = node.node_type
                         .reason_to_disconnect_sender
                         .try_send(ServerDisconnectReason::ByteSendError(e));
                     break 'l1;
@@ -277,13 +277,13 @@ pub mod server {
     }
 
     pub async fn create_shared_socket_bytes_send_handler(
-        client: Weak<NodeInternal<ClientNode>>,
+        node: Weak<NodeInternal<ClientNode>>,
         shared_socket_bytes_send_receiver: async_channel::Receiver<Arc<Vec<u8>>>,
     ) {
         'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
-            if let Some(client) = NodeInternal::try_upgrade(&client) {
-                if let Err(e) = client.node_type.socket.send(&bytes).await {
-                    let _ = client.node_type
+            if let Some(node) = NodeInternal::try_upgrade(&node) {
+                if let Err(e) = node.node_type.socket.send(&bytes).await {
+                    let _ = node.node_type
                         .reason_to_disconnect_sender
                         .try_send(ServerDisconnectReason::ByteSendError(e));
                     break 'l1;
@@ -317,12 +317,12 @@ pub mod client {
     }
 
     #[cfg(feature = "store_unexpected")]
-    pub async fn store_unexpected_error_list_pick(client: &NodeInternal<ClientNode>) -> Vec<UnexpectedError> {
+    pub async fn store_unexpected_error_list_pick(node: &NodeInternal<ClientNode>) -> Vec<UnexpectedError> {
         let mut list = Vec::<UnexpectedError>::new();
-        while let Ok(mut error_list) = client.node_type.store_unexpected_errors.error_list_receiver.try_recv() {
+        while let Ok(mut error_list) = node.node_type.store_unexpected_errors.error_list_receiver.try_recv() {
             list.append(&mut error_list);
         }
-        while let Ok(error) = client.node_type.store_unexpected_errors.error_receiver.try_recv() {
+        while let Ok(error) = node.node_type.store_unexpected_errors.error_receiver.try_recv() {
             list.push(error);
         }
 
@@ -331,12 +331,12 @@ pub mod client {
 
     #[cfg(feature = "store_unexpected")]
     pub async fn create_store_unexpected_error_list_handler(
-        client: Weak<NodeInternal<ClientNode>>,
+        node: Weak<NodeInternal<ClientNode>>,
         create_list_signal_receiver: async_channel::Receiver<()>,
     ) {
         'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
-            if let Some(client) = NodeInternal::try_upgrade(&client) {                
-                let _ = client.node_type.store_unexpected_errors.error_list_sender.send(store_unexpected_error_list_pick(&client).await).await;
+            if let Some(node) = NodeInternal::try_upgrade(&node) {                
+                let _ = node.node_type.store_unexpected_errors.error_list_sender.send(store_unexpected_error_list_pick(&node).await).await;
             } else {
                 break 'l1;
             }
