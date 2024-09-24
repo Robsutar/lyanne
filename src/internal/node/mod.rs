@@ -75,15 +75,6 @@ impl StoreUnexpectedErrors {
     }
 }
 
-struct ClientNode {}
-
-struct ServerNode {}
-
-enum NodeType {
-    Client(ClientNode),
-    Server(ServerNode),
-}
-
 struct NodeInactiveState<T> {
     received_bytes_sender: async_channel::Sender<T>,
 }
@@ -114,6 +105,19 @@ impl<T> NodeState<T> {
             received_bytes_sender,
         });
     }
+}
+
+struct ClientNode {
+    state: NodeState<Vec<u8>>,
+}
+
+struct ServerNode {
+    state: NodeState<(SocketAddr, Vec<u8>)>,
+}
+
+enum NodeType {
+    Client(ClientNode),
+    Server(ServerNode),
 }
 
 pub struct PartnerMessaging {
