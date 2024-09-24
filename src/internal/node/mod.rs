@@ -107,17 +107,33 @@ impl<T> NodeState<T> {
     }
 }
 
+trait NodeType {
+    type Skt;
+    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
+}
+
 struct ClientNode {
-    state: NodeState<Vec<u8>>,
+    state: AsyncRwLock<NodeState<Vec<u8>>>,
+}
+
+impl NodeType for ClientNode {
+    type Skt = (SocketAddr, Vec<u8>);
+
+    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
+        self.state
+    }
 }
 
 struct ServerNode {
-    state: NodeState<(SocketAddr, Vec<u8>)>,
+    state: AsyncRwLock<NodeState<(SocketAddr, Vec<u8>)>>,
 }
 
-enum NodeType {
-    Client(ClientNode),
-    Server(ServerNode),
+impl NodeType for ServerNode {
+    type Skt = Vec<u8>;
+
+    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
+        self.state
+    }
 }
 
 pub struct PartnerMessaging {
@@ -184,7 +200,7 @@ impl Partner {
 }
 
 /// Properties of the node.
-struct NodeInternal {
+struct NodeInternal<T: NodeType> {
     /// Sender for make the spawned tasks keep alive.
     tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
 
@@ -207,14 +223,13 @@ struct NodeInternal {
 
     task_runner: Arc<TaskRunner>,
 
-    node_type: NodeType,
+    node_type: T,
 }
 
-impl NodeInternal {
+impl<T: NodeType> NodeInternal<T> {
     fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
         if let Some(internal) = downgraded.upgrade() {
-            let sub = internal;
-            if NodeState::is_inactive(&sub.state) {
+            if NodeState::is_inactive(&internal.state) {
                 None
             } else {
                 Some(internal)
@@ -226,9 +241,9 @@ impl NodeInternal {
 
     async fn try_upgrade_or_get_inactive(
         downgraded: &Weak<Self>,
-    ) -> Option<Result<Arc<Self>, NodeInactiveState>> {
+    ) -> Option<Result<Arc<Self>, NodeInactiveState<T::Skt>>> {
         if let Some(internal) = downgraded.upgrade() {
-            let inactive_ref = match &*internal.state.read().await {
+            let inactive_ref = match &*internal.node_type.state().read().await {
                 NodeState::Active => None,
                 NodeState::Inactive(server_inactive_state) => Some(NodeInactiveState {
                     received_bytes_sender: server_inactive_state.received_bytes_sender.clone(),
