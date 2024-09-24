@@ -123,6 +123,7 @@ use crate::{
         messages::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, UDP_BUFFER_SIZE,
         },
+        node::{NodeInternal, NodeState, NodeType},
         rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
@@ -367,36 +368,6 @@ pub enum UnexpectedError {
     OfTcpBasedHandlerAcceptIoError(SocketAddr, io::Error),
 }
 
-#[cfg(feature = "store_unexpected")]
-struct StoreUnexpectedErrors {
-    error_sender: async_channel::Sender<UnexpectedError>,
-    error_receiver: async_channel::Receiver<UnexpectedError>,
-    error_list_sender: async_channel::Sender<Vec<UnexpectedError>>,
-    error_list_receiver: async_channel::Receiver<Vec<UnexpectedError>>,
-
-    create_list_signal_sender: async_channel::Sender<()>,
-}
-
-#[cfg(feature = "store_unexpected")]
-impl StoreUnexpectedErrors {
-    pub fn new() -> (StoreUnexpectedErrors, async_channel::Receiver<()>) {
-        let (error_sender, error_receiver) = async_channel::unbounded();
-        let (error_list_sender, error_list_receiver) = async_channel::unbounded();
-        let (create_list_signal_sender, create_list_signal_receiver) = async_channel::unbounded();
-
-        (
-            StoreUnexpectedErrors {
-                error_sender,
-                error_receiver,
-                error_list_sender,
-                error_list_receiver,
-                create_list_signal_sender,
-            },
-            create_list_signal_receiver,
-        )
-    }
-}
-
 /// The authentication entry of some not connected client.
 ///
 /// Used to accept/refuse/ignore the authentication.
@@ -482,41 +453,6 @@ pub struct ServerTickResult {
     pub unexpected_errors: Vec<UnexpectedError>,
 }
 
-struct ServerInactiveState {
-    received_bytes_sender: async_channel::Sender<(SocketAddr, Vec<u8>)>,
-}
-
-enum ServerState {
-    Active,
-    Inactive(ServerInactiveState),
-}
-
-impl ServerState {
-    /// Returns
-    /// `true` if the lock of `state` could not be acquired
-    /// `true` if the state read value is [`ServerState::Inactive`]
-    fn is_inactive(state: &AsyncRwLock<ServerState>) -> bool {
-        let state = match try_read(state) {
-            Some(state) => state,
-            None => return true,
-        };
-        match *state {
-            ServerState::Active => false,
-            ServerState::Inactive(_) => true,
-        }
-    }
-
-    async fn set_inactive(
-        state: &AsyncRwLock<ServerState>,
-        received_bytes_sender: async_channel::Sender<(SocketAddr, Vec<u8>)>,
-    ) {
-        let mut state = state.write().await;
-        *state = ServerState::Inactive(ServerInactiveState {
-            received_bytes_sender,
-        });
-    }
-}
-
 /// Messaging fields of [`ConnectedClient`].
 struct ConnectedClientMessaging {
     /// Map of message parts pending confirmation.
@@ -581,10 +517,7 @@ impl ConnectedClient {
     }
 }
 
-/// Properties of the server.
-struct ServerInternal {
-    /// Sender for make the spawned tasks keep alive.
-    tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
+struct ServerNode {
     /// Sender for addresses to be authenticated.
     clients_to_auth_sender: async_channel::Sender<(SocketAddr, (AddrToAuth, DeserializedMessage))>,
     /// Sender for addresses to be disconnected.
@@ -610,24 +543,15 @@ struct ServerInternal {
 
     #[cfg(feature = "store_unexpected")]
     /// List of errors emitted in the tick.
-    store_unexpected_errors: StoreUnexpectedErrors,
+    pub store_unexpected_errors: StoreUnexpectedErrors,
 
     authenticator_mode: AuthenticatorModeInternal,
-
-    /// Task handle of the receiver.
-    tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
 
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
     /// Actual state of server periodic tick flow.
     tick_state: RwLock<ServerTickState>,
 
-    /// The registry for packets.
-    packet_registry: Arc<PacketRegistry>,
-    /// Properties related to messaging.
-    messaging_properties: Arc<MessagingProperties>,
-    /// Properties related to read handlers.
-    read_handler_properties: Arc<ReadHandlerProperties>,
     /// Properties for the internal server management.
     server_properties: Arc<ServerProperties>,
 
@@ -649,12 +573,18 @@ struct ServerInternal {
     /// Set of addresses asking for the rejection confirm.
     rejections_to_confirm: DashSet<SocketAddr>,
 
-    task_runner: Arc<TaskRunner>,
-
-    state: AsyncRwLock<ServerState>,
+    state: AsyncRwLock<NodeState<(SocketAddr, Vec<u8>)>>,
 }
 
-impl ServerInternal {
+impl NodeType for ServerNode {
+    type Skt = (SocketAddr, Vec<u8>);
+
+    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
+        &self.state
+    }
+}
+
+impl ServerNode {
     fn ignore_ip(&self, ip: IpAddr) {
         self.temporary_ignored_ips.remove(&ip);
         self.ignored_ips.insert(ip);
@@ -670,53 +600,12 @@ impl ServerInternal {
         self.temporary_ignored_ips.remove(ip);
     }
 
-    fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
-        if let Some(internal) = downgraded.upgrade() {
-            if ServerState::is_inactive(&internal.state) {
-                None
-            } else {
-                Some(internal)
-            }
-        } else {
-            None
-        }
-    }
-
-    async fn try_upgrade_or_get_inactive(
-        downgraded: &Weak<Self>,
-    ) -> Option<Result<Arc<Self>, ServerInactiveState>> {
-        if let Some(internal) = downgraded.upgrade() {
-            let inactive_ref = match &*internal.state.read().await {
-                ServerState::Active => None,
-                ServerState::Inactive(server_inactive_state) => Some(ServerInactiveState {
-                    received_bytes_sender: server_inactive_state.received_bytes_sender.clone(),
-                }),
-            };
-
-            match inactive_ref {
-                Some(server_inactive_state) => Some(Err(server_inactive_state)),
-                None => Some(Ok(internal)),
-            }
-        } else {
-            None
-        }
-    }
-
-    fn create_async_task<F>(self: &Arc<Self>, future: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        let _ = self
-            .tasks_keeper_sender
-            .try_send(self.task_runner.spawn(future));
-    }
-
-    fn try_check_read_handler(self: &Arc<Self>) {
-        if let Ok(mut active_count) = self.read_handler_properties.active_count.try_write() {
-            if *active_count < self.read_handler_properties.target_surplus_size - 1 {
+    fn try_check_read_handler(node: &Arc<NodeInternal<Self>>) {
+        if let Ok(mut active_count) = node.read_handler_properties.active_count.try_write() {
+            if *active_count < node.read_handler_properties.target_surplus_size - 1 {
                 *active_count += 1;
-                let downgraded_server = Arc::downgrade(&self);
-                self.create_async_task(init::server::create_read_handler(downgraded_server));
+                let downgraded_server = Arc::downgrade(&node);
+                node.create_async_task(init::server::create_read_handler(downgraded_server));
             }
         }
     }
@@ -746,18 +635,19 @@ impl ServerInternal {
     }
 
     async fn read_next_bytes(
-        self: &Arc<Self>,
+        node: &NodeInternal<ServerNode>,
         tuple: (SocketAddr, Vec<u8>),
     ) -> ReadClientBytesResult {
+        let node_type = &node.node_type;
         let (addr, bytes) = tuple;
 
         if bytes.len() < MESSAGE_CHANNEL_SIZE {
             return ReadClientBytesResult::InsufficientBytesLen;
         }
 
-        if self.pending_rejection_confirm.contains_key(&addr) {
+        if node_type.pending_rejection_confirm.contains_key(&addr) {
             if bytes[0] == MessageChannel::REJECTION_CONFIRM {
-                self.pending_rejection_confirm.remove(&addr);
+                node_type.pending_rejection_confirm.remove(&addr);
                 return ReadClientBytesResult::DoneDisconnectConfirm;
             } else {
                 return ReadClientBytesResult::PendingDisconnectConfirm;
@@ -765,23 +655,23 @@ impl ServerInternal {
         }
 
         if bytes[0] == MessageChannel::REJECTION_JUSTIFICATION {
-            if self.recently_disconnected.contains_key(&addr) {
-                self.rejections_to_confirm.insert(addr);
+            if node_type.recently_disconnected.contains_key(&addr) {
+                node_type.rejections_to_confirm.insert(addr);
                 return ReadClientBytesResult::RecentClientDisconnectConfirm;
             }
         }
 
-        match &self.authenticator_mode {
+        match &node_type.authenticator_mode {
             AuthenticatorModeInternal::NoCryptography(auth_mode) => {
-                NoCryptographyAuth::read_next_bytes(&self, addr, bytes, auth_mode).await
+                NoCryptographyAuth::read_next_bytes(&node, addr, bytes, auth_mode).await
             }
             #[cfg(feature = "auth_tcp")]
             AuthenticatorModeInternal::RequireTcp(auth_mode) => {
-                auth_mode.read_next_bytes(&self, addr, bytes).await
+                auth_mode.read_next_bytes(&node, addr, bytes).await
             }
             #[cfg(feature = "auth_tls")]
             AuthenticatorModeInternal::RequireTls(auth_mode) => {
-                auth_mode.read_next_bytes(&self, addr, bytes).await
+                auth_mode.read_next_bytes(&node, addr, bytes).await
             }
         }
     }
@@ -792,7 +682,7 @@ impl ServerInternal {
 /// # Info
 /// **See more information about the server creation and management in [`server`](crate::server) module.**
 pub struct Server {
-    internal: Arc<ServerInternal>,
+    internal: Arc<NodeInternal<ServerNode>>,
 }
 
 impl Server {
@@ -851,43 +741,44 @@ impl Server {
 
             let mut authenticator_mode_build = authenticator_mode.build();
 
-            let server = Arc::new(ServerInternal {
+            let server = Arc::new(NodeInternal {
                 tasks_keeper_sender,
-                clients_to_auth_sender,
-                clients_to_disconnect_sender,
-
-                rejections_to_confirm_signal_sender,
-                pending_rejection_confirm_resend_sender,
-
-                clients_to_auth_receiver,
-
-                clients_to_disconnect_receiver,
-
-                #[cfg(feature = "store_unexpected")]
-                store_unexpected_errors,
-
-                authenticator_mode: authenticator_mode_build.take_authenticator_mode_internal(),
                 tasks_keeper_handle,
-                socket,
-
-                tick_state: RwLock::new(ServerTickState::TickStartPending),
                 packet_registry,
                 messaging_properties,
                 read_handler_properties,
-
-                server_properties,
-                connected_clients: DashMap::new(),
-                ignored_ips: DashSet::new(),
-                temporary_ignored_ips: DashMap::new(),
-
-                assigned_addrs_in_auth: RwLock::new(HashSet::new()),
-                recently_disconnected: DashMap::new(),
-                pending_rejection_confirm: DashMap::new(),
-                rejections_to_confirm: DashSet::new(),
-
                 task_runner,
+                node_type: ServerNode {
+                    clients_to_auth_sender,
+                    clients_to_disconnect_sender,
 
-                state: AsyncRwLock::new(ServerState::Active),
+                    rejections_to_confirm_signal_sender,
+                    pending_rejection_confirm_resend_sender,
+
+                    clients_to_auth_receiver,
+
+                    clients_to_disconnect_receiver,
+
+                    #[cfg(feature = "store_unexpected")]
+                    store_unexpected_errors,
+
+                    authenticator_mode: authenticator_mode_build.take_authenticator_mode_internal(),
+                    socket,
+
+                    tick_state: RwLock::new(ServerTickState::TickStartPending),
+
+                    server_properties,
+                    connected_clients: DashMap::new(),
+                    ignored_ips: DashSet::new(),
+                    temporary_ignored_ips: DashMap::new(),
+
+                    assigned_addrs_in_auth: RwLock::new(HashSet::new()),
+                    recently_disconnected: DashMap::new(),
+                    pending_rejection_confirm: DashMap::new(),
+                    rejections_to_confirm: DashSet::new(),
+
+                    state: AsyncRwLock::new(NodeState::Active),
+                },
             });
 
             if let Err(e) = authenticator_mode_build.apply(&server).await {
@@ -949,7 +840,7 @@ impl Server {
 
     /// Server Properties getter.
     pub fn server_properties(&self) -> &ServerProperties {
-        &self.internal.server_properties
+        &self.internal.node_type.server_properties
     }
 
     /// Server periodic tick start.
@@ -971,8 +862,9 @@ impl Server {
     /// - ...
     pub fn try_tick_start(&self) -> Result<ServerTickResult, ()> {
         let internal = &self.internal;
+        let node_type = &internal.node_type;
         {
-            let mut tick_state = internal.tick_state.write().unwrap();
+            let mut tick_state = node_type.tick_state.write().unwrap();
             if *tick_state != ServerTickState::TickStartPending {
                 return Err(());
             } else {
@@ -982,10 +874,10 @@ impl Server {
 
         let now = Instant::now();
 
-        let mut assigned_addrs_in_auth = internal.assigned_addrs_in_auth.write().unwrap();
+        let mut assigned_addrs_in_auth = node_type.assigned_addrs_in_auth.write().unwrap();
         let dispatched_assigned_addrs_in_auth = std::mem::take(&mut *assigned_addrs_in_auth);
 
-        match &internal.authenticator_mode {
+        match &node_type.authenticator_mode {
             AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                 auth_mode.tick_start(internal, now, dispatched_assigned_addrs_in_auth);
             }
@@ -1009,15 +901,15 @@ impl Server {
             Err(_) => Vec::new(),
         };
 
-        internal.recently_disconnected.retain(|_, received_time| {
+        node_type.recently_disconnected.retain(|_, received_time| {
             now - *received_time < internal.messaging_properties.timeout_interpretation
         });
 
-        internal.temporary_ignored_ips.retain(|addr, until_to| {
+        node_type.temporary_ignored_ips.retain(|addr, until_to| {
             if now < *until_to {
                 true
             } else {
-                internal.ignored_ips.remove(addr);
+                node_type.ignored_ips.remove(addr);
                 false
             }
         });
@@ -1031,18 +923,19 @@ impl Server {
             (ClientDisconnectReason, Option<JustifiedRejectionContext>),
         > = HashMap::new();
 
-        while let Ok((addr, (addr_to_auth, message))) = internal.clients_to_auth_receiver.try_recv()
+        while let Ok((addr, (addr_to_auth, message))) =
+            node_type.clients_to_auth_receiver.try_recv()
         {
             to_auth.insert(AuthEntry { addr, addr_to_auth }, message);
         }
 
-        while let Ok((addr, reason)) = internal.clients_to_disconnect_receiver.try_recv() {
+        while let Ok((addr, reason)) = node_type.clients_to_disconnect_receiver.try_recv() {
             if !addrs_to_disconnect.contains_key(&addr) {
                 addrs_to_disconnect.insert(addr, reason);
             }
         }
 
-        'l1: for client in internal.connected_clients.iter() {
+        'l1: for client in node_type.connected_clients.iter() {
             if addrs_to_disconnect.contains_key(client.key()) {
                 continue 'l1;
             }
@@ -1106,7 +999,7 @@ impl Server {
             }
         }
 
-        internal
+        node_type
             .pending_rejection_confirm
             .retain(|_, (context, _)| {
                 now - context.rejection_instant
@@ -1114,7 +1007,7 @@ impl Server {
                         .messaging_properties
                         .disconnect_reason_resend_cancel
             });
-        for tuple in internal.pending_rejection_confirm.iter() {
+        for tuple in node_type.pending_rejection_confirm.iter() {
             let (_, last_sent_time) = tuple.value();
             if let Some(last_sent_time) = last_sent_time {
                 if now - *last_sent_time
@@ -1123,16 +1016,16 @@ impl Server {
                     continue;
                 }
             }
-            internal
+            node_type
                 .pending_rejection_confirm_resend_sender
                 .try_send(tuple.key().clone())
                 .unwrap();
         }
 
         for (addr, (reason, context)) in addrs_to_disconnect {
-            internal.connected_clients.remove(&addr).unwrap();
+            node_type.connected_clients.remove(&addr).unwrap();
             if let Some(context) = context {
-                internal
+                node_type
                     .pending_rejection_confirm
                     .insert(addr, (context, None));
             }
@@ -1143,7 +1036,7 @@ impl Server {
             assigned_addrs_in_auth.insert(*auth_entry.addr());
         }
 
-        match &internal.authenticator_mode {
+        match &node_type.authenticator_mode {
             AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                 auth_mode.call_tick_start_signal();
             }
@@ -1164,12 +1057,12 @@ impl Server {
             .try_send(())
             .unwrap();
 
-        internal
+        node_type
             .rejections_to_confirm_signal_sender
             .try_send(())
             .unwrap();
 
-        internal.try_check_read_handler();
+        ServerNode::try_check_read_handler(internal);
 
         Ok(ServerTickResult {
             received_messages,
@@ -1213,8 +1106,9 @@ impl Server {
     /// If is not called after [`Server::try_tick_start`]
     pub fn try_tick_end(&self) -> Result<(), ()> {
         let internal = &self.internal;
+        let node_type = &internal.node_type;
         {
-            let mut tick_state = internal.tick_state.write().unwrap();
+            let mut tick_state = node_type.tick_state.write().unwrap();
             if *tick_state != ServerTickState::TickEndPending {
                 return Err(());
             } else {
@@ -1227,7 +1121,7 @@ impl Server {
             .try_serialize(&ServerTickEndPacket)
             .unwrap();
 
-        for client in internal.connected_clients.iter() {
+        for client in node_type.connected_clients.iter() {
             self.send_packet_serialized(&client, tick_packet_serialized.clone());
             client.packets_to_send_sender.try_send(None).unwrap();
         }
@@ -1265,11 +1159,12 @@ impl Server {
         initial_message: SerializedPacketList,
     ) -> Result<(), BadAuthenticateUsageError> {
         let internal = &self.internal;
+        let node_type = &internal.node_type;
         let addr = auth_entry.addr;
         let addr_to_auth = auth_entry.addr_to_auth;
-        if internal.connected_clients.contains_key(&addr) {
+        if node_type.connected_clients.contains_key(&addr) {
             Err(BadAuthenticateUsageError::AlreadyConnected)
-        } else if !internal
+        } else if !node_type
             .assigned_addrs_in_auth
             .write()
             .unwrap()
@@ -1277,7 +1172,7 @@ impl Server {
         {
             Err(BadAuthenticateUsageError::NotMarkedToAuthenticate)
         } else {
-            match &internal.authenticator_mode {
+            match &node_type.authenticator_mode {
                 AuthenticatorModeInternal::NoCryptography(auth_mode) => {
                     auth_mode.remove_from_auth(&addr)
                 }
@@ -1387,7 +1282,7 @@ impl Server {
                 .await;
             });
 
-            internal.connected_clients.insert(addr, client);
+            node_type.connected_clients.insert(addr, client);
 
             Ok(())
         }
@@ -1430,11 +1325,12 @@ impl Server {
         message: LimitedMessage,
     ) -> Result<(), BadAuthenticateUsageError> {
         let internal = &self.internal;
+        let node_type = &internal.node_type;
         let addr = auth_entry.addr;
         let addr_to_auth = auth_entry.addr_to_auth;
-        if internal.connected_clients.contains_key(&addr) {
+        if node_type.connected_clients.contains_key(&addr) {
             Err(BadAuthenticateUsageError::AlreadyConnected)
-        } else if !internal
+        } else if !node_type
             .assigned_addrs_in_auth
             .write()
             .unwrap()
@@ -1442,7 +1338,7 @@ impl Server {
         {
             Err(BadAuthenticateUsageError::NotMarkedToAuthenticate)
         } else {
-            internal.pending_rejection_confirm.insert(
+            node_type.pending_rejection_confirm.insert(
                 addr,
                 (
                     addr_to_auth
@@ -1488,6 +1384,7 @@ impl Server {
     /// If is None, no message will be sent to the client. That message has limited size.
     pub fn disconnect_from(&self, client: &ConnectedClient, message: Option<LimitedMessage>) {
         let internal = &self.internal;
+        let node_type = &internal.node_type;
         let context = {
             if let Some(message) = message {
                 Some(client.inner_auth.rejection_of(Instant::now(), message))
@@ -1495,7 +1392,7 @@ impl Server {
                 None
             }
         };
-        internal
+        node_type
             .clients_to_disconnect_sender
             .try_send((
                 client.addr,
@@ -1510,8 +1407,8 @@ impl Server {
     ///
     /// If that client is temporary ignored, it will be permanently ignored.
     pub fn ignore_ip(&self, ip: IpAddr) {
-        let internal = &self.internal;
-        internal.ignore_ip(ip);
+        let node_type = &self.internal.node_type;
+        node_type.ignore_ip(ip);
     }
 
     /// The messages of this addr will be ignored, for the expected time, then,
@@ -1519,14 +1416,14 @@ impl Server {
     ///
     /// If that client is already ignored, the reason will be replaced.
     pub fn ignore_ip_temporary(&self, ip: IpAddr, until_to: Instant) {
-        let internal = &self.internal;
-        internal.ignore_ip_temporary(ip, until_to);
+        let node_type = &self.internal.node_type;
+        node_type.ignore_ip_temporary(ip, until_to);
     }
 
     /// Removes the specified addr from the ignored list, even if it is temporary ignored.
     pub fn remove_ignore_ip(&self, ip: &IpAddr) {
-        let internal = &self.internal;
-        internal.remove_ignore_ip(ip);
+        let node_type = &self.internal.node_type;
+        node_type.remove_ignore_ip(ip);
     }
 
     /// # Returns
@@ -1535,22 +1432,22 @@ impl Server {
         &self,
         addr: &SocketAddr,
     ) -> Option<DashRef<SocketAddr, Arc<ConnectedClient>>> {
-        let internal = &self.internal;
-        internal.connected_clients.get(addr)
+        let node_type = &self.internal.node_type;
+        node_type.connected_clients.get(addr)
     }
 
     /// # Returns
     /// The amount of connected clients in the server
     pub fn connected_clients_size(&self) -> usize {
-        let internal = &self.internal;
-        internal.connected_clients.len()
+        let node_type = &self.internal.node_type;
+        node_type.connected_clients.len()
     }
 
     /// # Returns
     /// Iterator with the clients connected to the server.
     pub fn connected_clients_iter(&self) -> DashIter<SocketAddr, Arc<ConnectedClient>> {
-        let internal = &self.internal;
-        internal.connected_clients.iter()
+        let node_type = &self.internal.node_type;
+        node_type.connected_clients.iter()
     }
 
     /// Serializes, then store the packet to be sent to the client after the next server tick.
@@ -1716,7 +1613,7 @@ impl Server {
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
             let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
-            ServerState::set_inactive(&self.internal.state, received_bytes_sender).await;
+            NodeState::set_inactive(&self.internal.node_type.state, received_bytes_sender).await;
 
             let tasks_keeper_handle = self
                 .internal
@@ -1758,7 +1655,7 @@ impl Server {
                     }
                 }
 
-                let socket = Arc::clone(&self.internal.socket);
+                let socket = Arc::clone(&self.internal.node_type.socket);
 
                 let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
 
@@ -1814,7 +1711,7 @@ impl Server {
                         if let Ok(result) = received_bytes_receiver.try_recv() {
                             Ok(result)
                         } else {
-                            ServerInternal::pre_read_next_bytes(&socket, min_try_read_time).await
+                            ServerNode::pre_read_next_bytes(&socket, min_try_read_time).await
                         }
                     };
 
@@ -1859,12 +1756,12 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        if !ServerState::is_inactive(&self.internal.state) {
+        if !NodeState::is_inactive(&self.internal.node_type.state) {
             let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
 
             let internal = Arc::clone(&self.internal);
             let _ = self.internal.create_async_task(async move {
-                ServerState::set_inactive(&internal.state, received_bytes_sender).await;
+                NodeState::set_inactive(&internal.node_type.state, received_bytes_sender).await;
             });
 
             drop(received_bytes_receiver);
