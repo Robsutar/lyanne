@@ -196,9 +196,6 @@ pub struct NodeInternal<T: NodeType> {
     /// List of errors emitted in the tick.
     pub store_unexpected_errors: StoreUnexpectedErrors,
 
-    /// The UDP socket used for communication.
-    pub socket: Arc<UdpSocket>,
-
     /// Task handle of the receiver.
     pub tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
 
