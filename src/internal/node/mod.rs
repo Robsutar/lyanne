@@ -107,13 +107,6 @@ impl<T> NodeState<T> {
     }
 }
 
-pub struct Node {
-    #[cfg(feature = "store_unexpected")]
-    store_unexpected_errors: StoreUnexpectedErrors,
-}
-
-impl Node {}
-
 pub struct PartnerMessaging {
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.
@@ -200,6 +193,8 @@ struct NodeInternal {
     read_handler_properties: Arc<ReadHandlerProperties>,
 
     task_runner: Arc<TaskRunner>,
+
+    node_type: NodeType,
 }
 
 impl NodeInternal {
