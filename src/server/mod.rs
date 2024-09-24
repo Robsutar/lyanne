@@ -123,7 +123,7 @@ use crate::{
         messages::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, UDP_BUFFER_SIZE,
         },
-        node::{NodeInternal, NodeState, NodeType, PartnerMessaging, StoreUnexpectedErrors},
+        node::{NodeInternal, NodeState, NodeType, PartnerMessaging},
         rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
@@ -134,6 +134,9 @@ use crate::{
     LimitedMessage, MessagingProperties, ReadHandlerProperties, SentMessagePart,
     MESSAGE_CHANNEL_SIZE,
 };
+
+#[cfg(feature = "store_unexpected")]
+use crate::internal::node::StoreUnexpectedErrors;
 
 pub use dashmap::{iter::Iter as DashIter, mapref::one::Ref as DashRef};
 
