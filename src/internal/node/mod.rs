@@ -30,18 +30,18 @@ use crate::{
 };
 
 #[cfg(feature = "store_unexpected")]
-struct StoreUnexpectedErrors<T: Debug> {
-    error_sender: async_channel::Sender<T>,
-    error_receiver: async_channel::Receiver<T>,
-    error_list_sender: async_channel::Sender<Vec<T>>,
-    error_list_receiver: async_channel::Receiver<Vec<T>>,
+pub struct StoreUnexpectedErrors<T: std::fmt::Debug> {
+    pub error_sender: async_channel::Sender<T>,
+    pub error_receiver: async_channel::Receiver<T>,
+    pub error_list_sender: async_channel::Sender<Vec<T>>,
+    pub error_list_receiver: async_channel::Receiver<Vec<T>>,
 
-    create_list_signal_sender: async_channel::Sender<()>,
+    pub create_list_signal_sender: async_channel::Sender<()>,
 }
 
 #[cfg(feature = "store_unexpected")]
-impl StoreUnexpectedErrors {
-    pub fn new() -> (StoreUnexpectedErrors, async_channel::Receiver<()>) {
+impl<T: std::fmt::Debug> StoreUnexpectedErrors<T> {
+    pub fn new() -> (StoreUnexpectedErrors<T>, async_channel::Receiver<()>) {
         let (error_sender, error_receiver) = async_channel::unbounded();
         let (error_list_sender, error_list_receiver) = async_channel::unbounded();
         let (create_list_signal_sender, create_list_signal_receiver) = async_channel::unbounded();
