@@ -141,6 +141,7 @@ use crate::internal::auth::InnerAuth;
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use crate::internal::auth::InnerAuthTcpBased;
 
+pub use crate::internal::node::Partner as ConnectedClient;
 pub use auth::*;
 
 mod auth;
@@ -451,46 +452,6 @@ pub struct ServerTickResult {
     /// Errors emitted since the last server tick.
     #[cfg(feature = "store_unexpected")]
     pub unexpected_errors: Vec<UnexpectedError>,
-}
-
-/// Properties of a client that is connected to the server.
-pub struct ConnectedClient {
-    /// Sender for receiving bytes.
-    receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
-    /// Sender for packets to be sent.
-    packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
-    /// Sender for message part confirmations.
-    message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
-    /// Sender for shared socket bytes.
-    shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
-
-    /// The socket address of the connected client.
-    addr: SocketAddr,
-    /// Authenticator bound to this client.
-    inner_auth: InnerAuth,
-
-    /// Messaging-related properties wrapped in an [`Mutex`].
-    messaging: Mutex<PartnerMessaging>,
-    /// The last instant when a messaging write operation occurred.
-    last_messaging_write: RwLock<Instant>,
-    /// The average latency duration.
-    average_latency: RwLock<Duration>,
-    /// The byte size of [`PartnerMessaging::incoming_messages`]
-    incoming_messages_total_size: RwLock<usize>,
-}
-
-impl ConnectedClient {
-    /// # Returns
-    /// The average time of messaging response of this client after a server message.
-    pub fn average_latency(&self) -> Duration {
-        *self.average_latency.read().unwrap()
-    }
-
-    /// # Returns
-    /// The total size of the stored incoming messages, that were not completed wet, or not read yet.
-    pub fn incoming_messages_total_size(&self) -> usize {
-        *self.incoming_messages_total_size.read().unwrap()
-    }
 }
 
 struct ServerNode {
