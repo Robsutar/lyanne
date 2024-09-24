@@ -105,7 +105,7 @@ use crate::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE,
             UDP_BUFFER_SIZE,
         },
-        node::PartnerMessaging,
+        node::{NodeInternal, NodeState, NodeType, PartnerMessaging},
         rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         MessageChannel,
@@ -282,45 +282,8 @@ pub enum ClientDisconnectState {
     AlreadyDisconnected(Option<ServerDisconnectReason>),
 }
 
-struct ClientInactiveState {
-    received_bytes_sender: async_channel::Sender<Vec<u8>>,
-}
-
-enum ClientState {
-    Active,
-    Inactive(ClientInactiveState),
-}
-
-impl ClientState {
-    /// Returns
-    /// `true` if the lock of `state` could not be acquired
-    /// `true` if the state read value is [`ClientState::Inactive`]
-    fn is_inactive(state: &AsyncRwLock<ClientState>) -> bool {
-        let state = match try_read(state) {
-            Some(state) => state,
-            None => return true,
-        };
-        match *state {
-            ClientState::Active => false,
-            ClientState::Inactive(_) => true,
-        }
-    }
-
-    async fn set_inactive(
-        state: &AsyncRwLock<ClientState>,
-        received_bytes_sender: async_channel::Sender<Vec<u8>>,
-    ) {
-        let mut state = state.write().await;
-        *state = ClientState::Inactive(ClientInactiveState {
-            received_bytes_sender,
-        });
-    }
-}
-
 /// Properties of the client.
-struct ClientInternal {
-    /// Sender for make the spawned tasks keep alive.
-    tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
+struct ClientNode {
     /// Sender for addresses to be disconnected.
     reason_to_disconnect_sender: async_channel::Sender<ServerDisconnectReason>,
     /// Receiver for addresses to be disconnected.
@@ -331,20 +294,11 @@ struct ClientInternal {
 
     authentication_mode: ConnectedAuthenticatorMode,
 
-    /// Task handle of the receiver.
-    tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
-
     /// The UDP socket used for communication.
     socket: Arc<UdpSocket>,
     /// Actual state of client periodic tick flow.
     tick_state: RwLock<ClientTickState>,
 
-    /// The registry for packets.
-    packet_registry: Arc<PacketRegistry>,
-    /// Properties related to messaging.
-    messaging_properties: Arc<MessagingProperties>,
-    /// Properties related to read handlers.
-    read_handler_properties: Arc<ReadHandlerProperties>,
     /// Properties for the internal client management.
     client_properties: Arc<ClientProperties>,
 
@@ -357,59 +311,16 @@ struct ClientInternal {
     /// If inner [`Option::Some`] equals to [`Option::None`], the disconnect reason was taken.
     disconnect_reason: RwLock<Option<Option<ServerDisconnectReason>>>,
 
-    task_runner: Arc<TaskRunner>,
-
-    state: AsyncRwLock<ClientState>,
+    state: AsyncRwLock<NodeState<Vec<u8>>>,
 }
 
-impl ClientInternal {
-    fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
-        if let Some(internal) = downgraded.upgrade() {
-            if ClientState::is_inactive(&internal.state) {
-                None
-            } else {
-                Some(internal)
-            }
-        } else {
-            None
-        }
-    }
-
-    async fn try_upgrade_or_get_inactive(
-        downgraded: &Weak<Self>,
-    ) -> Option<Result<Arc<Self>, ClientInactiveState>> {
-        if let Some(internal) = downgraded.upgrade() {
-            let inactive_ref = match &*internal.state.read().await {
-                ClientState::Active => None,
-                ClientState::Inactive(server_inactive_state) => Some(ClientInactiveState {
-                    received_bytes_sender: server_inactive_state.received_bytes_sender.clone(),
-                }),
-            };
-
-            match inactive_ref {
-                Some(server_inactive_state) => Some(Err(server_inactive_state)),
-                None => Some(Ok(internal)),
-            }
-        } else {
-            None
-        }
-    }
-
-    fn create_async_task<F>(self: &Arc<Self>, future: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        let _ = self
-            .tasks_keeper_sender
-            .try_send(self.task_runner.spawn(future));
-    }
-
-    fn try_check_read_handler(self: &Arc<Self>) {
-        if let Ok(mut active_count) = self.read_handler_properties.active_count.try_write() {
-            if *active_count < self.read_handler_properties.target_surplus_size - 1 {
+impl ClientNode {
+    fn try_check_read_handler(node: &Arc<NodeInternal<Self>>) {
+        if let Ok(mut active_count) = node.read_handler_properties.active_count.try_write() {
+            if *active_count < node.read_handler_properties.target_surplus_size - 1 {
                 *active_count += 1;
-                let downgraded_server = Arc::downgrade(&self);
-                self.create_async_task(async move {
+                let downgraded_server = Arc::downgrade(&node);
+                node.create_async_task(async move {
                     client::create_read_handler(downgraded_server).await;
                 });
             }
@@ -440,16 +351,28 @@ impl ClientInternal {
         }
     }
 
-    async fn read_next_bytes(self: &Arc<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
-        let mut messaging = self.connected_server.messaging.lock().await;
+    async fn read_next_bytes(node: &NodeInternal<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
+        let mut messaging = node.node_type.connected_server.messaging.lock().await;
         // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
         messaging.tick_bytes_len += bytes.len() + 8 + 40;
-        if messaging.tick_bytes_len > self.messaging_properties.max_tick_bytes_len {
+        if messaging.tick_bytes_len > node.messaging_properties.max_tick_bytes_len {
             ReadServerBytesResult::ServerMaxTickByteLenOverflow
         } else {
-            let _ = self.connected_server.receiving_bytes_sender.try_send(bytes);
+            let _ = node
+                .node_type
+                .connected_server
+                .receiving_bytes_sender
+                .try_send(bytes);
             ReadServerBytesResult::ServerReceivedBytes
         }
+    }
+}
+
+impl NodeType for ClientNode {
+    type Skt = Vec<u8>;
+
+    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
+        &self.state
     }
 }
 
@@ -458,7 +381,7 @@ impl ClientInternal {
 /// # Info
 /// **See more information about the client creation and management in [`client`](crate::client) module.**
 pub struct Client {
-    internal: Arc<ClientInternal>,
+    internal: Arc<NodeInternal<ClientNode>>,
 }
 
 impl Client {
@@ -565,17 +488,17 @@ impl Client {
 
     /// Client Properties getter.
     pub fn client_properties(&self) -> &ClientProperties {
-        &self.internal.client_properties
+        &self.internal.node_type.client_properties
     }
 
     /// Client Properties getter.
     pub fn connected_server(&self) -> &ConnectedServer {
-        &self.internal.connected_server
+        &self.internal.node_type.connected_server
     }
 
     /// Authentication mode of the client and server.
     pub fn auth_mode(&self) -> &ConnectedAuthenticatorMode {
-        &self.internal.authentication_mode
+        &self.internal.node_type.authentication_mode
     }
 
     /// Client periodic tick start.
@@ -590,8 +513,9 @@ impl Client {
     /// If [`Client::try_tick_after_message`] call is pending.
     pub fn try_tick_start(&self) -> Result<ClientTickResult, ()> {
         let internal = &self.internal;
+        let node_type = &internal.node_type;
         {
-            let tick_state = internal.tick_state.read().unwrap();
+            let tick_state = node_type.tick_state.read().unwrap();
             if *tick_state != ClientTickState::TickStartPending {
                 return Err(());
             }
@@ -601,14 +525,14 @@ impl Client {
             return Ok(ClientTickResult::Disconnected);
         }
 
-        if let Ok(reason) = internal.reason_to_disconnect_receiver.try_recv() {
-            *internal.disconnect_reason.write().unwrap() = Some(Some(reason));
+        if let Ok(reason) = node_type.reason_to_disconnect_receiver.try_recv() {
+            *node_type.disconnect_reason.write().unwrap() = Some(Some(reason));
             return Ok(ClientTickResult::Disconnected);
         }
 
         let now = Instant::now();
 
-        let server = &internal.connected_server;
+        let server = &node_type.connected_server;
         if let Some(mut messaging) = try_lock(&server.messaging) {
             *server.last_messaging_write.write().unwrap() = now;
             *server.average_latency.write().unwrap() = messaging.latency_monitor.average_value();
@@ -618,7 +542,7 @@ impl Client {
 
             for (sent_instant, pending_part_id_map) in messaging.pending_confirmation.values_mut() {
                 if now - *sent_instant > internal.messaging_properties.timeout_interpretation {
-                    *internal.disconnect_reason.write().unwrap() = Some(Some(
+                    *node_type.disconnect_reason.write().unwrap() = Some(Some(
                         ServerDisconnectReason::PendingMessageConfirmationTimeout,
                     ));
                     return Ok(ClientTickResult::Disconnected);
@@ -641,7 +565,7 @@ impl Client {
             if !messaging.received_messages.is_empty() {
                 let message = messaging.received_messages.remove(0);
                 {
-                    let mut tick_state = internal.tick_state.write().unwrap();
+                    let mut tick_state = node_type.tick_state.write().unwrap();
                     *tick_state = ClientTickState::TickAfterMessagePending;
                 }
 
@@ -664,7 +588,7 @@ impl Client {
                     .try_send(())
                     .unwrap();
 
-                internal.try_check_read_handler();
+                ClientNode::try_check_read_handler(internal);
 
                 return Ok(ClientTickResult::ReceivedMessage(
                     ReceivedMessageClientTickResult {
@@ -676,7 +600,7 @@ impl Client {
             } else if now - messaging.last_received_message_instant
                 >= internal.messaging_properties.timeout_interpretation
             {
-                *internal.disconnect_reason.write().unwrap() =
+                *node_type.disconnect_reason.write().unwrap() =
                     Some(Some(ServerDisconnectReason::MessageReceiveTimeout));
                 return Ok(ClientTickResult::Disconnected);
             } else {
@@ -685,7 +609,7 @@ impl Client {
         } else if now - *server.last_messaging_write.read().unwrap()
             >= internal.messaging_properties.timeout_interpretation
         {
-            *internal.disconnect_reason.write().unwrap() =
+            *node_type.disconnect_reason.write().unwrap() =
                 Some(Some(ServerDisconnectReason::WriteUnlockTimeout));
             return Ok(ClientTickResult::Disconnected);
         } else {
@@ -719,8 +643,9 @@ impl Client {
     /// If is not called after [`Client::try_tick_start`]
     pub fn try_tick_after_message(&self) -> Result<(), ()> {
         let internal = &self.internal;
+        let node_type = &internal.node_type;
         {
-            let mut tick_state = internal.tick_state.write().unwrap();
+            let mut tick_state = node_type.tick_state.write().unwrap();
             if *tick_state != ClientTickState::TickAfterMessagePending {
                 return Err(());
             } else {
@@ -733,7 +658,7 @@ impl Client {
             .try_serialize(&ClientTickEndPacket)
             .unwrap();
 
-        let connected_server = &internal.connected_server;
+        let connected_server = &node_type.connected_server;
         self.send_packet_serialized(tick_packet_serialized.clone());
         connected_server
             .packets_to_send_sender
@@ -794,7 +719,7 @@ impl Client {
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
             let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
-            ClientState::set_inactive(&self.internal.state, received_bytes_sender).await;
+            NodeState::set_inactive(&self.internal.node_type.state, received_bytes_sender).await;
 
             let tasks_keeper_handle = self
                 .internal
@@ -809,10 +734,11 @@ impl Client {
             }
 
             if let Some(disconnection) = disconnection {
-                let socket = Arc::clone(&self.internal.socket);
+                let socket = Arc::clone(&self.internal.node_type.socket);
                 let timeout_interpretation = disconnection.timeout;
                 let packet_loss_timeout = self
                     .internal
+                    .node_type
                     .connected_server
                     .messaging
                     .lock()
@@ -822,6 +748,7 @@ impl Client {
 
                 let rejection_context = self
                     .internal
+                    .node_type
                     .connected_server
                     .inner_auth
                     .rejection_of(Instant::now(), disconnection.message);
@@ -842,7 +769,7 @@ impl Client {
                         if let Ok(result) = received_bytes_receiver.try_recv() {
                             Ok(result)
                         } else {
-                            ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await
+                            ClientNode::pre_read_next_bytes(&socket, packet_loss_timeout).await
                         }
                     };
 
@@ -970,6 +897,7 @@ impl Client {
     pub fn send_packet_serialized(&self, packet_serialized: SerializedPacket) {
         let internal = &self.internal;
         internal
+            .node_type
             .connected_server
             .packets_to_send_sender
             .try_send(Some(packet_serialized))
@@ -980,7 +908,7 @@ impl Client {
     /// If the [`Client::try_tick_start`] returned [`ClientTickResult::Disconnected`] some time.
     pub fn is_disconnected(&self) -> bool {
         let internal = &self.internal;
-        let disconnect_reason = internal.disconnect_reason.read().unwrap();
+        let disconnect_reason = internal.node_type.disconnect_reason.read().unwrap();
         disconnect_reason.is_some()
     }
 
@@ -990,7 +918,7 @@ impl Client {
     /// - `Some` if the client was disconnected, and take the reason.
     pub fn take_disconnect_reason(&self) -> Option<ServerDisconnectReason> {
         let internal = &self.internal;
-        let mut disconnect_reason = internal.disconnect_reason.write().unwrap();
+        let mut disconnect_reason = internal.node_type.disconnect_reason.write().unwrap();
         if let Some(ref mut is_disconnected) = *disconnect_reason {
             if let Some(reason_was_not_taken) = is_disconnected.take() {
                 // Disconnected, and the reason will be taken.
@@ -1008,12 +936,12 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        if !ClientState::is_inactive(&self.internal.state) {
+        if !NodeState::is_inactive(&self.internal.node_type.state) {
             let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
 
             let internal = Arc::clone(&self.internal);
             let _ = self.internal.create_async_task(async move {
-                ClientState::set_inactive(&internal.state, received_bytes_sender).await;
+                NodeState::set_inactive(&internal.node_type.state, received_bytes_sender).await;
             });
 
             drop(received_bytes_receiver);

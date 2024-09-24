@@ -21,12 +21,12 @@ pub mod server {
     use super::*;
 
     pub async fn create_receiving_bytes_handler(
-        client: Weak<ClientInternal>,
+        node: Weak<NodeInternal<ClientNode>>,
         server: Weak<ConnectedServer>,
         receiving_bytes_receiver: async_channel::Receiver<Vec<u8>>,
     ) {
         'l1: while let Ok(bytes) = receiving_bytes_receiver.recv().await {
-            if let Some(client) = ClientInternal::try_upgrade(&client) {
+            if let Some(node) = NodeInternal::try_upgrade(&node) {
                 if let Some(server) = server.upgrade() {
                     let mut messaging = server.messaging.lock().await;
                     match bytes[0] {
@@ -39,7 +39,7 @@ pub mod server {
                                     let delay = Instant::now() - sent_instant;
                                     messaging.latency_monitor.push(delay);
                                     messaging.average_packet_loss_rtt = messaging.packet_loss_rtt_calculator.update_rtt(
-                                        &client.messaging_properties.packet_loss_rtt_properties,
+                                        &node.messaging_properties.packet_loss_rtt_properties,
                                         delay,
                                     );
                                 }
@@ -58,13 +58,13 @@ pub mod server {
                                         let delay = Instant::now() - sent_instant;
                                         messaging.latency_monitor.push(delay);
                                         messaging.average_packet_loss_rtt = messaging.packet_loss_rtt_calculator.update_rtt(
-                                            &client.messaging_properties.packet_loss_rtt_properties,
+                                            &node.messaging_properties.packet_loss_rtt_properties,
                                             delay,
                                         );
                                     }
                                 }
                             } else {
-                                let _ = client
+                                let _ = node.node_type
                                     .reason_to_disconnect_sender
                                     .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
@@ -76,7 +76,7 @@ pub mod server {
                             let message_part_bytes = match message_part_bytes {
                                 Ok(message_part_bytes) => message_part_bytes,
                                 Err(_) => {
-                                    let _ = client
+                                    let _ = node.node_type
                                         .reason_to_disconnect_sender
                                         .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                     break 'l1;
@@ -96,10 +96,10 @@ pub mod server {
                                     },
                                     MessagePartMapTryInsertResult::Stored => {
                                         'l2: loop {
-                                            match messaging.incoming_messages.try_read(&client.packet_registry){
+                                            match messaging.incoming_messages.try_read(&node.packet_registry){
                                                 MessagePartMapTryReadResult::PendingParts => break 'l2,
                                                 MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
-                                                    let _ = client.reason_to_disconnect_sender.try_send(
+                                                    let _ = node.node_type.reason_to_disconnect_sender.try_send(
                                                         ServerDisconnectReason::InvalidProtocolCommunication,
                                                     );
                                                     break 'l1;
@@ -127,7 +127,7 @@ pub mod server {
 
                                 *server.incoming_messages_total_size.write().unwrap() = messaging.incoming_messages.total_size();
                             } else {
-                                let _ = client.reason_to_disconnect_sender.try_send(
+                                let _ = node.node_type.reason_to_disconnect_sender.try_send(
                                     ServerDisconnectReason::InvalidProtocolCommunication
                                 );
                                 break 'l1;
@@ -139,7 +139,7 @@ pub mod server {
                             let justification_bytes = match justification_bytes {
                                 Ok(justification_bytes) => justification_bytes,
                                 Err(_) => {
-                                    let _ = client
+                                    let _ = node.node_type
                                         .reason_to_disconnect_sender
                                         .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                     break 'l1;
@@ -147,23 +147,23 @@ pub mod server {
                             };
 
                             if let Ok(message) =
-                                DeserializedMessage::deserialize_single_list(&justification_bytes, &client.packet_registry)
+                                DeserializedMessage::deserialize_single_list(&justification_bytes, &node.packet_registry)
                             {
-                                let _ = client.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;
+                                let _ = node.node_type.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;
                                 
-                                let _ = client
+                                let _ = node.node_type
                                     .reason_to_disconnect_sender
                                     .try_send(ServerDisconnectReason::DisconnectRequest(message));
                                 break 'l1;
                             } else {
-                                let _ = client
+                                let _ = node.node_type
                                     .reason_to_disconnect_sender
                                     .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                                 break 'l1;
                             }
                         }
                         _ => {
-                            let _ = client
+                            let _ = node.node_type
                                 .reason_to_disconnect_sender
                                 .try_send(ServerDisconnectReason::InvalidProtocolCommunication);
                             break 'l1;
@@ -179,7 +179,7 @@ pub mod server {
     }
 
     pub async fn create_packets_to_send_handler(
-        client: Weak<ClientInternal>,
+        client: Weak<NodeInternal<ClientNode>>,
         server: Weak<ConnectedServer>,
         packets_to_send_receiver: async_channel::Receiver<Option<SerializedPacket>>,
         mut next_message_id: MessagePartId,
@@ -190,7 +190,7 @@ pub mod server {
             if let Some(serialized_packet) = serialized_packet {
                 packets_to_send.push(serialized_packet);
             } else {
-                if let Some(client) = ClientInternal::try_upgrade(&client) {
+                if let Some(client) = NodeInternal::try_upgrade(&client) {
                     if let Some(server) = server.upgrade() {
                         let mut messaging = server.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
@@ -236,14 +236,14 @@ pub mod server {
     }
 
     pub async fn create_message_part_confirmation_handler(
-        client: Weak<ClientInternal>,
+        client: Weak<NodeInternal<ClientNode>>,
         message_part_confirmation_receiver: async_channel::Receiver<(
             MessageId,
             Option<MessagePartId>,
         )>,
     ) {
         'l1: while let Ok((message_id, part_id)) = message_part_confirmation_receiver.recv().await {
-            if let Some(client) = ClientInternal::try_upgrade(&client) {
+            if let Some(client) = NodeInternal::try_upgrade(&client) {
                 let message_id_bytes = message_id.to_be_bytes();
 
                 let bytes = {
@@ -264,8 +264,8 @@ pub mod server {
                         ]
                     }
                 };
-                if let Err(e) = client.socket.send(&bytes).await {
-                    let _ = client
+                if let Err(e) = client.node_type.socket.send(&bytes).await {
+                    let _ = client.node_type
                         .reason_to_disconnect_sender
                         .try_send(ServerDisconnectReason::ByteSendError(e));
                     break 'l1;
@@ -277,13 +277,13 @@ pub mod server {
     }
 
     pub async fn create_shared_socket_bytes_send_handler(
-        client: Weak<ClientInternal>,
+        client: Weak<NodeInternal<ClientNode>>,
         shared_socket_bytes_send_receiver: async_channel::Receiver<Arc<Vec<u8>>>,
     ) {
         'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
-            if let Some(client) = ClientInternal::try_upgrade(&client) {
-                if let Err(e) = client.socket.send(&bytes).await {
-                    let _ = client
+            if let Some(client) = NodeInternal::try_upgrade(&client) {
+                if let Err(e) = client.node_type.socket.send(&bytes).await {
+                    let _ = client.node_type
                         .reason_to_disconnect_sender
                         .try_send(ServerDisconnectReason::ByteSendError(e));
                     break 'l1;
@@ -317,7 +317,7 @@ pub mod client {
     }
 
     #[cfg(feature = "store_unexpected")]
-    pub async fn store_unexpected_error_list_pick(client: &ClientInternal) -> Vec<UnexpectedError> {
+    pub async fn store_unexpected_error_list_pick(client: &NodeInternal<ClientNode>) -> Vec<UnexpectedError> {
         let mut list = Vec::<UnexpectedError>::new();
         while let Ok(mut error_list) = client.store_unexpected_errors.error_list_receiver.try_recv() {
             list.append(&mut error_list);
@@ -331,11 +331,11 @@ pub mod client {
 
     #[cfg(feature = "store_unexpected")]
     pub async fn create_store_unexpected_error_list_handler(
-        client: Weak<ClientInternal>,
+        client: Weak<NodeInternal<ClientNode>>,
         create_list_signal_receiver: async_channel::Receiver<()>,
     ) {
         'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
-            if let Some(client) = ClientInternal::try_upgrade(&client) {                
+            if let Some(client) = NodeInternal::try_upgrade(&client) {                
                 let _ = client.store_unexpected_errors.error_list_sender.send(store_unexpected_error_list_pick(&client).await).await;
             } else {
                 break 'l1;
@@ -343,32 +343,32 @@ pub mod client {
         }
     }
 
-    pub async fn create_read_handler(weak_client: Weak<ClientInternal>) {
+    pub async fn create_read_handler(weak_node: Weak<NodeInternal<ClientNode>>) {
         let mut was_used = false;
         'l1: loop {
-            if let Some(client) = ClientInternal::try_upgrade(&weak_client) {
-                if *client.read_handler_properties.active_count.write().unwrap()
-                    > client.read_handler_properties.target_surplus_size + 1
+            if let Some(node) = NodeInternal::try_upgrade(&weak_node) {
+                if *node.read_handler_properties.active_count.write().unwrap()
+                    > node.read_handler_properties.target_surplus_size + 1
                 {
                     let mut surplus_count =
-                        client.read_handler_properties.active_count.write().unwrap();
+                        node.read_handler_properties.active_count.write().unwrap();
                     if !was_used {
                         *surplus_count -= 1;
                     }
                     break 'l1;
                 } else {
-                    let read_timeout = client.messaging_properties.timeout_interpretation;
-                    let socket = Arc::clone(&client.socket);
-                    drop(client);
+                    let read_timeout = node.messaging_properties.timeout_interpretation;
+                    let socket = Arc::clone(&node.node_type.socket);
+                    drop(node);
                     let pre_read_next_bytes_result =
-                        ClientInternal::pre_read_next_bytes(&socket, read_timeout).await;
-                    match ClientInternal::try_upgrade_or_get_inactive(&weak_client).await {
-                        Some(Ok(client)) => {
+                        ClientNode::pre_read_next_bytes(&socket, read_timeout).await;
+                    match NodeInternal::try_upgrade_or_get_inactive(&weak_node).await {
+                        Some(Ok(node)) => {
                             match pre_read_next_bytes_result {
                                 Ok(result) => {
                                     if !was_used {
                                         was_used = true;
-                                        let mut surplus_count = client
+                                        let mut surplus_count = node
                                             .read_handler_properties
                                             .active_count
                                             .write()
@@ -376,17 +376,17 @@ pub mod client {
                                         *surplus_count -= 1;
                                     }
 
-                                    let _read_result = client.read_next_bytes(result).await;
+                                    let _read_result = ClientNode::read_next_bytes(&node, result).await;
 
                                     #[cfg(feature = "store_unexpected")]
                                     if _read_result.is_unexpected() {
-                                        let _ = client.store_unexpected_errors.error_sender.send(UnexpectedError::OfReadServerBytes(_read_result)).await;
+                                        let _ = node.store_unexpected_errors.error_sender.send(UnexpectedError::OfReadServerBytes(_read_result)).await;
                                     }
                                 }
                                 Err(_) => {
                                     if was_used {
                                         was_used = false;
-                                        let mut surplus_count = client
+                                        let mut surplus_count = node
                                             .read_handler_properties
                                             .active_count
                                             .write()
