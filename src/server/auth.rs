@@ -342,11 +342,13 @@ where
         addr: SocketAddr,
         raw_stream: TcpStream,
     ) -> io::Result<ReadClientBytesResult> {
+        let node_type = &internal.node_type;
+
         let ip = addr.ip();
 
-        if internal.ignored_ips.contains(&ip) {
+        if node_type.ignored_ips.contains(&ip) {
             return Ok(ReadClientBytesResult::IgnoredClientHandle);
-        } else if internal.connected_clients.contains_key(&addr) {
+        } else if node_type.connected_clients.contains_key(&addr) {
             return Ok(ReadClientBytesResult::AlreadyConnected);
         } else if self.tcp_based_base().base.addrs_in_auth.contains(&addr) {
             return Ok(ReadClientBytesResult::AddrInAuth);
@@ -373,7 +375,7 @@ where
             && bytes.len() == (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
         {
             if self.tcp_based_base().pending_auth.len()
-                >= internal.server_properties.max_pending_auth
+                >= node_type.server_properties.max_pending_auth
             {
                 return Ok(ReadClientBytesResult::PendingAuthFull);
             }
@@ -435,9 +437,11 @@ where
         addr: SocketAddr,
         bytes: Vec<u8>,
     ) -> ReadClientBytesResult {
+        let node_type = &internal.node_type;
+
         let ip = addr.ip();
 
-        if let Some(client) = internal.connected_clients.get(&addr) {
+        if let Some(client) = node_type.connected_clients.get(&addr) {
             let mut messaging = client.messaging.lock().await;
             // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
             messaging.tick_bytes_len += bytes.len() + 8 + 40;
@@ -501,9 +505,9 @@ where
                         Ok(message_part_bytes) => message_part_bytes,
                         Err(_) => {
                             if let Some(punishment) =
-                                internal.server_properties.invalid_message_punishment
+                                node_type.server_properties.invalid_message_punishment
                             {
-                                internal.ignore_ip_temporary(ip, Instant::now() + punishment);
+                                node_type.ignore_ip_temporary(ip, Instant::now() + punishment);
                             }
                             return ReadClientBytesResult::InvalidPendingAuth;
                         }
@@ -515,7 +519,7 @@ where
                     );
                     if let Ok(message) = message {
                         self.tcp_based_base().base.addrs_in_auth.insert(addr);
-                        let _ = internal.clients_to_auth_sender.try_send((
+                        let _ = node_type.clients_to_auth_sender.try_send((
                             addr,
                             (
                                 AddrToAuth {
@@ -527,9 +531,9 @@ where
                         ReadClientBytesResult::DonePendingAuth
                     } else {
                         if let Some(punishment) =
-                            internal.server_properties.invalid_message_punishment
+                            node_type.server_properties.invalid_message_punishment
                         {
-                            internal.ignore_ip_temporary(ip, Instant::now() + punishment);
+                            node_type.ignore_ip_temporary(ip, Instant::now() + punishment);
                         }
                         ReadClientBytesResult::InvalidPendingAuth
                     }
