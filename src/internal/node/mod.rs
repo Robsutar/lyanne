@@ -30,27 +30,11 @@ use crate::{
 };
 
 #[cfg(feature = "store_unexpected")]
-#[derive(Debug)]
-/// Errors generated during connection.
-pub enum UnexpectedError {
-    /// While reading bytes from some addr.
-    ///
-    /// See [`ReadClientBytesResult::is_unexpected`]
-    OfReadAddrBytes(SocketAddr, ReadClientBytesResult),
-    /// While trying to accept clients from the tcp based authenticators.
-    #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-    OfTcpBasedHandlerAccept(SocketAddr, ReadClientBytesResult),
-    /// Io error while trying to accept clients from the tcp based authenticators.
-    #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-    OfTcpBasedHandlerAcceptIoError(SocketAddr, io::Error),
-}
-
-#[cfg(feature = "store_unexpected")]
-struct StoreUnexpectedErrors {
-    error_sender: async_channel::Sender<UnexpectedError>,
-    error_receiver: async_channel::Receiver<UnexpectedError>,
-    error_list_sender: async_channel::Sender<Vec<UnexpectedError>>,
-    error_list_receiver: async_channel::Receiver<Vec<UnexpectedError>>,
+struct StoreUnexpectedErrors<T: Debug> {
+    error_sender: async_channel::Sender<T>,
+    error_receiver: async_channel::Receiver<T>,
+    error_list_sender: async_channel::Sender<Vec<T>>,
+    error_list_receiver: async_channel::Receiver<Vec<T>>,
 
     create_list_signal_sender: async_channel::Sender<()>,
 }
@@ -191,10 +175,6 @@ impl Partner {
 pub struct NodeInternal<T: NodeType> {
     /// Sender for make the spawned tasks keep alive.
     pub tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
-
-    #[cfg(feature = "store_unexpected")]
-    /// List of errors emitted in the tick.
-    pub store_unexpected_errors: StoreUnexpectedErrors,
 
     /// Task handle of the receiver.
     pub tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
