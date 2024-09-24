@@ -516,14 +516,6 @@ struct ServerNode {
     state: AsyncRwLock<NodeState<(SocketAddr, Vec<u8>)>>,
 }
 
-impl NodeType for ServerNode {
-    type Skt = (SocketAddr, Vec<u8>);
-
-    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
-        &self.state
-    }
-}
-
 impl ServerNode {
     fn ignore_ip(&self, ip: IpAddr) {
         self.temporary_ignored_ips.remove(&ip);
@@ -614,6 +606,14 @@ impl ServerNode {
                 auth_mode.read_next_bytes(&node, addr, bytes).await
             }
         }
+    }
+}
+
+impl NodeType for ServerNode {
+    type Skt = (SocketAddr, Vec<u8>);
+
+    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
+        &self.state
     }
 }
 
