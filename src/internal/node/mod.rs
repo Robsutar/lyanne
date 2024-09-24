@@ -79,7 +79,7 @@ struct NodeInactiveState<T> {
     received_bytes_sender: async_channel::Sender<T>,
 }
 
-enum NodeState<T> {
+pub enum NodeState<T> {
     Active,
     Inactive(NodeInactiveState<T>),
 }
@@ -88,7 +88,7 @@ impl<T> NodeState<T> {
     /// Returns
     /// `true` if the lock of `state` could not be acquired
     /// `true` if the state read value is [`NodeState::Inactive`]
-    fn is_inactive(state: &AsyncRwLock<NodeState<T>>) -> bool {
+    pub fn is_inactive(state: &AsyncRwLock<NodeState<T>>) -> bool {
         let state = match try_read(state) {
             Some(state) => state,
             None => return true,
@@ -96,7 +96,7 @@ impl<T> NodeState<T> {
         matches!(*state, NodeState::Inactive(_))
     }
 
-    async fn set_inactive(
+    pub async fn set_inactive(
         state: &AsyncRwLock<NodeState<T>>,
         received_bytes_sender: async_channel::Sender<T>,
     ) {
@@ -107,13 +107,13 @@ impl<T> NodeState<T> {
     }
 }
 
-trait NodeType {
+pub trait NodeType {
     type Skt;
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
 }
 
-struct ClientNode {
-    state: AsyncRwLock<NodeState<Vec<u8>>>,
+pub struct ClientNode {
+    pub state: AsyncRwLock<NodeState<Vec<u8>>>,
 }
 
 impl NodeType for ClientNode {
@@ -124,8 +124,8 @@ impl NodeType for ClientNode {
     }
 }
 
-struct ServerNode {
-    state: AsyncRwLock<NodeState<(SocketAddr, Vec<u8>)>>,
+pub struct ServerNode {
+    pub state: AsyncRwLock<NodeState<(SocketAddr, Vec<u8>)>>,
 }
 
 impl NodeType for ServerNode {
@@ -200,34 +200,34 @@ impl Partner {
 }
 
 /// Properties of the node.
-struct NodeInternal<T: NodeType> {
+pub struct NodeInternal<T: NodeType> {
     /// Sender for make the spawned tasks keep alive.
-    tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
+    pub tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
 
     #[cfg(feature = "store_unexpected")]
     /// List of errors emitted in the tick.
-    store_unexpected_errors: StoreUnexpectedErrors,
+    pub store_unexpected_errors: StoreUnexpectedErrors,
 
     /// The UDP socket used for communication.
-    socket: Arc<UdpSocket>,
+    pub socket: Arc<UdpSocket>,
 
     /// Task handle of the receiver.
-    tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
+    pub tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
 
     /// The registry for packets.
-    packet_registry: Arc<PacketRegistry>,
+    pub packet_registry: Arc<PacketRegistry>,
     /// Properties related to messaging.
-    messaging_properties: Arc<MessagingProperties>,
+    pub messaging_properties: Arc<MessagingProperties>,
     /// Properties related to read handlers.
-    read_handler_properties: Arc<ReadHandlerProperties>,
+    pub read_handler_properties: Arc<ReadHandlerProperties>,
 
-    task_runner: Arc<TaskRunner>,
+    pub task_runner: Arc<TaskRunner>,
 
-    node_type: T,
+    pub node_type: T,
 }
 
 impl<T: NodeType> NodeInternal<T> {
-    fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
+    pub fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
         if let Some(internal) = downgraded.upgrade() {
             if NodeState::is_inactive(&internal.state) {
                 None
@@ -239,7 +239,7 @@ impl<T: NodeType> NodeInternal<T> {
         }
     }
 
-    async fn try_upgrade_or_get_inactive(
+    pub async fn try_upgrade_or_get_inactive(
         downgraded: &Weak<Self>,
     ) -> Option<Result<Arc<Self>, NodeInactiveState<T::Skt>>> {
         if let Some(internal) = downgraded.upgrade() {
@@ -259,7 +259,7 @@ impl<T: NodeType> NodeInternal<T> {
         }
     }
 
-    fn create_async_task<F>(self: &Arc<Self>, future: F)
+    pub fn create_async_task<F>(self: &Arc<Self>, future: F)
     where
         F: Future<Output = ()> + Send + 'static,
     {
