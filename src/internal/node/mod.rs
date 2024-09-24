@@ -96,18 +96,6 @@ pub trait NodeType {
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
 }
 
-pub struct ClientNode {
-    pub state: AsyncRwLock<NodeState<Vec<u8>>>,
-}
-
-impl NodeType for ClientNode {
-    type Skt = Vec<u8>;
-
-    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
-        &self.state
-    }
-}
-
 pub struct PartnerMessaging {
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.
