@@ -9,6 +9,7 @@ use crate::LimitedMessage;
 
 pub mod auth;
 pub mod messages;
+pub mod node;
 pub mod rt;
 pub mod utils;
 

@@ -23,7 +23,7 @@ use crate::{
 };
 
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
-use crate::{MessagingProperties, ReadHandlerProperties, MESSAGE_CHANNEL_SIZE};
+use crate::{MessagingProperties, ReadHandlerProperties, SentMessagePart, MESSAGE_CHANNEL_SIZE};
 
 use super::*;
 
@@ -426,7 +426,7 @@ pub(super) mod connecting {
         let (shared_socket_bytes_send_sender, shared_socket_bytes_send_receiver) =
             async_channel::unbounded();
 
-        let messaging = Mutex::new(ConnectedServerMessaging {
+        let messaging = Mutex::new(PartnerMessaging {
             pending_confirmation: BTreeMap::new(),
             incoming_messages: MessagePartMap::new(
                 messaging_properties.initial_next_message_part_id,
@@ -465,28 +465,29 @@ pub(super) mod connecting {
             StoreUnexpectedErrors::new();
 
         let client = Client {
-            internal: Arc::new(ClientInternal {
+            internal: Arc::new(NodeInternal {
                 tasks_keeper_sender,
-                reason_to_disconnect_sender,
-                reason_to_disconnect_receiver,
-                #[cfg(feature = "store_unexpected")]
-                store_unexpected_errors,
-
-                authentication_mode: connected_auth_mode,
 
                 tasks_keeper_handle,
-                socket: Arc::clone(&socket),
-                tick_state: RwLock::new(ClientTickState::TickStartPending),
                 packet_registry: Arc::clone(&packet_registry),
                 messaging_properties: Arc::clone(&messaging_properties),
                 read_handler_properties: Arc::clone(&read_handler_properties),
-                client_properties: Arc::clone(&client_properties),
-                connected_server: Arc::clone(&server),
-                disconnect_reason: RwLock::new(None),
 
                 task_runner,
 
-                state: AsyncRwLock::new(ClientState::Active),
+                node_type: ClientNode {
+                    reason_to_disconnect_sender,
+                    reason_to_disconnect_receiver,
+                    #[cfg(feature = "store_unexpected")]
+                    store_unexpected_errors,
+                    authentication_mode: connected_auth_mode,
+                    socket: Arc::clone(&socket),
+                    tick_state: RwLock::new(ClientTickState::TickStartPending),
+                    client_properties: Arc::clone(&client_properties),
+                    connected_server: Arc::clone(&server),
+                    disconnect_reason: RwLock::new(None),
+                    state: AsyncRwLock::new(NodeState::Active),
+                },
             }),
         };
 
@@ -494,7 +495,7 @@ pub(super) mod connecting {
 
         let tick_packet_serialized = packet_registry.try_serialize(&ClientTickEndPacket).unwrap();
 
-        let connected_server = &internal.connected_server;
+        let connected_server = &internal.node_type.connected_server;
         client.send_packet_serialized(tick_packet_serialized.clone());
         connected_server
             .packets_to_send_sender
@@ -572,15 +573,16 @@ pub(super) mod connecting {
             }
 
             let pre_read_next_bytes_result =
-                ClientInternal::pre_read_next_bytes(&socket, packet_loss_timeout).await;
+                ClientNode::pre_read_next_bytes(&socket, packet_loss_timeout).await;
 
             match pre_read_next_bytes_result {
                 Ok(result) => {
-                    let _read_result = internal.read_next_bytes(result).await;
+                    let _read_result = ClientNode::read_next_bytes(internal, result).await;
 
                     #[cfg(feature = "store_unexpected")]
                     if _read_result.is_unexpected() {
                         let _ = internal
+                            .node_type
                             .store_unexpected_errors
                             .error_sender
                             .send(UnexpectedError::OfReadServerBytes(_read_result))
@@ -592,7 +594,7 @@ pub(super) mod connecting {
 
             match client.try_tick_start().unwrap() {
                 ClientTickResult::ReceivedMessage(tick_result) => {
-                    internal.try_check_read_handler();
+                    ClientNode::try_check_read_handler(internal);
                     client.try_tick_after_message().unwrap();
                     return Ok(ConnectResult {
                         client,

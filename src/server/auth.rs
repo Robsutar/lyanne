@@ -66,7 +66,7 @@ pub(super) trait AuthModeHandler {
 
     fn tick_start(
         &self,
-        internal: &ServerInternal,
+        internal: &NodeInternal<ServerNode>,
         now: Instant,
         dispatched_assigned_addrs_in_auth: HashSet<SocketAddr>,
     ) {
@@ -77,7 +77,7 @@ pub(super) trait AuthModeHandler {
         self.retain_pending_auth(internal, now);
     }
 
-    fn retain_pending_auth(&self, internal: &ServerInternal, now: Instant);
+    fn retain_pending_auth(&self, internal: &NodeInternal<ServerNode>, now: Instant);
     fn call_tick_start_signal(&self);
 }
 
@@ -92,18 +92,22 @@ pub(super) struct NoCryptographyAuth {
 }
 impl NoCryptographyAuth {
     async fn create_pending_auth_resend_handler(
-        server: Weak<ServerInternal>,
+        node: Weak<NodeInternal<ServerNode>>,
         auth_mode: Weak<NoCryptographyAuth>,
         pending_auth_resend_receiver: async_channel::Receiver<SocketAddr>,
     ) {
         'l1: while let Ok(addr) = pending_auth_resend_receiver.recv().await {
-            if let (Some(server), Some(auth_mode)) =
-                (ServerInternal::try_upgrade(&server), auth_mode.upgrade())
+            if let (Some(node), Some(auth_mode)) =
+                (NodeInternal::try_upgrade(&node), auth_mode.upgrade())
             {
                 if let Some(mut tuple) = auth_mode.pending_auth.get_mut(&addr) {
                     let (context, last_sent_time) = &mut *tuple;
                     *last_sent_time = Some(Instant::now());
-                    let _ = server.socket.send_to(&context.finished_bytes, addr).await;
+                    let _ = node
+                        .node_type
+                        .socket
+                        .send_to(&context.finished_bytes, addr)
+                        .await;
                 }
             } else {
                 break 'l1;
@@ -112,15 +116,17 @@ impl NoCryptographyAuth {
     }
 
     pub(super) async fn read_next_bytes(
-        internal: &ServerInternal,
+        internal: &NodeInternal<ServerNode>,
         addr: SocketAddr,
         bytes: Vec<u8>,
         auth_mode: &NoCryptographyAuth,
     ) -> ReadClientBytesResult {
+        let node_type = &internal.node_type;
+
         let ip = addr.ip();
-        if internal.ignored_ips.contains(&ip) {
+        if node_type.ignored_ips.contains(&ip) {
             ReadClientBytesResult::IgnoredClientHandle
-        } else if let Some(client) = internal.connected_clients.get(&addr) {
+        } else if let Some(client) = node_type.connected_clients.get(&addr) {
             let mut messaging = client.messaging.lock().await;
             // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
             messaging.tick_bytes_len += bytes.len() + 8 + 40;
@@ -156,7 +162,7 @@ impl NoCryptographyAuth {
                         } else {
                             auth_mode.base().addrs_in_auth.insert(addr);
 
-                            let _ = internal.clients_to_auth_sender.try_send((
+                            let _ = node_type.clients_to_auth_sender.try_send((
                                 addr,
                                 (
                                     AddrToAuth {
@@ -169,9 +175,9 @@ impl NoCryptographyAuth {
                         }
                     } else {
                         if let Some(punishment) =
-                            internal.server_properties.invalid_message_punishment
+                            node_type.server_properties.invalid_message_punishment
                         {
-                            internal.ignore_ip_temporary(ip, Instant::now() + punishment);
+                            node_type.ignore_ip_temporary(ip, Instant::now() + punishment);
                         }
                         ReadClientBytesResult::InvalidPendingAuth
                     }
@@ -182,7 +188,7 @@ impl NoCryptographyAuth {
         } else if bytes[0] == MessageChannel::PUBLIC_KEY_SEND
             && bytes.len() == (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
         {
-            if auth_mode.pending_auth.len() >= internal.server_properties.max_pending_auth {
+            if auth_mode.pending_auth.len() >= node_type.server_properties.max_pending_auth {
                 return ReadClientBytesResult::PendingAuthFull;
             }
 
@@ -224,7 +230,7 @@ impl AuthModeHandler for NoCryptographyAuth {
         &self.base
     }
 
-    fn retain_pending_auth(&self, internal: &ServerInternal, now: Instant) {
+    fn retain_pending_auth(&self, internal: &NodeInternal<ServerNode>, now: Instant) {
         self.pending_auth.retain(|_, (pending_auth_send, _)| {
             now - pending_auth_send.received_time
                 < internal.messaging_properties.timeout_interpretation
@@ -235,6 +241,7 @@ impl AuthModeHandler for NoCryptographyAuth {
             if let Some(last_sent_time) = last_sent_time {
                 if now - *last_sent_time
                     < internal
+                        .node_type
                         .server_properties
                         .pending_auth_packet_loss_interpretation
                 {
@@ -272,30 +279,31 @@ where
 
     async fn create_handler(
         auth_mode: Weak<Self>,
-        server: Weak<ServerInternal>,
+        node: Weak<NodeInternal<ServerNode>>,
         listener: TcpListener,
         read_signal_receiver: async_channel::Receiver<()>,
     ) {
         'l1: while let Ok(_) = read_signal_receiver.recv().await {
             'l2: loop {
-                if let (Some(server), Some(auth_mode)) =
-                    (ServerInternal::try_upgrade(&server), auth_mode.upgrade())
+                if let (Some(node), Some(auth_mode)) =
+                    (NodeInternal::try_upgrade(&node), auth_mode.upgrade())
                 {
                     let accepted = crate::internal::rt::timeout(
-                        server.messaging_properties.timeout_interpretation,
+                        node.messaging_properties.timeout_interpretation,
                         listener.accept(),
                     )
                     .await;
 
                     if let Ok(accepted) = accepted {
                         if let Ok((stream, addr)) = accepted {
-                            let _result = auth_mode.handler_accept(&server, addr, stream).await;
+                            let _result = auth_mode.handler_accept(&node, addr, stream).await;
 
                             #[cfg(feature = "store_unexpected")]
                             match _result {
                                 Ok(result) => {
                                     if result.is_unexpected() {
-                                        let _ = server
+                                        let _ = node
+                                            .node_type
                                             .store_unexpected_errors
                                             .error_sender
                                             .send(UnexpectedError::OfTcpBasedHandlerAccept(
@@ -305,7 +313,8 @@ where
                                     }
                                 }
                                 Err(e) => {
-                                    let _ = server
+                                    let _ = node
+                                        .node_type
                                         .store_unexpected_errors
                                         .error_sender
                                         .send(UnexpectedError::OfTcpBasedHandlerAcceptIoError(
@@ -329,15 +338,17 @@ where
 
     async fn handler_accept(
         &self,
-        internal: &ServerInternal,
+        internal: &NodeInternal<ServerNode>,
         addr: SocketAddr,
         raw_stream: TcpStream,
     ) -> io::Result<ReadClientBytesResult> {
+        let node_type = &internal.node_type;
+
         let ip = addr.ip();
 
-        if internal.ignored_ips.contains(&ip) {
+        if node_type.ignored_ips.contains(&ip) {
             return Ok(ReadClientBytesResult::IgnoredClientHandle);
-        } else if internal.connected_clients.contains_key(&addr) {
+        } else if node_type.connected_clients.contains_key(&addr) {
             return Ok(ReadClientBytesResult::AlreadyConnected);
         } else if self.tcp_based_base().base.addrs_in_auth.contains(&addr) {
             return Ok(ReadClientBytesResult::AddrInAuth);
@@ -364,7 +375,7 @@ where
             && bytes.len() == (MESSAGE_CHANNEL_SIZE + PUBLIC_KEY_SIZE)
         {
             if self.tcp_based_base().pending_auth.len()
-                >= internal.server_properties.max_pending_auth
+                >= node_type.server_properties.max_pending_auth
             {
                 return Ok(ReadClientBytesResult::PendingAuthFull);
             }
@@ -422,13 +433,15 @@ where
 
     async fn read_next_bytes(
         &self,
-        internal: &ServerInternal,
+        internal: &NodeInternal<ServerNode>,
         addr: SocketAddr,
         bytes: Vec<u8>,
     ) -> ReadClientBytesResult {
+        let node_type = &internal.node_type;
+
         let ip = addr.ip();
 
-        if let Some(client) = internal.connected_clients.get(&addr) {
+        if let Some(client) = node_type.connected_clients.get(&addr) {
             let mut messaging = client.messaging.lock().await;
             // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
             messaging.tick_bytes_len += bytes.len() + 8 + 40;
@@ -492,9 +505,9 @@ where
                         Ok(message_part_bytes) => message_part_bytes,
                         Err(_) => {
                             if let Some(punishment) =
-                                internal.server_properties.invalid_message_punishment
+                                node_type.server_properties.invalid_message_punishment
                             {
-                                internal.ignore_ip_temporary(ip, Instant::now() + punishment);
+                                node_type.ignore_ip_temporary(ip, Instant::now() + punishment);
                             }
                             return ReadClientBytesResult::InvalidPendingAuth;
                         }
@@ -506,7 +519,7 @@ where
                     );
                     if let Ok(message) = message {
                         self.tcp_based_base().base.addrs_in_auth.insert(addr);
-                        let _ = internal.clients_to_auth_sender.try_send((
+                        let _ = node_type.clients_to_auth_sender.try_send((
                             addr,
                             (
                                 AddrToAuth {
@@ -518,9 +531,9 @@ where
                         ReadClientBytesResult::DonePendingAuth
                     } else {
                         if let Some(punishment) =
-                            internal.server_properties.invalid_message_punishment
+                            node_type.server_properties.invalid_message_punishment
                         {
-                            internal.ignore_ip_temporary(ip, Instant::now() + punishment);
+                            node_type.ignore_ip_temporary(ip, Instant::now() + punishment);
                         }
                         ReadClientBytesResult::InvalidPendingAuth
                     }
@@ -541,7 +554,7 @@ macro_rules! require_tcp_based_auth_handler_impl_for_auth_mode {
             &self.tcp_based_base.base
         }
 
-        fn retain_pending_auth(&self, internal: &ServerInternal, now: Instant) {
+        fn retain_pending_auth(&self, internal: &NodeInternal<ServerNode>, now: Instant) {
             self.tcp_based_base()
                 .pending_auth
                 .retain(|_, pending_auth_send| {
@@ -641,7 +654,7 @@ impl AuthenticatorModeBuild {
         }
     }
 
-    pub(super) async fn apply(self, server: &Arc<ServerInternal>) -> io::Result<()> {
+    pub(super) async fn apply(self, server: &Arc<NodeInternal<ServerNode>>) -> io::Result<()> {
         match self {
             AuthenticatorModeBuild::NoCryptography(auth_mode, auth_mode_build) => {
                 let server_downgraded = Arc::downgrade(&server);
