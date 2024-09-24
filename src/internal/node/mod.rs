@@ -75,8 +75,8 @@ impl StoreUnexpectedErrors {
     }
 }
 
-struct NodeInactiveState<T> {
-    received_bytes_sender: async_channel::Sender<T>,
+pub struct NodeInactiveState<T> {
+    pub received_bytes_sender: async_channel::Sender<T>,
 }
 
 pub enum NodeState<T> {
@@ -117,22 +117,10 @@ pub struct ClientNode {
 }
 
 impl NodeType for ClientNode {
-    type Skt = (SocketAddr, Vec<u8>);
-
-    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
-        self.state
-    }
-}
-
-pub struct ServerNode {
-    pub state: AsyncRwLock<NodeState<(SocketAddr, Vec<u8>)>>,
-}
-
-impl NodeType for ServerNode {
     type Skt = Vec<u8>;
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
-        self.state
+        &self.state
     }
 }
 
@@ -229,7 +217,7 @@ pub struct NodeInternal<T: NodeType> {
 impl<T: NodeType> NodeInternal<T> {
     pub fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
         if let Some(internal) = downgraded.upgrade() {
-            if NodeState::is_inactive(&internal.state) {
+            if NodeState::is_inactive(&internal.node_type.state()) {
                 None
             } else {
                 Some(internal)
