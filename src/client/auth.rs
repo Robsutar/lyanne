@@ -426,7 +426,7 @@ pub(super) mod connecting {
         let (shared_socket_bytes_send_sender, shared_socket_bytes_send_receiver) =
             async_channel::unbounded();
 
-        let messaging = Mutex::new(ConnectedServerMessaging {
+        let messaging = Mutex::new(PartnerMessaging {
             pending_confirmation: BTreeMap::new(),
             incoming_messages: MessagePartMap::new(
                 messaging_properties.initial_next_message_part_id,

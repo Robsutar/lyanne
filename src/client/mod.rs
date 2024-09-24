@@ -105,6 +105,7 @@ use crate::{
             DeserializedMessage, MessageId, MessagePartId, MessagePartMap, PUBLIC_KEY_SIZE,
             UDP_BUFFER_SIZE,
         },
+        node::PartnerMessaging,
         rt::{try_lock, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         MessageChannel,
@@ -117,6 +118,7 @@ use crate::{
 #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
 use crate::internal::auth::InnerAuthTcpBased;
 
+pub use crate::internal::node::Partner as ConnectedServer;
 pub use auth::*;
 use init::*;
 
@@ -312,76 +314,6 @@ impl ClientState {
         *state = ClientState::Inactive(ClientInactiveState {
             received_bytes_sender,
         });
-    }
-}
-
-/// Messaging fields of [`ConnectedServer`]
-struct ConnectedServerMessaging {
-    /// Map of message parts pending confirmation.
-    /// The tuple is the sent instant, and the map of the message parts of the message.
-    pending_confirmation: BTreeMap<MessageId, (Instant, BTreeMap<MessagePartId, SentMessagePart>)>,
-
-    /// Map of incoming messages parts.
-    incoming_messages: MessagePartMap,
-    /// The length of bytes received in the current tick.
-    tick_bytes_len: usize,
-
-    /// The instant when the last message was received.
-    last_received_message_instant: Instant,
-    /// The deserialized messages that have been received and have not been read yet.
-    received_messages: Vec<DeserializedMessage>,
-
-    /// Calculator for packet loss round-trip time.
-    packet_loss_rtt_calculator: RttCalculator,
-    /// The average round-trip time for packet loss.
-    average_packet_loss_rtt: Duration,
-    /// Monitor for latency duration.
-    latency_monitor: DurationMonitor,
-}
-
-/// Properties of the server that is connected to the client.
-pub struct ConnectedServer {
-    /// Sender for receiving bytes.
-    receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
-    /// Sender for packets to be sent.
-    packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
-    /// Sender for message part confirmations.
-    message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
-    /// Sender for shared socket bytes.
-    shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
-
-    /// The socket address of the connected server.
-    addr: SocketAddr,
-    /// Authenticator bound to the server.
-    inner_auth: InnerAuth,
-
-    /// Messaging-related properties wrapped in an `Arc` and `RwLock`.
-    messaging: Mutex<ConnectedServerMessaging>,
-    /// The last instant when a messaging write operation occurred.
-    last_messaging_write: RwLock<Instant>,
-    /// The average latency duration.
-    average_latency: RwLock<Duration>,
-    /// The byte size of [`ConnectedClientMessaging::incoming_messages`]
-    incoming_messages_total_size: RwLock<usize>,
-}
-
-impl ConnectedServer {
-    /// # Returns
-    /// The remove server address.
-    pub fn addr(&self) -> &SocketAddr {
-        &self.addr
-    }
-
-    /// # Returns
-    /// The average time of messaging response of the server after a client message + server tick delay
-    pub fn average_latency(&self) -> Duration {
-        *self.average_latency.read().unwrap()
-    }
-
-    /// # Returns
-    /// The total size of the stored incoming messages, that were not completed wet, or not read yet.
-    pub fn incoming_messages_total_size(&self) -> usize {
-        *self.incoming_messages_total_size.read().unwrap()
     }
 }
 
