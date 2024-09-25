@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    fmt::Debug,
     future::Future,
     io,
     net::SocketAddr,
@@ -87,6 +88,7 @@ impl<T> NodeState<T> {
 
 pub enum ReceivedBytesProcessResult {
     InvalidProtocolCommunication,
+    #[allow(dead_code)]
     AuthMessage(Vec<u8>),
     RejectionJustification(DeserializedMessage),
     MessagePartConfirm,
@@ -95,6 +97,7 @@ pub enum ReceivedBytesProcessResult {
 
 pub trait NodeType: Send + Sync + Sized + 'static {
     type Skt: Send + Sync + Sized + 'static;
+    type UnEr: Send + Sync + Sized + 'static + Debug;
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
 
@@ -416,6 +419,10 @@ pub struct NodeInternal<T: NodeType> {
 
     /// The UDP socket used for communication.
     pub socket: Arc<UdpSocket>,
+
+    #[cfg(feature = "store_unexpected")]
+    /// List of errors emitted in the tick.
+    pub store_unexpected_errors: StoreUnexpectedErrors<T::UnEr>,
 
     /// The registry for packets.
     pub packet_registry: Arc<PacketRegistry>,

@@ -227,25 +227,16 @@ pub mod server {
         'l1: while let Ok(_) = create_list_signal_receiver.recv().await {
             if let Some(node) = NodeInternal::try_upgrade(&node) {
                 let mut list = Vec::<UnexpectedError>::new();
-                while let Ok(mut error_list) = node
-                    .node_type
-                    .store_unexpected_errors
-                    .error_list_receiver
-                    .try_recv()
+                while let Ok(mut error_list) =
+                    node.store_unexpected_errors.error_list_receiver.try_recv()
                 {
                     list.append(&mut error_list);
                 }
-                while let Ok(error) = node
-                    .node_type
-                    .store_unexpected_errors
-                    .error_receiver
-                    .try_recv()
-                {
+                while let Ok(error) = node.store_unexpected_errors.error_receiver.try_recv() {
                     list.push(error);
                 }
 
                 let _ = node
-                    .node_type
                     .store_unexpected_errors
                     .error_list_sender
                     .send(list)

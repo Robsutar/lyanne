@@ -472,6 +472,9 @@ pub(super) mod connecting {
 
                 socket: Arc::clone(&socket),
 
+                #[cfg(feature = "store_unexpected")]
+                store_unexpected_errors,
+
                 packet_registry: Arc::clone(&packet_registry),
                 messaging_properties: Arc::clone(&messaging_properties),
                 read_handler_properties: Arc::clone(&read_handler_properties),
@@ -481,8 +484,6 @@ pub(super) mod connecting {
                 node_type: ClientNode {
                     reason_to_disconnect_sender,
                     reason_to_disconnect_receiver,
-                    #[cfg(feature = "store_unexpected")]
-                    store_unexpected_errors,
                     authentication_mode: connected_auth_mode,
                     tick_state: RwLock::new(ClientTickState::TickStartPending),
                     client_properties: Arc::clone(&client_properties),
@@ -584,7 +585,6 @@ pub(super) mod connecting {
                     #[cfg(feature = "store_unexpected")]
                     if _read_result.is_unexpected() {
                         let _ = internal
-                            .node_type
                             .store_unexpected_errors
                             .error_sender
                             .send(UnexpectedError::OfReadServerBytes(_read_result))

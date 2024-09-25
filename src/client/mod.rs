@@ -255,9 +255,6 @@ struct ClientNode {
     /// Receiver for addresses to be disconnected.
     reason_to_disconnect_receiver: async_channel::Receiver<ServerDisconnectReason>,
 
-    #[cfg(feature = "store_unexpected")]
-    store_unexpected_errors: StoreUnexpectedErrors<UnexpectedError>,
-
     authentication_mode: ConnectedAuthenticatorMode,
 
     /// Actual state of client periodic tick flow.
@@ -310,6 +307,7 @@ impl ClientNode {
 
 impl NodeType for ClientNode {
     type Skt = Vec<u8>;
+    type UnEr = UnexpectedError;
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
         &self.state
@@ -327,7 +325,6 @@ impl NodeType for ClientNode {
         #[cfg(feature = "store_unexpected")]
         if _read_result.is_unexpected() {
             let _ = node
-                .node_type
                 .store_unexpected_errors
                 .error_sender
                 .send(UnexpectedError::OfReadServerBytes(_read_result))
@@ -532,7 +529,7 @@ impl Client {
                 messaging.tick_bytes_len = 0;
 
                 #[cfg(feature = "store_unexpected")]
-                let unexpected_errors = match node_type
+                let unexpected_errors = match internal
                     .store_unexpected_errors
                     .error_list_receiver
                     .try_recv()
@@ -542,7 +539,7 @@ impl Client {
                 };
 
                 #[cfg(feature = "store_unexpected")]
-                node_type
+                internal
                     .store_unexpected_errors
                     .create_list_signal_sender
                     .try_send(())

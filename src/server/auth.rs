@@ -299,7 +299,6 @@ where
                                 Ok(result) => {
                                     if result.is_unexpected() {
                                         let _ = node
-                                            .node_type
                                             .store_unexpected_errors
                                             .error_sender
                                             .send(UnexpectedError::OfTcpBasedHandlerAccept(
@@ -310,7 +309,6 @@ where
                                 }
                                 Err(e) => {
                                     let _ = node
-                                        .node_type
                                         .store_unexpected_errors
                                         .error_sender
                                         .send(UnexpectedError::OfTcpBasedHandlerAcceptIoError(

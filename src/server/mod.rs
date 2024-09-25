@@ -476,10 +476,6 @@ struct ServerNode {
         (ClientDisconnectReason, Option<JustifiedRejectionContext>),
     )>,
 
-    #[cfg(feature = "store_unexpected")]
-    /// List of errors emitted in the tick.
-    pub store_unexpected_errors: StoreUnexpectedErrors<UnexpectedError>,
-
     authenticator_mode: AuthenticatorModeInternal,
 
     /// Actual state of server periodic tick flow.
@@ -580,6 +576,7 @@ impl ServerNode {
 
 impl NodeType for ServerNode {
     type Skt = (SocketAddr, Vec<u8>);
+    type UnEr = UnexpectedError;
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
         &self.state
@@ -600,7 +597,6 @@ impl NodeType for ServerNode {
         #[cfg(feature = "store_unexpected")]
         if _read_result.is_unexpected() {
             let _ = node
-                .node_type
                 .store_unexpected_errors
                 .error_sender
                 .send(UnexpectedError::OfReadAddrBytes(addr, _read_result))
@@ -679,6 +675,9 @@ impl Server {
 
                 socket,
 
+                #[cfg(feature = "store_unexpected")]
+                store_unexpected_errors,
+
                 packet_registry,
                 messaging_properties,
                 read_handler_properties,
@@ -695,9 +694,6 @@ impl Server {
                     clients_to_auth_receiver,
 
                     clients_to_disconnect_receiver,
-
-                    #[cfg(feature = "store_unexpected")]
-                    store_unexpected_errors,
 
                     authenticator_mode: authenticator_mode_build.take_authenticator_mode_internal(),
 
@@ -829,7 +825,6 @@ impl Server {
 
         #[cfg(feature = "store_unexpected")]
         let unexpected_errors = match internal
-            .node_type
             .store_unexpected_errors
             .error_list_receiver
             .try_recv()
@@ -989,7 +984,6 @@ impl Server {
 
         #[cfg(feature = "store_unexpected")]
         internal
-            .node_type
             .store_unexpected_errors
             .create_list_signal_sender
             .try_send(())
