@@ -576,6 +576,7 @@ impl ServerNode {
 
 impl NodeType for ServerNode {
     type Skt = (SocketAddr, Vec<u8>);
+    #[cfg(feature = "store_unexpected")]
     type UnEr = UnexpectedError;
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {

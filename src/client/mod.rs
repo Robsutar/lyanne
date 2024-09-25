@@ -307,6 +307,7 @@ impl ClientNode {
 
 impl NodeType for ClientNode {
     type Skt = Vec<u8>;
+    #[cfg(feature = "store_unexpected")]
     type UnEr = UnexpectedError;
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {

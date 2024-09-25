@@ -97,6 +97,7 @@ pub enum ReceivedBytesProcessResult {
 
 pub trait NodeType: Send + Sync + Sized + 'static {
     type Skt: Send + Sync + Sized + 'static;
+    #[cfg(feature = "store_unexpected")]
     type UnEr: Send + Sync + Sized + 'static + Debug;
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
