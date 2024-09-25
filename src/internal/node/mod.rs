@@ -386,27 +386,28 @@ pub struct PartnerMessaging {
 /// Properties of a partner that is connected to the node.
 pub struct Partner {
     /// Sender for receiving bytes.
-    pub receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
+    pub(crate) receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
     /// Sender for packets to be sent.
-    pub packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
+    pub(crate) packets_to_send_sender: async_channel::Sender<Option<SerializedPacket>>,
     /// Sender for message part confirmations.
-    pub message_part_confirmation_sender: async_channel::Sender<(MessageId, Option<MessagePartId>)>,
+    pub(crate) message_part_confirmation_sender:
+        async_channel::Sender<(MessageId, Option<MessagePartId>)>,
     /// Sender for shared socket bytes.
-    pub shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
+    pub(crate) shared_socket_bytes_send_sender: async_channel::Sender<Arc<Vec<u8>>>,
 
     /// The socket address of the connected partner.
-    pub addr: SocketAddr,
+    pub(crate) addr: SocketAddr,
     /// Authenticator bound to this partner.
-    pub inner_auth: InnerAuth,
+    pub(crate) inner_auth: InnerAuth,
 
     /// Messaging-related properties wrapped in an [`Mutex`].
-    pub messaging: Mutex<PartnerMessaging>,
+    pub(crate) messaging: Mutex<PartnerMessaging>,
     /// The last instant when a messaging write operation occurred.
-    pub last_messaging_write: RwLock<Instant>,
+    pub(crate) last_messaging_write: RwLock<Instant>,
     /// The average latency duration.
-    pub average_latency: RwLock<Duration>,
+    pub(crate) average_latency: RwLock<Duration>,
     /// The byte size of [`PartnerMessaging::incoming_messages`]
-    pub incoming_messages_total_size: RwLock<usize>,
+    pub(crate) incoming_messages_total_size: RwLock<usize>,
 }
 
 impl Partner {
