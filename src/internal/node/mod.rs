@@ -14,7 +14,7 @@ use crate::{
         rt::{try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
     },
-    packets::{PacketRegistry, SerializedPacket},
+    packets::{PacketRegistry, SerializedPacket, SerializedPacketList},
     MessagingProperties, ReadHandlerProperties, SentMessagePart,
 };
 
@@ -306,6 +306,39 @@ pub trait NodeType: Send + Sync + Sized + 'static {
             }
             MessageChannel::AUTH_MESSAGE => ReceivedBytesProcessResult::AuthMessage(bytes),
             _ => ReceivedBytesProcessResult::InvalidProtocolCommunication,
+        }
+    }
+
+    fn push_completed_message_tick(
+        node: &NodeInternal<Self>,
+        partner: &Partner,
+        messaging: &mut PartnerMessaging,
+        shared_socket_bytes_send_sender: &async_channel::Sender<Arc<Vec<u8>>>,
+        message_id: MessageId,
+        serialized_packet_list: SerializedPacketList,
+    ) {
+        let bytes = serialized_packet_list.bytes;
+
+        let message_parts =
+            MessagePart::create_list(&node.messaging_properties, message_id, bytes).unwrap();
+
+        let sent_instant = Instant::now();
+
+        for part in message_parts {
+            let part_id = part.id();
+            let part_message_id = part.message_id();
+
+            let sent_part = partner.inner_auth.sent_part_of(sent_instant, part);
+
+            let finished_bytes = Arc::clone(&sent_part.finished_bytes);
+
+            let (_, pending_part_id_map) = messaging
+                .pending_confirmation
+                .entry(part_message_id)
+                .or_insert_with(|| (sent_instant, BTreeMap::new()));
+            pending_part_id_map.insert(part_id, sent_part);
+
+            let _ = shared_socket_bytes_send_sender.try_send(finished_bytes);
         }
     }
 }

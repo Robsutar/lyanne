@@ -1167,7 +1167,7 @@ impl Server {
                 incoming_messages_total_size: RwLock::new(0),
             });
 
-            init::client::push_completed_message_tick(
+            NodeType::push_completed_message_tick(
                 &internal,
                 &client,
                 &mut client.messaging.try_lock().unwrap(),

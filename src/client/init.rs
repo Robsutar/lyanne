@@ -1,13 +1,9 @@
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Weak},
-    time::Instant,
-};
+use std::sync::{Arc, Weak};
 
 use crate::{
     internal::rt::TaskHandle,
     internal::{
-        messages::{MessageId, MessagePart, MessagePartId},
+        messages::{MessageId, MessagePartId},
         MessageChannel,
     },
     packets::{SerializedPacket, SerializedPacketList},
@@ -78,36 +74,16 @@ pub mod server {
                         let mut messaging = server.messaging.lock().await;
                         let packets_to_send = std::mem::replace(&mut packets_to_send, Vec::new());
 
-                        let bytes = SerializedPacketList::try_non_empty(packets_to_send)
-                            .unwrap()
-                            .bytes;
-                        let message_parts = MessagePart::create_list(
-                            &node.messaging_properties,
+                        let serialized_packet_list =
+                            SerializedPacketList::try_non_empty(packets_to_send).unwrap();
+                        NodeType::push_completed_message_tick(
+                            &node,
+                            &server,
+                            &mut messaging,
+                            &server.shared_socket_bytes_send_sender,
                             next_message_id,
-                            bytes,
-                        )
-                        .unwrap();
-
-                        let sent_instant = Instant::now();
-
-                        for part in message_parts {
-                            let part_id: u16 = part.id();
-                            let part_message_id = part.message_id();
-
-                            let sent_part = server.inner_auth.sent_part_of(sent_instant, part);
-
-                            let finished_bytes = Arc::clone(&sent_part.finished_bytes);
-
-                            let (_, pending_part_id_map) = messaging
-                                .pending_confirmation
-                                .entry(part_message_id)
-                                .or_insert_with(|| (sent_instant, BTreeMap::new()));
-                            pending_part_id_map.insert(part_id, sent_part);
-
-                            let _ = server
-                                .shared_socket_bytes_send_sender
-                                .try_send(finished_bytes);
-                        }
+                            serialized_packet_list,
+                        );
 
                         next_message_id = next_message_id.wrapping_add(1);
                     } else {

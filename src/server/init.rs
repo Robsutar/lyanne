@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     net::SocketAddr,
     sync::{Arc, Weak},
     time::Instant,
@@ -7,7 +6,7 @@ use std::{
 
 use crate::{
     internal::{
-        messages::{MessageId, MessagePart, MessagePartId},
+        messages::{MessageId, MessagePartId},
         rt::TaskHandle,
         MessageChannel,
     },
@@ -82,7 +81,7 @@ pub mod client {
 
                         let serialized_packet_list =
                             SerializedPacketList::try_non_empty(packets_to_send).unwrap();
-                        push_completed_message_tick(
+                        NodeType::push_completed_message_tick(
                             &node,
                             &client,
                             &mut messaging,
@@ -99,39 +98,6 @@ pub mod client {
                     break 'l1;
                 }
             }
-        }
-    }
-
-    pub fn push_completed_message_tick(
-        node: &NodeInternal<ServerNode>,
-        client: &ConnectedClient,
-        messaging: &mut PartnerMessaging,
-        shared_socket_bytes_send_sender: &async_channel::Sender<Arc<Vec<u8>>>,
-        message_id: MessageId,
-        serialized_packet_list: SerializedPacketList,
-    ) {
-        let bytes = serialized_packet_list.bytes;
-
-        let message_parts =
-            MessagePart::create_list(&node.messaging_properties, message_id, bytes).unwrap();
-
-        let sent_instant = Instant::now();
-
-        for part in message_parts {
-            let part_id = part.id();
-            let part_message_id = part.message_id();
-
-            let sent_part = client.inner_auth.sent_part_of(sent_instant, part);
-
-            let finished_bytes = Arc::clone(&sent_part.finished_bytes);
-
-            let (_, pending_part_id_map) = messaging
-                .pending_confirmation
-                .entry(part_message_id)
-                .or_insert_with(|| (sent_instant, BTreeMap::new()));
-            pending_part_id_map.insert(part_id, sent_part);
-
-            let _ = shared_socket_bytes_send_sender.try_send(finished_bytes);
         }
     }
 
