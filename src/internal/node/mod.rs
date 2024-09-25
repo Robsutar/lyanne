@@ -12,7 +12,7 @@ use crate::{
     internal::{
         auth::InnerAuth,
         messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
-        rt::{try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        rt::{select, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
     },
     packets::{PacketRegistry, SerializedPacket, SerializedPacketList},
@@ -21,6 +21,7 @@ use crate::{
 
 use super::{
     messages::{MessagePart, MessagePartMapTryInsertResult, MessagePartMapTryReadResult},
+    rt::SelectArm,
     MessageChannel,
 };
 
@@ -54,35 +55,26 @@ impl<T: std::fmt::Debug> StoreUnexpectedErrors<T> {
     }
 }
 
-pub struct NodeInactiveState<T> {
-    pub received_bytes_sender: async_channel::Sender<T>,
+pub struct ActiveReadHandler {
+    pub cancel_sender: async_channel::Sender<()>,
+    pub task: TaskHandle<()>,
 }
 
-pub enum NodeState<T> {
+pub enum NodeState {
     Active,
-    Inactive(NodeInactiveState<T>),
+    Inactive,
 }
 
-impl<T> NodeState<T> {
+impl NodeState {
     /// Returns
     /// `true` if the lock of `state` could not be acquired
     /// `true` if the state read value is [`NodeState::Inactive`]
-    pub fn is_inactive(state: &AsyncRwLock<NodeState<T>>) -> bool {
+    pub fn is_inactive(state: &AsyncRwLock<NodeState>) -> bool {
         let state = match try_read(state) {
             Some(state) => state,
             None => return true,
         };
-        matches!(*state, NodeState::Inactive(_))
-    }
-
-    pub async fn set_inactive(
-        state: &AsyncRwLock<NodeState<T>>,
-        received_bytes_sender: async_channel::Sender<T>,
-    ) {
-        let mut state = state.write().await;
-        *state = NodeState::Inactive(NodeInactiveState {
-            received_bytes_sender,
-        });
+        matches!(*state, NodeState::Inactive)
     }
 }
 
@@ -99,8 +91,6 @@ pub trait NodeType: Send + Sync + Sized + 'static {
     type Skt: Send + Sync + Sized + 'static;
     #[cfg(feature = "store_unexpected")]
     type UnEr: Send + Sync + Sized + 'static + Debug;
-
-    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
 
     async fn pre_read_next_bytes(socket: &Arc<UdpSocket>) -> io::Result<Self::Skt>;
 
@@ -123,59 +113,27 @@ pub trait NodeType: Send + Sync + Sized + 'static {
         }
     }
 
-    async fn create_read_handler(weak_node: Weak<NodeInternal<Self>>) {
-        let mut was_used = false;
+    async fn create_read_handler(
+        weak_node: Weak<NodeInternal<Self>>,
+        socket: Arc<UdpSocket>,
+        cancel_receiver: async_channel::Receiver<()>,
+    ) {
         'l1: loop {
+            let pre_read_next_bytes_result =
+                match select(Self::pre_read_next_bytes(&socket), cancel_receiver.recv()).await {
+                    SelectArm::Left(pre_read_next_bytes_result) => pre_read_next_bytes_result,
+                    SelectArm::Right(_) => {
+                        break 'l1;
+                    }
+                };
+
             if let Some(node) = NodeInternal::try_upgrade(&weak_node) {
-                if *node.read_handler_properties.active_count.write().unwrap()
-                    > node.read_handler_properties.target_surplus_size + 1
-                {
-                    let mut surplus_count =
-                        node.read_handler_properties.active_count.write().unwrap();
-                    if !was_used {
-                        *surplus_count -= 1;
+                match pre_read_next_bytes_result {
+                    Ok(result) => {
+                        Self::consume_read_bytes_result(&node, result).await;
                     }
-                    break 'l1;
-                } else {
-                    let read_timeout = node.messaging_properties.timeout_interpretation;
-                    let socket = Arc::clone(&node.socket);
-                    drop(node);
-
-                    let pre_read_next_bytes_result =
-                        Self::pre_read_next_bytes_timeout(&socket, read_timeout).await;
-
-                    match NodeInternal::try_upgrade_or_get_inactive(&weak_node).await {
-                        Some(Ok(node)) => match pre_read_next_bytes_result {
-                            Ok(result) => {
-                                if !was_used {
-                                    was_used = true;
-                                    let mut surplus_count =
-                                        node.read_handler_properties.active_count.write().unwrap();
-                                    *surplus_count -= 1;
-                                }
-
-                                Self::consume_read_bytes_result(&node, result).await;
-                            }
-                            Err(_) => {
-                                if was_used {
-                                    was_used = false;
-                                    let mut surplus_count =
-                                        node.read_handler_properties.active_count.write().unwrap();
-                                    *surplus_count += 1;
-                                }
-                            }
-                        },
-                        Some(Err(inactive_state)) => {
-                            if let Ok(result) = pre_read_next_bytes_result {
-                                let _ = inactive_state.received_bytes_sender.try_send(result);
-                            }
-                            break 'l1;
-                        }
-                        None => {
-                            break 'l1;
-                        }
-                    }
-                }
+                    Err(_) => {}
+                };
             } else {
                 break 'l1;
             }
@@ -359,6 +317,7 @@ pub trait NodeType: Send + Sync + Sized + 'static {
         list
     }
 }
+
 pub struct PartnerMessaging {
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.
@@ -412,6 +371,12 @@ pub struct Partner {
 
 impl Partner {
     /// # Returns
+    /// The address of the partner
+    pub fn addr(&self) -> &SocketAddr {
+        &self.addr
+    }
+
+    /// # Returns
     /// The average time of messaging response of this partner after a node message.
     pub fn average_latency(&self) -> Duration {
         *self.average_latency.read().unwrap()
@@ -431,6 +396,7 @@ pub struct NodeInternal<T: NodeType> {
 
     /// Task handle of the receiver.
     pub tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
+    pub read_handlers_keeper: AsyncRwLock<Vec<ActiveReadHandler>>,
 
     /// The UDP socket used for communication.
     pub socket: Arc<UdpSocket>,
@@ -448,36 +414,17 @@ pub struct NodeInternal<T: NodeType> {
 
     pub task_runner: Arc<TaskRunner>,
 
+    pub state: AsyncRwLock<NodeState>,
     pub node_type: T,
 }
 
 impl<T: NodeType> NodeInternal<T> {
     pub fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
         if let Some(internal) = downgraded.upgrade() {
-            if NodeState::is_inactive(&internal.node_type.state()) {
+            if NodeState::is_inactive(&internal.state) {
                 None
             } else {
                 Some(internal)
-            }
-        } else {
-            None
-        }
-    }
-
-    pub async fn try_upgrade_or_get_inactive(
-        downgraded: &Weak<Self>,
-    ) -> Option<Result<Arc<Self>, NodeInactiveState<T::Skt>>> {
-        if let Some(internal) = downgraded.upgrade() {
-            let inactive_ref = match &*internal.node_type.state().read().await {
-                NodeState::Active => None,
-                NodeState::Inactive(inactive_state) => Some(NodeInactiveState {
-                    received_bytes_sender: inactive_state.received_bytes_sender.clone(),
-                }),
-            };
-
-            match inactive_ref {
-                Some(inactive_state) => Some(Err(inactive_state)),
-                None => Some(Ok(internal)),
             }
         } else {
             None
@@ -493,16 +440,27 @@ impl<T: NodeType> NodeInternal<T> {
             .try_send(self.task_runner.spawn(future));
     }
 
-    pub fn on_holder_drop(self: &Arc<Self>) {
-        if !NodeState::is_inactive(&self.node_type.state()) {
-            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
+    pub async fn set_state_inactive(node: &Arc<Self>) {
+        {
+            let mut state = node.state.write().await;
+            *state = NodeState::Inactive;
+        }
+        {
+            let mut read_handlers_keeper = node.read_handlers_keeper.write().await;
+            while !read_handlers_keeper.is_empty() {
+                let active = read_handlers_keeper.remove(0);
+                let _ = active.cancel_sender.send(()).await;
+                let _ = active.task.await;
+            }
+        }
+    }
 
+    pub fn on_holder_drop(self: &Arc<Self>) {
+        if !NodeState::is_inactive(&self.state) {
             let internal = Arc::clone(&self);
             let _ = self.create_async_task(async move {
-                NodeState::set_inactive(&internal.node_type.state(), received_bytes_sender).await;
+                Self::set_state_inactive(&internal).await;
             });
-
-            drop(received_bytes_receiver);
         }
     }
 }

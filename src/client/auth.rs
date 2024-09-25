@@ -168,7 +168,10 @@ pub struct DisconnectedConnectError {
 }
 
 pub(super) mod connecting {
-    use crate::internal::messages::{PUBLIC_KEY_SIZE, UDP_BUFFER_SIZE};
+    use crate::internal::{
+        messages::{PUBLIC_KEY_SIZE, UDP_BUFFER_SIZE},
+        node::ActiveReadHandler,
+    };
 
     use super::*;
 
@@ -464,8 +467,8 @@ pub(super) mod connecting {
         let client = Client {
             internal: Arc::new(NodeInternal {
                 tasks_keeper_sender,
-
                 tasks_keeper_handle,
+                read_handlers_keeper: AsyncRwLock::new(Vec::new()),
 
                 socket: Arc::clone(&socket),
 
@@ -478,6 +481,7 @@ pub(super) mod connecting {
 
                 task_runner,
 
+                state: AsyncRwLock::new(NodeState::Active),
                 node_type: ClientNode {
                     reason_to_disconnect_sender,
                     reason_to_disconnect_receiver,
@@ -486,7 +490,6 @@ pub(super) mod connecting {
                     client_properties: Arc::clone(&client_properties),
                     connected_server: Arc::clone(&server),
                     disconnect_reason: RwLock::new(None),
-                    state: AsyncRwLock::new(NodeState::Active),
                 },
             }),
         };
@@ -593,8 +596,27 @@ pub(super) mod connecting {
 
             match client.try_tick_start().unwrap() {
                 ClientTickResult::ReceivedMessage(tick_result) => {
-                    ClientNode::try_check_read_handler(internal);
                     client.try_tick_after_message().unwrap();
+
+                    {
+                        let mut read_handlers_keeper = internal.read_handlers_keeper.write().await;
+
+                        for _ in 0..internal.read_handler_properties.target_tasks_size {
+                            let (cancel_sender, cancel_receiver) = async_channel::bounded(1);
+
+                            let task = internal.task_runner.spawn(NodeType::create_read_handler(
+                                Arc::downgrade(&internal),
+                                Arc::clone(&internal.socket),
+                                cancel_receiver,
+                            ));
+
+                            read_handlers_keeper.push(ActiveReadHandler {
+                                cancel_sender,
+                                task,
+                            });
+                        }
+                    }
+
                     return Ok(ConnectResult {
                         client,
                         initial_message: tick_result.message,

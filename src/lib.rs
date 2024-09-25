@@ -91,10 +91,7 @@ pub use bevy_ecs;
 #[cfg(all(feature = "bevy_packet_schedules", not(any(feature = "sd_bincode"))))]
 compile_error!("feature \"bevy_packet_schedules\" needs one serializer");
 
-use std::{
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::time::Duration;
 
 use internal::{
     messages::{ENCRYPTION_SPACE, NONCE_SIZE, UDP_BUFFER_SIZE},
@@ -154,19 +151,16 @@ impl Default for MessagingProperties {
     }
 }
 
-/// Properties for the client bytes read handlers, used in `create_read_handler`.
+/// Properties for reading data via UdpSocket.
 pub struct ReadHandlerProperties {
-    /// Number of asynchronous tasks that must be slacking when receiving packets.
-    pub target_surplus_size: u16,
-    /// Actual number of active asynchronous read handlers.
-    pub active_count: Arc<RwLock<u16>>,
+    /// Number of asynchronous tasks to receiving packets.
+    pub target_tasks_size: u16,
 }
 
 impl Default for ReadHandlerProperties {
     fn default() -> ReadHandlerProperties {
         ReadHandlerProperties {
-            target_surplus_size: 5u16,
-            active_count: Arc::new(RwLock::new(0u16)),
+            target_tasks_size: 16u16,
         }
     }
 }
