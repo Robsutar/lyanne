@@ -18,6 +18,11 @@ use crate::{
     MessagingProperties, ReadHandlerProperties, SentMessagePart,
 };
 
+use super::{
+    messages::{MessagePart, MessagePartMapTryInsertResult, MessagePartMapTryReadResult},
+    MessageChannel,
+};
+
 #[cfg(feature = "store_unexpected")]
 pub struct StoreUnexpectedErrors<T: std::fmt::Debug> {
     pub error_sender: async_channel::Sender<T>,
@@ -78,6 +83,14 @@ impl<T> NodeState<T> {
             received_bytes_sender,
         });
     }
+}
+
+pub enum ReceivedBytesProcessResult {
+    InvalidProtocolCommunication,
+    AuthMessage(Vec<u8>),
+    RejectionJustification(DeserializedMessage),
+    MessagePartConfirm,
+    MessagePartSent,
 }
 
 pub trait NodeType: Send + Sync + Sized + 'static {
@@ -166,6 +179,135 @@ pub trait NodeType: Send + Sync + Sized + 'static {
     }
 
     async fn consume_read_bytes_result(node: &Arc<NodeInternal<Self>>, result: Self::Skt);
+
+    async fn handle_received_bytes(
+        node: &Arc<NodeInternal<Self>>,
+        partner: &Partner,
+        bytes: Vec<u8>,
+    ) -> ReceivedBytesProcessResult {
+        let mut messaging = partner.messaging.lock().await;
+        match bytes[0] {
+            MessageChannel::MESSAGE_PART_CONFIRM => {
+                if bytes.len() == 3 {
+                    let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
+                    if let Some((sent_instant, _)) =
+                        messaging.pending_confirmation.remove(&message_id)
+                    {
+                        let delay = Instant::now() - sent_instant;
+                        messaging.latency_monitor.push(delay);
+                        messaging.average_packet_loss_rtt =
+                            messaging.packet_loss_rtt_calculator.update_rtt(
+                                &node.messaging_properties.packet_loss_rtt_properties,
+                                delay,
+                            );
+                    }
+                    ReceivedBytesProcessResult::MessagePartConfirm
+                } else if bytes.len() == 5 {
+                    let message_id = MessageId::from_be_bytes([bytes[1], bytes[2]]);
+                    let part_id = MessagePartId::from_be_bytes([bytes[3], bytes[4]]);
+                    if let Some((sent_instant, map)) =
+                        messaging.pending_confirmation.get_mut(&message_id)
+                    {
+                        let sent_instant = *sent_instant;
+                        if let Some(_) = map.remove(&part_id) {
+                            if map.is_empty() {
+                                messaging.pending_confirmation.remove(&message_id).unwrap();
+                            }
+
+                            let delay = Instant::now() - sent_instant;
+                            messaging.latency_monitor.push(delay);
+                            messaging.average_packet_loss_rtt =
+                                messaging.packet_loss_rtt_calculator.update_rtt(
+                                    &node.messaging_properties.packet_loss_rtt_properties,
+                                    delay,
+                                );
+                        }
+                    }
+                    ReceivedBytesProcessResult::MessagePartConfirm
+                } else {
+                    ReceivedBytesProcessResult::InvalidProtocolCommunication
+                }
+            }
+            MessageChannel::MESSAGE_PART_SEND => {
+                let message_part_bytes = partner.inner_auth.extract_after_channel(&bytes);
+
+                let message_part_bytes = match message_part_bytes {
+                    Ok(message_part_bytes) => message_part_bytes,
+                    Err(_) => {
+                        return ReceivedBytesProcessResult::InvalidProtocolCommunication;
+                    }
+                };
+
+                if let Ok(part) = MessagePart::deserialize(message_part_bytes) {
+                    let mut send_fully_message_confirmation = false;
+                    let message_id = part.message_id();
+                    let part_id = part.id();
+
+                    match messaging.incoming_messages.try_insert(part) {
+                        MessagePartMapTryInsertResult::PastMessageId => {
+                            let _ = partner
+                                .message_part_confirmation_sender
+                                .try_send((message_id, None));
+                        }
+                        MessagePartMapTryInsertResult::Stored => {
+                            'l2: loop {
+                                match messaging.incoming_messages.try_read(&node.packet_registry){
+                                    MessagePartMapTryReadResult::PendingParts => break 'l2,
+                                    MessagePartMapTryReadResult::ErrorInCompleteMessageDeserialize(_) => {
+                                        return ReceivedBytesProcessResult::InvalidProtocolCommunication;
+                                    },
+                                    MessagePartMapTryReadResult::SuccessfullyCreated(message) => {
+                                        send_fully_message_confirmation = true;
+
+                                        messaging.received_messages.push(message);
+                                        messaging.last_received_message_instant = Instant::now();
+                                    },
+                                }
+                            }
+
+                            if send_fully_message_confirmation {
+                                let _ = partner
+                                    .message_part_confirmation_sender
+                                    .try_send((message_id, None));
+                            } else {
+                                let _ = partner
+                                    .message_part_confirmation_sender
+                                    .try_send((message_id, Some(part_id)));
+                            }
+                        }
+                    }
+
+                    *partner.incoming_messages_total_size.write().unwrap() =
+                        messaging.incoming_messages.total_size();
+
+                    ReceivedBytesProcessResult::MessagePartSent
+                } else {
+                    ReceivedBytesProcessResult::InvalidProtocolCommunication
+                }
+            }
+            MessageChannel::REJECTION_JUSTIFICATION => {
+                let justification_bytes = partner.inner_auth.extract_after_channel(&bytes);
+
+                let justification_bytes = match justification_bytes {
+                    Ok(justification_bytes) => justification_bytes,
+                    Err(_) => {
+                        return ReceivedBytesProcessResult::InvalidProtocolCommunication;
+                    }
+                };
+
+                if let Ok(message) = DeserializedMessage::deserialize_single_list(
+                    &justification_bytes,
+                    &node.packet_registry,
+                ) {
+                    ReceivedBytesProcessResult::RejectionJustification(message)
+                } else {
+                    ReceivedBytesProcessResult::InvalidProtocolCommunication
+                }
+            }
+            MessageChannel::AUTH_MESSAGE => ReceivedBytesProcessResult::AuthMessage(bytes),
+            _ => ReceivedBytesProcessResult::InvalidProtocolCommunication,
+        }
+    }
 }
 pub struct PartnerMessaging {
     /// Map of message parts pending confirmation.
@@ -273,13 +415,13 @@ impl<T: NodeType> NodeInternal<T> {
         if let Some(internal) = downgraded.upgrade() {
             let inactive_ref = match &*internal.node_type.state().read().await {
                 NodeState::Active => None,
-                NodeState::Inactive(server_inactive_state) => Some(NodeInactiveState {
-                    received_bytes_sender: server_inactive_state.received_bytes_sender.clone(),
+                NodeState::Inactive(inactive_state) => Some(NodeInactiveState {
+                    received_bytes_sender: inactive_state.received_bytes_sender.clone(),
                 }),
             };
 
             match inactive_ref {
-                Some(server_inactive_state) => Some(Err(server_inactive_state)),
+                Some(inactive_state) => Some(Err(inactive_state)),
                 None => Some(Ok(internal)),
             }
         } else {
