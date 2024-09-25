@@ -573,7 +573,7 @@ pub(super) mod connecting {
             }
 
             let pre_read_next_bytes_result =
-                ClientNode::pre_read_next_bytes(&socket, packet_loss_timeout).await;
+                ClientNode::pre_read_next_bytes_timeout(&socket, packet_loss_timeout).await;
 
             match pre_read_next_bytes_result {
                 Ok(result) => {

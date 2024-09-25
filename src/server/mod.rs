@@ -537,30 +537,6 @@ impl ServerNode {
         }
     }
 
-    async fn pre_read_next_bytes(
-        socket: &Arc<UdpSocket>,
-        read_timeout: Duration,
-    ) -> io::Result<(SocketAddr, Vec<u8>)> {
-        let pre_read_next_bytes_result: Result<io::Result<(SocketAddr, Vec<u8>)>, ()> =
-            crate::internal::rt::timeout(read_timeout, async move {
-                let mut buf = [0u8; UDP_BUFFER_SIZE];
-                let (len, addr) = socket.recv_from(&mut buf).await?;
-                Ok((addr, buf[..len].to_vec()))
-            })
-            .await;
-
-        match pre_read_next_bytes_result {
-            Ok(result) => match result {
-                Ok(result) => Ok(result),
-                Err(e) => Err(e),
-            },
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                format!("Timeout of {:?}", read_timeout),
-            )),
-        }
-    }
-
     async fn read_next_bytes(
         node: &NodeInternal<ServerNode>,
         tuple: (SocketAddr, Vec<u8>),
@@ -609,6 +585,12 @@ impl NodeType for ServerNode {
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
         &self.state
+    }
+
+    async fn pre_read_next_bytes(socket: &Arc<UdpSocket>) -> io::Result<Self::Skt> {
+        let mut buf = [0u8; UDP_BUFFER_SIZE];
+        let (len, addr) = socket.recv_from(&mut buf).await?;
+        Ok((addr, buf[..len].to_vec()))
     }
 }
 
@@ -1648,7 +1630,8 @@ impl Server {
                         if let Ok(result) = received_bytes_receiver.try_recv() {
                             Ok(result)
                         } else {
-                            ServerNode::pre_read_next_bytes(&socket, min_try_read_time).await
+                            ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time)
+                                .await
                         }
                     };
 

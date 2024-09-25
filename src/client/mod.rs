@@ -293,30 +293,6 @@ impl ClientNode {
         }
     }
 
-    async fn pre_read_next_bytes(
-        socket: &Arc<UdpSocket>,
-        read_timeout: Duration,
-    ) -> io::Result<Vec<u8>> {
-        let pre_read_next_bytes_result: Result<io::Result<Vec<u8>>, ()> =
-            crate::internal::rt::timeout(read_timeout, async move {
-                let mut buf = [0u8; UDP_BUFFER_SIZE];
-                let len = socket.recv(&mut buf).await?;
-                Ok(buf[..len].to_vec())
-            })
-            .await;
-
-        match pre_read_next_bytes_result {
-            Ok(result) => match result {
-                Ok(result) => Ok(result),
-                Err(e) => Err(e),
-            },
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                format!("Timeout of {:?}", read_timeout),
-            )),
-        }
-    }
-
     async fn read_next_bytes(node: &NodeInternal<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
         let mut messaging = node.node_type.connected_server.messaging.lock().await;
         // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
@@ -339,6 +315,12 @@ impl NodeType for ClientNode {
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
         &self.state
+    }
+
+    async fn pre_read_next_bytes(socket: &Arc<UdpSocket>) -> io::Result<Self::Skt> {
+        let mut buf = [0u8; UDP_BUFFER_SIZE];
+        let len = socket.recv(&mut buf).await?;
+        Ok(buf[..len].to_vec())
     }
 }
 
@@ -735,7 +717,8 @@ impl Client {
                         if let Ok(result) = received_bytes_receiver.try_recv() {
                             Ok(result)
                         } else {
-                            ClientNode::pre_read_next_bytes(&socket, packet_loss_timeout).await
+                            ClientNode::pre_read_next_bytes_timeout(&socket, packet_loss_timeout)
+                                .await
                         }
                     };
 

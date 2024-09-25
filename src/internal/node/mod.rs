@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     future::Future,
+    io,
     net::SocketAddr,
     sync::{Arc, RwLock, Weak},
     time::{Duration, Instant},
@@ -10,7 +11,7 @@ use crate::{
     internal::{
         auth::InnerAuth,
         messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
-        rt::{try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner},
+        rt::{try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
     },
     packets::{PacketRegistry, SerializedPacket},
@@ -81,7 +82,29 @@ impl<T> NodeState<T> {
 
 pub trait NodeType {
     type Skt: Send + Sync + Sized + 'static;
+
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
+
+    async fn pre_read_next_bytes(socket: &Arc<UdpSocket>) -> io::Result<Self::Skt>;
+
+    async fn pre_read_next_bytes_timeout(
+        socket: &Arc<UdpSocket>,
+        read_timeout: Duration,
+    ) -> io::Result<Self::Skt> {
+        let pre_read_next_bytes_result =
+            crate::internal::rt::timeout(read_timeout, Self::pre_read_next_bytes(socket)).await;
+
+        match pre_read_next_bytes_result {
+            Ok(result) => match result {
+                Ok(result) => Ok(result),
+                Err(e) => Err(e),
+            },
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("Timeout of {:?}", read_timeout),
+            )),
+        }
+    }
 }
 
 pub struct PartnerMessaging {

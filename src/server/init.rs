@@ -420,7 +420,7 @@ pub mod server {
                     drop(node);
 
                     let pre_read_next_bytes_result =
-                        ServerNode::pre_read_next_bytes(&socket, read_timeout).await;
+                        ServerNode::pre_read_next_bytes_timeout(&socket, read_timeout).await;
 
                     match NodeInternal::try_upgrade_or_get_inactive(&weak_node).await {
                         Some(Ok(node)) => {
