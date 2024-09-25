@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    fmt::Debug,
     future::Future,
     io,
     net::SocketAddr,
@@ -24,6 +23,9 @@ use super::{
     rt::SelectArm,
     MessageChannel,
 };
+
+#[cfg(feature = "store_unexpected")]
+use std::fmt::Debug;
 
 #[cfg(feature = "store_unexpected")]
 pub struct StoreUnexpectedErrors<T: std::fmt::Debug> {
