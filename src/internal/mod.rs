@@ -9,6 +9,7 @@ use crate::LimitedMessage;
 
 pub mod auth;
 pub mod messages;
+#[cfg(any(feature = "server", feature = "client"))]
 pub mod node;
 pub mod rt;
 pub mod utils;
