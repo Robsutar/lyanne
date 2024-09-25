@@ -168,9 +168,6 @@ pub struct DisconnectedConnectError {
 }
 
 pub(super) mod connecting {
-    #[cfg(feature = "store_unexpected")]
-    use client::store_unexpected_error_list_pick;
-
     use crate::internal::messages::{PUBLIC_KEY_SIZE, UDP_BUFFER_SIZE};
 
     use super::*;
@@ -607,7 +604,7 @@ pub(super) mod connecting {
                 ClientTickResult::Disconnected => {
                     #[cfg(feature = "store_unexpected")]
                     let unexpected_errors =
-                        store_unexpected_error_list_pick(&client.internal).await;
+                        NodeType::store_unexpected_error_list_pick(&client.internal).await;
                     return Err(ConnectError::Disconnected(DisconnectedConnectError {
                         reason: client.take_disconnect_reason().unwrap(),
                         #[cfg(feature = "store_unexpected")]

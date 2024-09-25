@@ -180,21 +180,6 @@ pub mod client {
     }
 
     #[cfg(feature = "store_unexpected")]
-    pub async fn store_unexpected_error_list_pick(
-        node: &NodeInternal<ClientNode>,
-    ) -> Vec<UnexpectedError> {
-        let mut list = Vec::<UnexpectedError>::new();
-        while let Ok(mut error_list) = node.store_unexpected_errors.error_list_receiver.try_recv() {
-            list.append(&mut error_list);
-        }
-        while let Ok(error) = node.store_unexpected_errors.error_receiver.try_recv() {
-            list.push(error);
-        }
-
-        list
-    }
-
-    #[cfg(feature = "store_unexpected")]
     pub async fn create_store_unexpected_error_list_handler(
         node: Weak<NodeInternal<ClientNode>>,
         create_list_signal_receiver: async_channel::Receiver<()>,
@@ -204,7 +189,7 @@ pub mod client {
                 let _ = node
                     .store_unexpected_errors
                     .error_list_sender
-                    .send(store_unexpected_error_list_pick(&node).await)
+                    .send(NodeType::store_unexpected_error_list_pick(&node).await)
                     .await;
             } else {
                 break 'l1;

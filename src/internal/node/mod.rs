@@ -344,6 +344,19 @@ pub trait NodeType: Send + Sync + Sized + 'static {
             let _ = shared_socket_bytes_send_sender.try_send(finished_bytes);
         }
     }
+
+    #[cfg(feature = "store_unexpected")]
+    async fn store_unexpected_error_list_pick(node: &NodeInternal<Self>) -> Vec<Self::UnEr> {
+        let mut list = Vec::<Self::UnEr>::new();
+        while let Ok(mut error_list) = node.store_unexpected_errors.error_list_receiver.try_recv() {
+            list.append(&mut error_list);
+        }
+        while let Ok(error) = node.store_unexpected_errors.error_receiver.try_recv() {
+            list.push(error);
+        }
+
+        list
+    }
 }
 pub struct PartnerMessaging {
     /// Map of message parts pending confirmation.
