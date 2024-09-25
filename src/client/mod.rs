@@ -274,18 +274,6 @@ struct ClientNode {
 }
 
 impl ClientNode {
-    fn try_check_read_handler(node: &Arc<NodeInternal<Self>>) {
-        if let Ok(mut active_count) = node.read_handler_properties.active_count.try_write() {
-            if *active_count < node.read_handler_properties.target_surplus_size - 1 {
-                *active_count += 1;
-                let downgraded_server = Arc::downgrade(&node);
-                node.create_async_task(async move {
-                    Self::create_read_handler(downgraded_server).await;
-                });
-            }
-        }
-    }
-
     async fn read_next_bytes(node: &NodeInternal<Self>, bytes: Vec<u8>) -> ReadServerBytesResult {
         let mut messaging = node.node_type.connected_server.messaging.lock().await;
         // 8 for UDP header, 40 for IP header (20 for ipv4 or 40 for ipv6)
@@ -307,10 +295,6 @@ impl NodeType for ClientNode {
     type Skt = Vec<u8>;
     #[cfg(feature = "store_unexpected")]
     type UnEr = UnexpectedError;
-
-    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
-        &self.state
-    }
 
     async fn pre_read_next_bytes(socket: &Arc<UdpSocket>) -> io::Result<Self::Skt> {
         let mut buf = [0u8; UDP_BUFFER_SIZE];
@@ -544,8 +528,6 @@ impl Client {
                     .try_send(())
                     .unwrap();
 
-                ClientNode::try_check_read_handler(internal);
-
                 return Ok(ClientTickResult::ReceivedMessage(
                     ReceivedMessageClientTickResult {
                         message,
@@ -674,7 +656,7 @@ impl Client {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
-            NodeState::set_inactive(&self.internal.node_type.state).await;
+            NodeInternal::set_state_inactive(&self.internal).await;
 
             let tasks_keeper_handle = self
                 .internal
@@ -720,14 +702,8 @@ impl Client {
                         break ClientDisconnectState::SendIoError(e);
                     }
 
-                    let pre_read_next_bytes_result = {
-                        if let Ok(result) = received_bytes_receiver.try_recv() {
-                            Ok(result)
-                        } else {
-                            ClientNode::pre_read_next_bytes_timeout(&socket, packet_loss_timeout)
-                                .await
-                        }
-                    };
+                    let pre_read_next_bytes_result =
+                        ClientNode::pre_read_next_bytes_timeout(&socket, packet_loss_timeout).await;
 
                     match pre_read_next_bytes_result {
                         Ok(result) => {

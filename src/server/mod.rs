@@ -119,7 +119,7 @@ use dashmap::{DashMap, DashSet};
 use crate::{
     internal::{
         messages::{DeserializedMessage, MessagePartMap, UDP_BUFFER_SIZE},
-        node::{NodeInternal, NodeState, NodeType, PartnerMessaging},
+        node::{ActiveReadHandler, NodeInternal, NodeState, NodeType, PartnerMessaging},
         rt::{try_lock, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
@@ -519,16 +519,6 @@ impl ServerNode {
         self.temporary_ignored_ips.remove(ip);
     }
 
-    fn try_check_read_handler(node: &Arc<NodeInternal<Self>>) {
-        if let Ok(mut active_count) = node.read_handler_properties.active_count.try_write() {
-            if *active_count < node.read_handler_properties.target_surplus_size - 1 {
-                *active_count += 1;
-                let downgraded_server = Arc::downgrade(&node);
-                node.create_async_task(Self::create_read_handler(downgraded_server));
-            }
-        }
-    }
-
     async fn read_next_bytes(
         node: &NodeInternal<ServerNode>,
         tuple: (SocketAddr, Vec<u8>),
@@ -576,10 +566,6 @@ impl NodeType for ServerNode {
     type Skt = (SocketAddr, Vec<u8>);
     #[cfg(feature = "store_unexpected")]
     type UnEr = UnexpectedError;
-
-    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>> {
-        &self.state
-    }
 
     async fn pre_read_next_bytes(socket: &Arc<UdpSocket>) -> io::Result<Self::Skt> {
         let mut buf = [0u8; UDP_BUFFER_SIZE];
@@ -671,6 +657,7 @@ impl Server {
             let server = Arc::new(NodeInternal {
                 tasks_keeper_sender,
                 tasks_keeper_handle,
+                read_handlers_keeper: AsyncRwLock::new(Vec::new()),
 
                 socket,
 
@@ -743,6 +730,25 @@ impl Server {
                     )
                     .await;
                 });
+            }
+
+            {
+                let mut read_handlers_keeper = server.read_handlers_keeper.write().await;
+
+                for _ in 0..server.read_handler_properties.target_tasks_size {
+                    let (cancel_sender, cancel_receiver) = async_channel::bounded(1);
+
+                    let task = server.task_runner.spawn(NodeType::create_read_handler(
+                        Arc::downgrade(&server),
+                        Arc::clone(&server.socket),
+                        cancel_receiver,
+                    ));
+
+                    read_handlers_keeper.push(ActiveReadHandler {
+                        cancel_sender,
+                        task,
+                    });
+                }
             }
 
             Ok(BindResult {
@@ -991,8 +997,6 @@ impl Server {
             .rejections_to_confirm_signal_sender
             .try_send(())
             .unwrap();
-
-        ServerNode::try_check_read_handler(internal);
 
         Ok(ServerTickResult {
             received_messages,
@@ -1542,7 +1546,7 @@ impl Server {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
-            NodeState::set_inactive(&self.internal.state).await;
+            NodeInternal::set_state_inactive(&self.internal).await;
 
             let tasks_keeper_handle = self
                 .internal
@@ -1636,14 +1640,8 @@ impl Server {
                         break;
                     }
 
-                    let pre_read_next_bytes_result = {
-                        if let Ok(result) = received_bytes_receiver.try_recv() {
-                            Ok(result)
-                        } else {
-                            ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time)
-                                .await
-                        }
-                    };
+                    let pre_read_next_bytes_result =
+                        ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time).await;
 
                     match pre_read_next_bytes_result {
                         Ok((addr, result)) => {
