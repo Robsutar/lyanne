@@ -105,8 +105,68 @@ pub trait NodeType: Send + Sync + Sized + 'static {
             )),
         }
     }
-}
 
+    async fn create_read_handler(weak_node: Weak<NodeInternal<Self>>) {
+        let mut was_used = false;
+        'l1: loop {
+            if let Some(node) = NodeInternal::try_upgrade(&weak_node) {
+                if *node.read_handler_properties.active_count.write().unwrap()
+                    > node.read_handler_properties.target_surplus_size + 1
+                {
+                    let mut surplus_count =
+                        node.read_handler_properties.active_count.write().unwrap();
+                    if !was_used {
+                        *surplus_count -= 1;
+                    }
+                    break 'l1;
+                } else {
+                    let read_timeout = node.messaging_properties.timeout_interpretation;
+                    let socket = Arc::clone(&node.socket);
+                    drop(node);
+
+                    let pre_read_next_bytes_result =
+                        Self::pre_read_next_bytes_timeout(&socket, read_timeout).await;
+
+                    match NodeInternal::try_upgrade_or_get_inactive(&weak_node).await {
+                        Some(Ok(node)) => match pre_read_next_bytes_result {
+                            Ok(result) => {
+                                if !was_used {
+                                    was_used = true;
+                                    let mut surplus_count =
+                                        node.read_handler_properties.active_count.write().unwrap();
+                                    *surplus_count -= 1;
+                                }
+
+                                Self::consume_read_bytes_result(&node, result).await;
+                            }
+                            Err(_) => {
+                                if was_used {
+                                    was_used = false;
+                                    let mut surplus_count =
+                                        node.read_handler_properties.active_count.write().unwrap();
+                                    *surplus_count += 1;
+                                }
+                            }
+                        },
+                        Some(Err(inactive_state)) => {
+                            if let Ok(result) = pre_read_next_bytes_result {
+                                let _ = inactive_state.received_bytes_sender.try_send(result);
+                            }
+                            break 'l1;
+                        }
+                        None => {
+                            break 'l1;
+                        }
+                    }
+                }
+            } else {
+                break 'l1;
+            }
+        }
+    }
+
+    async fn consume_read_bytes_result(node: &Arc<NodeInternal<Self>>, result: Self::Skt);
+}
 pub struct PartnerMessaging {
     /// Map of message parts pending confirmation.
     /// The tuple is the sent instant, and the map of the message parts of the message.

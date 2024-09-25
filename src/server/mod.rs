@@ -530,7 +530,7 @@ impl ServerNode {
             if *active_count < node.read_handler_properties.target_surplus_size - 1 {
                 *active_count += 1;
                 let downgraded_server = Arc::downgrade(&node);
-                node.create_async_task(init::server::create_read_handler(downgraded_server));
+                node.create_async_task(Self::create_read_handler(downgraded_server));
             }
         }
     }
@@ -589,6 +589,23 @@ impl NodeType for ServerNode {
         let mut buf = [0u8; UDP_BUFFER_SIZE];
         let (len, addr) = socket.recv_from(&mut buf).await?;
         Ok((addr, buf[..len].to_vec()))
+    }
+
+    async fn consume_read_bytes_result(node: &Arc<NodeInternal<Self>>, result: Self::Skt) {
+        #[cfg(feature = "store_unexpected")]
+        let addr = result.0.clone();
+
+        let _read_result = Self::read_next_bytes(&node, result).await;
+
+        #[cfg(feature = "store_unexpected")]
+        if _read_result.is_unexpected() {
+            let _ = node
+                .node_type
+                .store_unexpected_errors
+                .error_sender
+                .send(UnexpectedError::OfReadAddrBytes(addr, _read_result))
+                .await;
+        }
     }
 }
 

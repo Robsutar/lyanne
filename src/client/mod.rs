@@ -285,7 +285,7 @@ impl ClientNode {
                 *active_count += 1;
                 let downgraded_server = Arc::downgrade(&node);
                 node.create_async_task(async move {
-                    client::create_read_handler(downgraded_server).await;
+                    Self::create_read_handler(downgraded_server).await;
                 });
             }
         }
@@ -319,6 +319,20 @@ impl NodeType for ClientNode {
         let mut buf = [0u8; UDP_BUFFER_SIZE];
         let len = socket.recv(&mut buf).await?;
         Ok(buf[..len].to_vec())
+    }
+
+    async fn consume_read_bytes_result(node: &Arc<NodeInternal<Self>>, result: Self::Skt) {
+        let _read_result = Self::read_next_bytes(&node, result).await;
+
+        #[cfg(feature = "store_unexpected")]
+        if _read_result.is_unexpected() {
+            let _ = node
+                .node_type
+                .store_unexpected_errors
+                .error_sender
+                .send(UnexpectedError::OfReadServerBytes(_read_result))
+                .await;
+        }
     }
 }
 
