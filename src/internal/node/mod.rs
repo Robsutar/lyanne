@@ -54,35 +54,26 @@ impl<T: std::fmt::Debug> StoreUnexpectedErrors<T> {
     }
 }
 
-pub struct NodeInactiveState<T> {
-    pub received_bytes_sender: async_channel::Sender<T>,
-}
-
-pub enum NodeState<T> {
+pub enum NodeState {
     Active,
-    Inactive(NodeInactiveState<T>),
+    Inactive,
 }
 
-impl<T> NodeState<T> {
+impl NodeState {
     /// Returns
     /// `true` if the lock of `state` could not be acquired
     /// `true` if the state read value is [`NodeState::Inactive`]
-    pub fn is_inactive(state: &AsyncRwLock<NodeState<T>>) -> bool {
+    pub fn is_inactive(state: &AsyncRwLock<NodeState>) -> bool {
         let state = match try_read(state) {
             Some(state) => state,
             None => return true,
         };
-        matches!(*state, NodeState::Inactive(_))
+        matches!(*state, NodeState::Inactive)
     }
 
-    pub async fn set_inactive(
-        state: &AsyncRwLock<NodeState<T>>,
-        received_bytes_sender: async_channel::Sender<T>,
-    ) {
+    pub async fn set_inactive(state: &AsyncRwLock<NodeState>) {
         let mut state = state.write().await;
-        *state = NodeState::Inactive(NodeInactiveState {
-            received_bytes_sender,
-        });
+        *state = NodeState::Inactive;
     }
 }
 
@@ -99,8 +90,6 @@ pub trait NodeType: Send + Sync + Sized + 'static {
     type Skt: Send + Sync + Sized + 'static;
     #[cfg(feature = "store_unexpected")]
     type UnEr: Send + Sync + Sized + 'static + Debug;
-
-    fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
 
     async fn pre_read_next_bytes(socket: &Arc<UdpSocket>) -> io::Result<Self::Skt>;
 
@@ -448,36 +437,17 @@ pub struct NodeInternal<T: NodeType> {
 
     pub task_runner: Arc<TaskRunner>,
 
+    pub state: AsyncRwLock<NodeState>,
     pub node_type: T,
 }
 
 impl<T: NodeType> NodeInternal<T> {
     pub fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
         if let Some(internal) = downgraded.upgrade() {
-            if NodeState::is_inactive(&internal.node_type.state()) {
+            if NodeState::is_inactive(&internal.state) {
                 None
             } else {
                 Some(internal)
-            }
-        } else {
-            None
-        }
-    }
-
-    pub async fn try_upgrade_or_get_inactive(
-        downgraded: &Weak<Self>,
-    ) -> Option<Result<Arc<Self>, NodeInactiveState<T::Skt>>> {
-        if let Some(internal) = downgraded.upgrade() {
-            let inactive_ref = match &*internal.node_type.state().read().await {
-                NodeState::Active => None,
-                NodeState::Inactive(inactive_state) => Some(NodeInactiveState {
-                    received_bytes_sender: inactive_state.received_bytes_sender.clone(),
-                }),
-            };
-
-            match inactive_ref {
-                Some(inactive_state) => Some(Err(inactive_state)),
-                None => Some(Ok(internal)),
             }
         } else {
             None
@@ -494,15 +464,11 @@ impl<T: NodeType> NodeInternal<T> {
     }
 
     pub fn on_holder_drop(self: &Arc<Self>) {
-        if !NodeState::is_inactive(&self.node_type.state()) {
-            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
-
+        if !NodeState::is_inactive(&self.state) {
             let internal = Arc::clone(&self);
             let _ = self.create_async_task(async move {
-                NodeState::set_inactive(&internal.node_type.state(), received_bytes_sender).await;
+                NodeState::set_inactive(&internal.state).await;
             });
-
-            drop(received_bytes_receiver);
         }
     }
 }

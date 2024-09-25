@@ -478,6 +478,7 @@ pub(super) mod connecting {
 
                 task_runner,
 
+                state: AsyncRwLock::new(NodeState::Active),
                 node_type: ClientNode {
                     reason_to_disconnect_sender,
                     reason_to_disconnect_receiver,
@@ -486,7 +487,6 @@ pub(super) mod connecting {
                     client_properties: Arc::clone(&client_properties),
                     connected_server: Arc::clone(&server),
                     disconnect_reason: RwLock::new(None),
-                    state: AsyncRwLock::new(NodeState::Active),
                 },
             }),
         };

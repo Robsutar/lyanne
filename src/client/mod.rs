@@ -271,8 +271,6 @@ struct ClientNode {
     /// If equals to [`Option::None`], the client was disconnected.
     /// If inner [`Option::Some`] equals to [`Option::None`], the disconnect reason was taken.
     disconnect_reason: RwLock<Option<Option<ServerDisconnectReason>>>,
-
-    state: AsyncRwLock<NodeState<Vec<u8>>>,
 }
 
 impl ClientNode {
@@ -676,8 +674,7 @@ impl Client {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
-            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
-            NodeState::set_inactive(&self.internal.node_type.state, received_bytes_sender).await;
+            NodeState::set_inactive(&self.internal.node_type.state).await;
 
             let tasks_keeper_handle = self
                 .internal

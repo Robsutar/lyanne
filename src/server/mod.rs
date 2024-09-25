@@ -501,8 +501,6 @@ struct ServerNode {
     pending_rejection_confirm: DashMap<SocketAddr, (JustifiedRejectionContext, Option<Instant>)>,
     /// Set of addresses asking for the rejection confirm.
     rejections_to_confirm: DashSet<SocketAddr>,
-
-    state: AsyncRwLock<NodeState<(SocketAddr, Vec<u8>)>>,
 }
 
 impl ServerNode {
@@ -685,6 +683,7 @@ impl Server {
 
                 task_runner,
 
+                state: AsyncRwLock::new(NodeState::Active),
                 node_type: ServerNode {
                     clients_to_auth_sender,
                     clients_to_disconnect_sender,
@@ -709,8 +708,6 @@ impl Server {
                     recently_disconnected: DashMap::new(),
                     pending_rejection_confirm: DashMap::new(),
                     rejections_to_confirm: DashSet::new(),
-
-                    state: AsyncRwLock::new(NodeState::Active),
                 },
             });
 
@@ -1545,8 +1542,7 @@ impl Server {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
-            let (received_bytes_sender, received_bytes_receiver) = async_channel::unbounded();
-            NodeState::set_inactive(&self.internal.node_type.state, received_bytes_sender).await;
+            NodeState::set_inactive(&self.internal.state).await;
 
             let tasks_keeper_handle = self
                 .internal
