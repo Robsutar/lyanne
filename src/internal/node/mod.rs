@@ -80,7 +80,7 @@ impl<T> NodeState<T> {
     }
 }
 
-pub trait NodeType {
+pub trait NodeType: Send + Sync + Sized + 'static {
     type Skt: Send + Sync + Sized + 'static;
 
     fn state(&self) -> &AsyncRwLock<NodeState<Self::Skt>>;
@@ -172,7 +172,7 @@ impl Partner {
 }
 
 /// Properties of the node.
-pub struct NodeInternal<T: NodeType + Send + Sync + Sized + 'static> {
+pub struct NodeInternal<T: NodeType> {
     /// Sender for make the spawned tasks keep alive.
     pub tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
 
@@ -191,7 +191,7 @@ pub struct NodeInternal<T: NodeType + Send + Sync + Sized + 'static> {
     pub node_type: T,
 }
 
-impl<T: NodeType + Send + Sync + Sized + 'static> NodeInternal<T> {
+impl<T: NodeType> NodeInternal<T> {
     pub fn try_upgrade(downgraded: &Weak<Self>) -> Option<Arc<Self>> {
         if let Some(internal) = downgraded.upgrade() {
             if NodeState::is_inactive(&internal.node_type.state()) {
