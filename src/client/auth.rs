@@ -469,6 +469,9 @@ pub(super) mod connecting {
                 tasks_keeper_sender,
 
                 tasks_keeper_handle,
+
+                socket: Arc::clone(&socket),
+
                 packet_registry: Arc::clone(&packet_registry),
                 messaging_properties: Arc::clone(&messaging_properties),
                 read_handler_properties: Arc::clone(&read_handler_properties),
@@ -481,7 +484,6 @@ pub(super) mod connecting {
                     #[cfg(feature = "store_unexpected")]
                     store_unexpected_errors,
                     authentication_mode: connected_auth_mode,
-                    socket: Arc::clone(&socket),
                     tick_state: RwLock::new(ClientTickState::TickStartPending),
                     client_properties: Arc::clone(&client_properties),
                     connected_server: Arc::clone(&server),

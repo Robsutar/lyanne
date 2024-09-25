@@ -260,8 +260,6 @@ struct ClientNode {
 
     authentication_mode: ConnectedAuthenticatorMode,
 
-    /// The UDP socket used for communication.
-    socket: Arc<UdpSocket>,
     /// Actual state of client periodic tick flow.
     tick_state: RwLock<ClientTickState>,
 
@@ -682,7 +680,7 @@ impl Client {
             }
 
             if let Some(disconnection) = disconnection {
-                let socket = Arc::clone(&self.internal.node_type.socket);
+                let socket = Arc::clone(&self.internal.socket);
                 let timeout_interpretation = disconnection.timeout;
                 let packet_loss_timeout = self
                     .internal

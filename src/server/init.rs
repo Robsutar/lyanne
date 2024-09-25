@@ -288,7 +288,7 @@ pub mod client {
                         ]
                     }
                 };
-                if let Err(e) = node.node_type.socket.send_to(&bytes, addr).await {
+                if let Err(e) = node.socket.send_to(&bytes, addr).await {
                     let _ = node.node_type.clients_to_disconnect_sender.try_send((
                         addr,
                         (ClientDisconnectReason::ByteSendError(e), None),
@@ -308,7 +308,7 @@ pub mod client {
     ) {
         'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
             if let Some(node) = NodeInternal::try_upgrade(&node) {
-                if let Err(e) = node.node_type.socket.send_to(&bytes, addr).await {
+                if let Err(e) = node.socket.send_to(&bytes, addr).await {
                     let _ = node.node_type.clients_to_disconnect_sender.try_send((
                         addr,
                         (ClientDisconnectReason::ByteSendError(e), None),
@@ -351,7 +351,7 @@ pub mod server {
                 if let Some(mut tuple) = node.node_type.pending_rejection_confirm.get_mut(&addr) {
                     let (context, last_sent_time) = tuple.value_mut();
                     *last_sent_time = Some(Instant::now());
-                    let _ = node.node_type.socket.send_to(&context.finished_bytes, addr).await;
+                    let _ = node.socket.send_to(&context.finished_bytes, addr).await;
                 }
             } else {
                 break 'l1;
@@ -367,7 +367,7 @@ pub mod server {
         'l1: while let Ok(_) = rejections_to_confirm_signal_receiver.recv().await {
             if let Some(node) = NodeInternal::try_upgrade(&node) {
                 for addr in node.node_type.rejections_to_confirm.iter() {
-                    let _ = node.node_type
+                    let _ = node
                         .socket
                         .send_to(rejection_confirm_bytes, *addr)
                         .await;
@@ -416,7 +416,7 @@ pub mod server {
                     break 'l1;
                 } else {
                     let read_timeout = node.messaging_properties.timeout_interpretation;
-                    let socket = Arc::clone(&node.node_type.socket);
+                    let socket = Arc::clone(&node.socket);
                     drop(node);
 
                     let pre_read_next_bytes_result =

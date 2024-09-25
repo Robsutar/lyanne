@@ -179,6 +179,9 @@ pub struct NodeInternal<T: NodeType> {
     /// Task handle of the receiver.
     pub tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
 
+    /// The UDP socket used for communication.
+    pub socket: Arc<UdpSocket>,
+
     /// The registry for packets.
     pub packet_registry: Arc<PacketRegistry>,
     /// Properties related to messaging.

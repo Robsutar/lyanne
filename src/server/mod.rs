@@ -482,8 +482,6 @@ struct ServerNode {
 
     authenticator_mode: AuthenticatorModeInternal,
 
-    /// The UDP socket used for communication.
-    socket: Arc<UdpSocket>,
     /// Actual state of server periodic tick flow.
     tick_state: RwLock<ServerTickState>,
 
@@ -661,10 +659,15 @@ impl Server {
             let server = Arc::new(NodeInternal {
                 tasks_keeper_sender,
                 tasks_keeper_handle,
+
+                socket,
+
                 packet_registry,
                 messaging_properties,
                 read_handler_properties,
+
                 task_runner,
+
                 node_type: ServerNode {
                     clients_to_auth_sender,
                     clients_to_disconnect_sender,
@@ -680,7 +683,6 @@ impl Server {
                     store_unexpected_errors,
 
                     authenticator_mode: authenticator_mode_build.take_authenticator_mode_internal(),
-                    socket,
 
                     tick_state: RwLock::new(ServerTickState::TickStartPending),
 
@@ -1574,7 +1576,7 @@ impl Server {
                     }
                 }
 
-                let socket = Arc::clone(&self.internal.node_type.socket);
+                let socket = Arc::clone(&self.internal.socket);
 
                 let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
 

@@ -103,11 +103,7 @@ impl NoCryptographyAuth {
                 if let Some(mut tuple) = auth_mode.pending_auth.get_mut(&addr) {
                     let (context, last_sent_time) = &mut *tuple;
                     *last_sent_time = Some(Instant::now());
-                    let _ = node
-                        .node_type
-                        .socket
-                        .send_to(&context.finished_bytes, addr)
-                        .await;
+                    let _ = node.socket.send_to(&context.finished_bytes, addr).await;
                 }
             } else {
                 break 'l1;

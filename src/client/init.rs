@@ -149,7 +149,7 @@ pub mod server {
                             if let Ok(message) =
                                 DeserializedMessage::deserialize_single_list(&justification_bytes, &node.packet_registry)
                             {
-                                let _ = node.node_type.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;
+                                let _ = node.socket.send(&vec![MessageChannel::REJECTION_CONFIRM]).await;
                                 
                                 let _ = node.node_type
                                     .reason_to_disconnect_sender
@@ -264,7 +264,7 @@ pub mod server {
                         ]
                     }
                 };
-                if let Err(e) = node.node_type.socket.send(&bytes).await {
+                if let Err(e) = node.socket.send(&bytes).await {
                     let _ = node.node_type
                         .reason_to_disconnect_sender
                         .try_send(ServerDisconnectReason::ByteSendError(e));
@@ -282,7 +282,7 @@ pub mod server {
     ) {
         'l1: while let Ok(bytes) = shared_socket_bytes_send_receiver.recv().await {
             if let Some(node) = NodeInternal::try_upgrade(&node) {
-                if let Err(e) = node.node_type.socket.send(&bytes).await {
+                if let Err(e) = node.socket.send(&bytes).await {
                     let _ = node.node_type
                         .reason_to_disconnect_sender
                         .try_send(ServerDisconnectReason::ByteSendError(e));
@@ -358,7 +358,7 @@ pub mod client {
                     break 'l1;
                 } else {
                     let read_timeout = node.messaging_properties.timeout_interpretation;
-                    let socket = Arc::clone(&node.node_type.socket);
+                    let socket = Arc::clone(&node.socket);
                     drop(node);
                     let pre_read_next_bytes_result =
                         ClientNode::pre_read_next_bytes_timeout(&socket, read_timeout).await;
