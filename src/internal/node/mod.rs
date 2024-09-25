@@ -401,6 +401,11 @@ pub struct Partner {
 
 impl Partner {
     /// # Returns
+    /// The address of the partner
+    pub fn addr(&self) -> &SocketAddr {
+        &self.addr
+    }
+    /// # Returns
     /// The average time of messaging response of this partner after a node message.
     pub fn average_latency(&self) -> Duration {
         *self.average_latency.read().unwrap()
