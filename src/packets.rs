@@ -1,4 +1,4 @@
-//! Packets are the sets of data that are transferred over the network, represented by structs.
+//! Sets of data that are transferred over the communication.
 
 use std::{
     any::{Any, TypeId},
