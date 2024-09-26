@@ -23,6 +23,32 @@ pub use lyanne_derive::Packet;
 pub type PacketId = u16;
 pub type PacketToDowncast = dyn Any + Send + Sync;
 
+/// Adds essential packages
+
+/// Does not necessarily need to be used with [`PacketRegistry`], it just needs
+/// to be something that has a function with similar annotation of [`PacketRegistry::add`].
+///
+/// Useful for creating wrappers, which have not only a [`PacketRegistry`], but also another package registry.
+///
+/// # Examples
+/// ```rust,no_run
+/// use lyanne::{add_essential_packets, packets::{Packet, PacketRegistry}};
+///
+/// struct PacketRegistryLogger {
+///     packet_registry: PacketRegistry
+/// }
+/// impl PacketRegistryLogger {
+///     fn add<P: Packet>(&mut self) {
+///         let id = self.packet_registry.add::<P>();
+///         println!("Packet added with {} id", id);
+///     }
+/// }
+///
+/// let mut packet_registry_logger = PacketRegistryLogger {
+///     packet_registry: PacketRegistry::empty()
+/// };
+/// add_essential_packets!(packet_registry_logger);
+/// ```
 #[macro_export]
 macro_rules! add_essential_packets {
     ($exit:expr) => {

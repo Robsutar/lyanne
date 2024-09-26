@@ -278,7 +278,7 @@ impl DeserializedMessageCheck {
     }
 }
 
-/// Packet Collection
+/// Represents a packet collection.
 ///
 /// - If it was sent by the server, it will always have a [`crate::packets::ServerTickEndPacket`].
 /// - If it was sent by the client, it will always have a [`crate::packets::ClientTickEndPacket`].
