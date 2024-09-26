@@ -24,7 +24,7 @@ pub type PacketId = u16;
 pub type PacketToDowncast = dyn Any + Send + Sync;
 
 /// Adds essential packages
-
+///
 /// Does not necessarily need to be used with [`PacketRegistry`], it just needs
 /// to be something that has a function with similar annotation of [`PacketRegistry::add`].
 ///
@@ -462,7 +462,7 @@ impl DeserializedMessageMap {
     }
 }
 
-/// Represents a deserialized packet
+/// Represents a deserialized packet.
 ///
 /// Ready to be downcasted to the type
 /// represented by the `packet_id`.
@@ -694,7 +694,7 @@ pub struct ServerTickEndPacketClientSchedule;
 #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServerTickEndPacketServerSchedule;
 
-/// Empty packet, useful to send an empty message,
+/// Empty packet, useful to send an empty message.
 ///
 /// Since it is not possible to send messages without sending any packets.
 #[derive(Debug)]
