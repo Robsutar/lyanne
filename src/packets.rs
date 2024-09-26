@@ -29,8 +29,57 @@ macro_rules! add_essential_packets {
     };
 }
 
+/// Set of data used for exchanging information.
 pub trait Packet: Sized + Debug + 'static + Any + Send + Sync {
+    /// If no serializer (such as the `sd_bincode` feature) is being used,
+    /// it is still possible to create packages by serializing them manually.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// // Creating a packet.
+    /// #[derive(Debug)]
+    /// struct HelloPacket {
+    ///     player_name: String,
+    /// }
+    ///
+    /// impl Packet for HelloPacket {
+    ///     // Serializing the fields of the packet manually.
+    ///     fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+    ///         Ok(self.player_name.clone().into_bytes())
+    ///     }
+    ///
+    ///     fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
+    ///         todo!()
+    ///     }
+    /// }
+    /// ```
     fn serialize_packet(&self) -> io::Result<Vec<u8>>;
+
+    /// If no serializer (such as the `sd_bincode` feature) is being used,
+    /// it is still possible to create packages by deserializing them manually.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// // Creating a packet.
+    /// #[derive(Debug)]
+    /// struct HelloPacket {
+    ///     player_name: String,
+    /// }
+    ///
+    /// impl Packet for HelloPacket {
+    ///     fn serialize_packet(&self) -> std::io::Result<Vec<u8>> {
+    ///         todo!();
+    ///     }
+    ///
+    ///     // Deserializing the fields of the packet manually.
+    ///     fn deserialize_packet(bytes: &[u8]) -> std::io::Result<Self> {
+    ///         match String::from_utf8(bytes.to_vec()) {
+    ///             Ok(player_name) => Ok(Self { player_name }),
+    ///             Err(e) => Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)),
+    ///         }
+    ///     }
+    /// }
+    /// ```
     fn deserialize_packet(bytes: &[u8]) -> io::Result<Self>;
 
     #[cfg(all(feature = "bevy_packet_schedules", feature = "client"))]
