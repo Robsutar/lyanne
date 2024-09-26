@@ -11,7 +11,7 @@ exclude = ["examples/tls_certificates"]
 
 [package]
 name = "lyanne"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 authors = ["Robsutar"]
 description = "Tick-based communication library for server-client architectures."
