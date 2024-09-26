@@ -433,7 +433,9 @@ impl DeserializedMessageMap {
     }
 }
 
-/// Represents a deserialized packet, ready to be downcasted to the type
+/// Represents a deserialized packet
+///
+/// Ready to be downcasted to the type
 /// represented by the `packet_id`.
 #[derive(Debug)]
 pub struct DeserializedPacket {
@@ -593,6 +595,7 @@ impl SerializedPacketList {
     }
 }
 
+/// Packet sent by the client in every message.
 #[derive(Debug)]
 pub struct ClientTickEndPacket;
 impl Packet for ClientTickEndPacket {
@@ -627,6 +630,7 @@ pub struct ClientTickEndPacketClientSchedule;
 #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientTickEndPacketServerSchedule;
 
+/// Packet sent by the server in every message.
 #[derive(Debug)]
 pub struct ServerTickEndPacket;
 impl Packet for ServerTickEndPacket {
@@ -661,6 +665,9 @@ pub struct ServerTickEndPacketClientSchedule;
 #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServerTickEndPacketServerSchedule;
 
+/// Empty packet, useful to send an empty message,
+///
+/// Since it is not possible to send messages without sending any packets.
 #[derive(Debug)]
 pub struct EmptyPacket;
 impl Packet for EmptyPacket {
