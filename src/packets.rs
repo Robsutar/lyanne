@@ -36,6 +36,8 @@ pub trait Packet: Sized + Debug + 'static + Any + Send + Sync {
     ///
     /// # Examples
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    ///
     /// // Creating a packet.
     /// #[derive(Debug)]
     /// struct HelloPacket {
@@ -60,6 +62,8 @@ pub trait Packet: Sized + Debug + 'static + Any + Send + Sync {
     ///
     /// # Examples
     /// ```no_run
+    /// use lyanne::packets::Packet;
+    ///
     /// // Creating a packet.
     /// #[derive(Debug)]
     /// struct HelloPacket {
@@ -105,6 +109,32 @@ pub struct ServerPacketResource<P: Packet> {
     pub packet: Option<P>,
 }
 
+/// Registry holder for the Packets.
+///
+/// Needed to store how to deserialize and serialize each packet.
+///
+/// # Examples
+/// ```no_run
+/// use lyanne::packets::Packet;
+/// use serde::{Deserialize, Serialize};
+///
+/// // Creating packets.
+/// #[derive(Packet, Deserialize, Serialize, Debug)]
+/// struct HelloPacket {
+///     player_name: String,
+/// }
+/// #[derive(Packet, Deserialize, Serialize, Debug)]
+/// struct MessagePacket {
+///     message: String,
+/// }
+///
+/// // Essential packages are required for communication.
+/// let mut packet_registry = PacketRegistry::with_essential();
+///
+/// // Adding custom packets to the registry.
+/// packet_registry.add::<HelloPacket>();
+/// packet_registry.add::<MessagePacket>();
+/// ```
 pub struct PacketRegistry {
     packet_type_ids: HashMap<TypeId, PacketId>,
     serde_map: HashMap<
@@ -120,6 +150,17 @@ pub struct PacketRegistry {
 }
 
 impl PacketRegistry {
+    /// Constructs a empty registry.
+    ///
+    /// # Warning
+    /// A registry needs essential packages, which can be easily added with the `add_essential_packets!` macro.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// let mut packet_registry = PacketRegistry::empty();
+    /// add_essential_packets!(packet_registry);
+    /// ```
+    ///
     pub fn empty() -> Self {
         Self {
             packet_type_ids: HashMap::new(),
@@ -128,16 +169,28 @@ impl PacketRegistry {
         }
     }
 
+    /// Constructs a registry, with the essential packets.
     pub fn with_essential() -> Self {
-        let mut exit = Self {
-            packet_type_ids: HashMap::new(),
-            serde_map: HashMap::new(),
-            last_id: 0,
-        };
+        let mut exit = Self::empty();
         add_essential_packets!(exit);
         exit
     }
 
+    /// Adds a packet to the registry.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use lyanne::packets::Packet;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Packet, Deserialize, Serialize, Debug)]
+    /// struct HelloPacket {
+    ///     player_name: String,
+    /// }
+    ///
+    /// let mut packet_registry = PacketRegistry::with_essential();
+    /// packet_registry.add::<HelloPacket>();
+    /// ```
     pub fn add<P: Packet>(&mut self) -> PacketId {
         self.last_id += 1;
         let packet_id = self.last_id;
@@ -178,6 +231,7 @@ impl PacketRegistry {
         packet_id
     }
 
+    /// Check if the essential packets were registered.
     pub fn check_essential(&self) -> bool {
         self.try_get_packet_id::<ClientTickEndPacket>().is_some()
             && self.try_get_packet_id::<ServerTickEndPacket>().is_some()
