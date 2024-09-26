@@ -624,7 +624,7 @@ impl Client {
     /// Disconnect the client from the server gracefully if there is some message.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```rust,no_run
     /// use std::time::Duration;
     /// use lyanne::{client::*, packets::{Packet, SerializedPacketList}, LimitedMessage};
     /// use serde::{Deserialize, Serialize};
@@ -741,7 +741,7 @@ impl Client {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```rust,no_run
     /// use lyanne::{client::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
@@ -778,7 +778,7 @@ impl Client {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```rust,no_run
     /// use lyanne::{client::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
@@ -809,7 +809,7 @@ impl Client {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```rust,no_run
     /// use lyanne::{client::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///

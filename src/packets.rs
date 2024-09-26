@@ -35,7 +35,7 @@ pub trait Packet: Sized + Debug + 'static + Any + Send + Sync {
     /// it is still possible to create packages by serializing them manually.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```rust,no_run
     /// use lyanne::packets::Packet;
     ///
     /// // Creating a packet.
@@ -61,7 +61,7 @@ pub trait Packet: Sized + Debug + 'static + Any + Send + Sync {
     /// it is still possible to create packages by deserializing them manually.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```rust,no_run
     /// use lyanne::packets::Packet;
     ///
     /// // Creating a packet.
@@ -114,8 +114,8 @@ pub struct ServerPacketResource<P: Packet> {
 /// Needed to store how to deserialize and serialize each packet.
 ///
 /// # Examples
-/// ```no_run
-/// use lyanne::packets::Packet;
+/// ```rust,no_run
+/// use lyanne::packets::{Packet, PacketRegistry};
 /// use serde::{Deserialize, Serialize};
 ///
 /// // Creating packets.
@@ -156,7 +156,9 @@ impl PacketRegistry {
     /// A registry needs essential packages, which can be easily added with the `add_essential_packets!` macro.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```rust,no_run
+    /// use lyanne::{add_essential_packets, packets::PacketRegistry};
+    ///
     /// let mut packet_registry = PacketRegistry::empty();
     /// add_essential_packets!(packet_registry);
     /// ```
@@ -179,8 +181,8 @@ impl PacketRegistry {
     /// Adds a packet to the registry.
     ///
     /// # Examples
-    /// ```no_run
-    /// use lyanne::packets::Packet;
+    /// ```rust,no_run
+    /// use lyanne::packets::{Packet, PacketRegistry};
     /// use serde::{Deserialize, Serialize};
     ///
     /// #[derive(Packet, Deserialize, Serialize, Debug)]

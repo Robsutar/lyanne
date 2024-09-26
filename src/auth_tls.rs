@@ -42,7 +42,7 @@ impl CertKey {
 
     /// Loads certificates and key from files.
     /// # Examples
-    /// ```no_run
+    /// ```rust,no_run
     /// let cert_key = CertKey::from_file(
     ///     "certificates/server_cert.pem",
     ///     "certificates/server_key.pem",
@@ -154,7 +154,7 @@ impl RootCertStoreProvider {
 
     /// Loads certificates from files.
     /// # Examples
-    /// ```no_run
+    /// ```rust,no_run
     /// let root_cert_store = RootCertStoreProvider::from_file(
     ///     "certificates/ca_cert.pem",
     /// );

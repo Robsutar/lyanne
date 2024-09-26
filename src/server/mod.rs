@@ -406,7 +406,7 @@ pub struct ServerTickResult {
     pub received_messages: HashMap<SocketAddr, Vec<DeserializedMessage>>,
     /// Client to authenticate, and their authentication message.
     /// # Examples
-    /// ```no_run
+    /// ```rust,no_run
     /// use lyanne::{server::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
     ///
@@ -1399,7 +1399,7 @@ impl Server {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use lyanne::{server::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
@@ -1446,7 +1446,7 @@ impl Server {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use lyanne::{server::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
@@ -1480,7 +1480,7 @@ impl Server {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```rust,no_run
     /// use std::net::SocketAddr;
     /// use lyanne::{server::*, packets::Packet};
     /// use serde::{Deserialize, Serialize};
@@ -1513,7 +1513,7 @@ impl Server {
     /// Disconnect the server from the clients gracefully if there is some message.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```rust,no_run
     /// use std::time::Duration;
     /// use lyanne::{server::*, packets::{Packet, SerializedPacketList}, LimitedMessage};
     /// use serde::{Deserialize, Serialize};
