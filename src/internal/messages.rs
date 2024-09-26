@@ -278,6 +278,10 @@ impl DeserializedMessageCheck {
     }
 }
 
+/// Packet Collection
+///
+/// - If it was sent by the server, it will always have a [`crate::packets::ServerTickEndPacket`].
+/// - If it was sent by the client, it will always have a [`crate::packets::ClientTickEndPacket`].
 #[derive(Debug)]
 pub struct DeserializedMessage {
     #[cfg(not(feature = "deserialized_message_map"))]
