@@ -329,6 +329,7 @@ impl PacketRegistry {
     }
 }
 
+/// Represents a packet serialized to bytes.
 pub struct SerializedPacket {
     pub(crate) packet_id: PacketId,
     pub(crate) bytes: Vec<u8>,
@@ -373,6 +374,7 @@ impl SerializedPacket {
     }
 }
 
+/// Deserialized packets stored in a map, by their IDs.
 #[derive(Debug)]
 pub struct DeserializedMessageMap {
     inner: HashMap<PacketId, Vec<DeserializedPacket>>,
@@ -429,6 +431,8 @@ impl DeserializedMessageMap {
     }
 }
 
+/// Represents a deserialized packet, ready to be downcasted to the type
+/// represented by the `packet_id`.
 #[derive(Debug)]
 pub struct DeserializedPacket {
     pub packet_id: PacketId,
@@ -542,6 +546,7 @@ impl DeserializedPacket {
     }
 }
 
+/// List of serialized packets.
 pub struct SerializedPacketList {
     pub(crate) bytes: Vec<u8>,
 }
