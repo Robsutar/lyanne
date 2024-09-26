@@ -517,15 +517,6 @@ pub struct ClientTickEndPacketClientSchedule;
 #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientTickEndPacketServerSchedule;
 
-#[allow(dead_code)]
-#[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ClientTickEndPacketClientSchedule;
-#[allow(dead_code)]
-#[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ClientTickEndPacketServerSchedule;
-
 #[derive(Debug)]
 pub struct ServerTickEndPacket;
 impl Packet for ServerTickEndPacket {
@@ -560,15 +551,6 @@ pub struct ServerTickEndPacketClientSchedule;
 #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServerTickEndPacketServerSchedule;
 
-#[allow(dead_code)]
-#[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ServerTickEndPacketClientSchedule;
-#[allow(dead_code)]
-#[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ServerTickEndPacketServerSchedule;
-
 #[derive(Debug)]
 pub struct EmptyPacket;
 impl Packet for EmptyPacket {
@@ -601,13 +583,4 @@ pub struct EmptyPacketClientSchedule;
 #[allow(dead_code)]
 #[cfg(all(feature = "bevy_packet_schedules", feature = "server"))]
 #[derive(lyanne::bevy_ecs::schedule::ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct EmptyPacketServerSchedule;
-
-#[allow(dead_code)]
-#[cfg(not(all(feature = "bevy_packet_schedules", feature = "client")))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct EmptyPacketClientSchedule;
-#[allow(dead_code)]
-#[cfg(not(all(feature = "bevy_packet_schedules", feature = "server")))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EmptyPacketServerSchedule;
