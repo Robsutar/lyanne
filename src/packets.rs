@@ -10,11 +10,14 @@ use std::{
 use crate::{self as lyanne};
 
 #[cfg(feature = "sd_bincode")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sd_bincode")))]
 pub use bincode;
 
 #[cfg(any(feature = "sd_bincode"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "sd_bincode"))))]
 pub extern crate lyanne_derive;
 #[cfg(any(feature = "sd_bincode"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "sd_bincode"))))]
 pub use lyanne_derive::Packet;
 
 pub type PacketId = u16;
