@@ -125,6 +125,9 @@ pub mod auth_tcp;
 #[cfg(feature = "auth_tls")]
 pub mod auth_tls;
 
+/// General properties for the communication messaging.
+///
+/// Needs to be the same both in the client and server.
 pub struct MessagingProperties {
     pub part_limit: usize,
     pub timeout_interpretation: Duration,
