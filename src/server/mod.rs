@@ -1576,9 +1576,12 @@ impl Server {
             }
 
             if let Some(disconnection) = disconnection {
-                let mut confirmations = HashMap::<SocketAddr, ServerDisconnectClientState>::new();
-                let mut confirmations_pending =
-                    HashMap::<SocketAddr, (Duration, Instant, JustifiedRejectionContext)>::new();
+                let confirmations =
+                    Arc::new(DashMap::<SocketAddr, ServerDisconnectClientState>::new());
+                let confirmations_pending = Arc::new(DashMap::<
+                    SocketAddr,
+                    (Duration, Instant, JustifiedRejectionContext),
+                >::new());
 
                 let timeout_interpretation = disconnection.timeout;
 
@@ -1607,103 +1610,127 @@ impl Server {
                     }
                 }
 
-                let socket = Arc::clone(&self.internal.socket);
-
-                let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
-
-                while !confirmations_pending.is_empty() {
-                    let now = Instant::now();
-
-                    let mut min_try_read_time = Duration::MAX;
-                    let mut addrs_confirmed =
-                        HashMap::<SocketAddr, ServerDisconnectClientState>::new();
-
-                    for (addr, (packet_loss_timeout, last_sent_time, rejection_context)) in
-                        confirmations_pending.iter_mut()
-                    {
-                        if now - rejection_context.rejection_instant > timeout_interpretation {
-                            addrs_confirmed
-                                .insert(*addr, ServerDisconnectClientState::ConfirmationTimeout);
-                            continue;
-                        }
-
-                        let last_sent_time_copy = *last_sent_time;
-                        let packet_loss_timeout_copy = *packet_loss_timeout;
-                        let time_diff = now - last_sent_time_copy;
-
-                        if now == last_sent_time_copy || time_diff >= packet_loss_timeout_copy {
-                            *last_sent_time = now;
-                            println!("Server: Sending rejection context to {:?}", addr);
-                            if let Err(e) = socket
-                                .send_to(&rejection_context.finished_bytes, addr)
-                                .await
-                            {
-                                addrs_confirmed
-                                    .insert(*addr, ServerDisconnectClientState::SendIoError(e));
-                            } else {
-                                min_try_read_time = Duration::ZERO;
-                            }
-                        } else {
-                            let remaining_to_resend = packet_loss_timeout_copy - time_diff;
-                            if remaining_to_resend < min_try_read_time {
-                                min_try_read_time = remaining_to_resend;
-                            }
-                        }
-                    }
-
-                    for (addr, state) in addrs_confirmed {
-                        confirmations_pending.remove(&addr);
-                        confirmations.insert(addr, state);
-                    }
-
-                    if confirmations_pending.is_empty() {
-                        break;
-                    }
-
-                    if min_try_read_time == Duration::ZERO {
-                        println!("Zero duration timeout, bytes will not be read.");
-                    } else {
-                        println!("Server reading disconnection");
-                        let pre_read_next_bytes_result =
-                            ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time)
-                                .await;
-                        println!("Received: {:?}", pre_read_next_bytes_result);
-
-                        match pre_read_next_bytes_result {
-                            Ok((addr, result)) => {
-                                if &result == rejection_confirm_bytes {
-                                    if let Some(_) = confirmations_pending.remove(&addr) {
-                                        confirmations
-                                            .insert(addr, ServerDisconnectClientState::Confirmed);
-                                    }
-                                }
-                            }
-                            Err(e) if e.kind() == io::ErrorKind::TimedOut => {}
-                            Err(e) => {
-                                for (addr, _) in confirmations_pending {
-                                    confirmations.insert(
-                                        addr,
-                                        ServerDisconnectClientState::ReceiveIoError(
-                                            io::Error::new(
-                                                io::ErrorKind::Other,
-                                                format!(
-                                                    "Error trying read data from udp socket: {}",
-                                                    e
-                                                ),
-                                            ),
-                                        ),
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
+                let s_socket = Arc::clone(&self.internal.socket);
+                let s_confirmations = Arc::clone(&confirmations);
+                let s_confirmations_pending = Arc::clone(&confirmations_pending);
+                let r_socket = Arc::clone(&self.internal.socket);
+                let r_confirmations = Arc::clone(&confirmations);
+                let r_confirmations_pending = Arc::clone(&confirmations_pending);
 
                 let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
                 drop(self);
 
-                ServerDisconnectState::Confirmations(confirmations)
+                let sending_bytes_task = tasks_keeper.spawn(async move {
+                    while !s_confirmations_pending.is_empty() {
+                        let now = Instant::now();
+
+                        let mut min_try_read_time = Duration::MAX;
+                        let mut addrs_confirmed =
+                            HashMap::<SocketAddr, ServerDisconnectClientState>::new();
+
+                        for mut dash_entry in s_confirmations_pending.iter_mut() {
+                            let addr = *dash_entry.key();
+                            let (packet_loss_timeout, last_sent_time, rejection_context) =
+                                dash_entry.value_mut();
+                            if now - rejection_context.rejection_instant > timeout_interpretation {
+                                addrs_confirmed
+                                    .insert(addr, ServerDisconnectClientState::ConfirmationTimeout);
+                                continue;
+                            }
+
+                            let last_sent_time_copy = *last_sent_time;
+                            let packet_loss_timeout_copy = *packet_loss_timeout;
+                            let time_diff = now - last_sent_time_copy;
+
+                            if now == last_sent_time_copy || time_diff >= packet_loss_timeout_copy {
+                                *last_sent_time = now;
+                                println!("Server: Sending rejection context to {:?}", addr);
+                                if let Err(e) = s_socket
+                                    .send_to(&rejection_context.finished_bytes, addr)
+                                    .await
+                                {
+                                    addrs_confirmed
+                                        .insert(addr, ServerDisconnectClientState::SendIoError(e));
+                                } else {
+                                    min_try_read_time = Duration::ZERO;
+                                }
+                            } else {
+                                let remaining_to_resend = packet_loss_timeout_copy - time_diff;
+                                if remaining_to_resend < min_try_read_time {
+                                    min_try_read_time = remaining_to_resend;
+                                }
+                            }
+                        }
+
+                        for (addr, state) in addrs_confirmed {
+                            s_confirmations_pending.remove(&addr);
+                            s_confirmations.insert(addr, state);
+                        }
+
+                        if s_confirmations_pending.is_empty() {
+                            break;
+                        }
+
+                        crate::internal::rt::sleep(min_try_read_time).await;
+                    }
+                });
+
+                let receive_bytes_task =
+                    tasks_keeper.spawn(async move {
+                        let rejection_confirm_bytes = &vec![MessageChannel::REJECTION_CONFIRM];
+                        while !r_confirmations_pending.is_empty() {
+                            println!("Server reading disconnection");
+                            let pre_read_next_bytes_result =
+                                ServerNode::pre_read_next_bytes(&r_socket).await;
+                            println!("Received: {:?}", pre_read_next_bytes_result);
+
+                            match pre_read_next_bytes_result {
+                                Ok((addr, result)) => {
+                                    if &result == rejection_confirm_bytes {
+                                        if let Some(_) = r_confirmations_pending.remove(&addr) {
+                                            r_confirmations.insert(
+                                                addr,
+                                                ServerDisconnectClientState::Confirmed,
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    for dash_entry in r_confirmations_pending.iter() {
+                                        r_confirmations.insert(
+                                    *dash_entry.key(),
+                                    ServerDisconnectClientState::ReceiveIoError(io::Error::new(
+                                        io::ErrorKind::Other,
+                                        format!("Error trying read data from udp socket: {}", e),
+                                    )),
+                                );
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    });
+
+                //TODO: REMOVE
+                let RS = crate::internal::rt::timeout(disconnection.timeout, async {
+                    sending_bytes_task.await;
+                    receive_bytes_task.await;
+                })
+                .await;
+                println!("Sending/Receiving: {:?}", RS);
+
+                let mut keys = Vec::new();
+                for dash_entry in confirmations.iter() {
+                    keys.push(*dash_entry.key());
+                }
+
+                let mut std_confirmations = HashMap::new();
+                for key in keys {
+                    let (_, v) = confirmations.remove(&key).unwrap();
+                    std_confirmations.insert(key, v);
+                }
+
+                ServerDisconnectState::Confirmations(std_confirmations)
             } else {
                 let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
                 drop(self);
