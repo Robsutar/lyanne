@@ -1633,6 +1633,7 @@ impl Server {
 
                         if now == last_sent_time_copy || time_diff >= packet_loss_timeout_copy {
                             *last_sent_time = now;
+                            println!("Server: Sending rejection context to {:?}", addr);
                             if let Err(e) = socket
                                 .send_to(&rejection_context.finished_bytes, addr)
                                 .await
