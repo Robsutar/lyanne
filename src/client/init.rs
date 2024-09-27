@@ -34,10 +34,12 @@ pub mod server {
                             break 'l1;
                         }
                         ReceivedBytesProcessResult::RejectionJustification(message) => {
-                            let _ = node
+                            println!("Client sending rejection confirm");
+                            let x = node
                                 .socket
                                 .send(&vec![MessageChannel::REJECTION_CONFIRM])
                                 .await;
+                            println!("Result of send: {:?}", x);
 
                             let _ = node
                                 .node_type

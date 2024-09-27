@@ -1659,8 +1659,10 @@ impl Server {
                         break;
                     }
 
+                    println!("Server reading disconnection");
                     let pre_read_next_bytes_result =
                         ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time).await;
+                    println!("Received: {:?}", pre_read_next_bytes_result);
 
                     match pre_read_next_bytes_result {
                         Ok((addr, result)) => {
