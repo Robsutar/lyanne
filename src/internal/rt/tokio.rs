@@ -49,6 +49,10 @@ where
     }
 }
 
+pub async fn sleep(duration: std::time::Duration) {
+    tokio::time::sleep(duration).await;
+}
+
 pub async fn select<L, R>(
     future_left: L,
     future_right: R,

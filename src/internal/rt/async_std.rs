@@ -66,6 +66,10 @@ where
     }
 }
 
+pub async fn sleep(duration: std::time::Duration) {
+    futures_timer::Delay::new(duration).await;
+}
+
 pub fn try_lock<T>(mutex: &Mutex<T>) -> Option<async_std::sync::MutexGuard<'_, T>> {
     mutex.try_lock()
 }
