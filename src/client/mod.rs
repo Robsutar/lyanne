@@ -654,17 +654,9 @@ impl Client {
         disconnection: Option<GracefullyDisconnection>,
     ) -> TaskHandle<ClientDisconnectState> {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
-        let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
             NodeInternal::set_state_inactive(&self.internal).await;
-
-            let tasks_keeper_handle = self
-                .internal
-                .tasks_keeper_handle
-                .lock()
-                .await
-                .take()
-                .unwrap();
+            NodeInternal::on_partner_disposed(&self.internal, self.connected_server()).await;
 
             if self.is_disconnected() {
                 return ClientDisconnectState::AlreadyDisconnected(self.take_disconnect_reason());
@@ -715,15 +707,8 @@ impl Client {
                         Err(e) => break ClientDisconnectState::ReceiveIoError(e),
                     }
                 };
-
-                drop(self);
-                let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
-
                 disconnect_state
             } else {
-                drop(self);
-                let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
-
                 ClientDisconnectState::WithoutReason
             }
         })

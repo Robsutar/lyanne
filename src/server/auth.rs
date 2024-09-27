@@ -648,53 +648,47 @@ impl AuthenticatorModeBuild {
         }
     }
 
-    pub(super) async fn apply(self, server: &Arc<NodeInternal<ServerNode>>) -> io::Result<()> {
-        match self {
+    pub(super) async fn apply(
+        self,
+        server: &Arc<NodeInternal<ServerNode>>,
+    ) -> io::Result<TaskHandle<()>> {
+        Ok(match self {
             AuthenticatorModeBuild::NoCryptography(auth_mode, auth_mode_build) => {
                 let server_downgraded = Arc::downgrade(&server);
                 let auth_mode_downgraded = Arc::downgrade(&auth_mode);
-                server.create_async_task(async move {
-                    NoCryptographyAuth::create_pending_auth_resend_handler(
+                server
+                    .task_runner
+                    .spawn(NoCryptographyAuth::create_pending_auth_resend_handler(
                         server_downgraded,
                         auth_mode_downgraded,
                         auth_mode_build.pending_auth_resend_receiver,
-                    )
-                    .await;
-                });
+                    ))
             }
             #[cfg(feature = "auth_tcp")]
             AuthenticatorModeBuild::RequireTcp(auth_mode, auth_mode_build) => {
                 let server_downgraded = Arc::downgrade(&server);
                 let auth_mode_downgraded = Arc::downgrade(&auth_mode);
                 let listener = TcpListener::bind(auth_mode.properties.server_addr).await?;
-                server.create_async_task(async move {
-                    RequireTcpAuth::create_handler(
-                        auth_mode_downgraded,
-                        server_downgraded,
-                        listener,
-                        auth_mode_build.tcp_read_signal_receiver,
-                    )
-                    .await;
-                });
+                server.task_runner.spawn(RequireTcpAuth::create_handler(
+                    auth_mode_downgraded,
+                    server_downgraded,
+                    listener,
+                    auth_mode_build.tcp_read_signal_receiver,
+                ))
             }
             #[cfg(feature = "auth_tls")]
             AuthenticatorModeBuild::RequireTls(auth_mode, auth_mode_build) => {
                 let server_downgraded = Arc::downgrade(&server);
                 let auth_mode_downgraded = Arc::downgrade(&auth_mode);
                 let listener = TcpListener::bind(auth_mode.properties.server_addr).await?;
-                server.create_async_task(async move {
-                    RequireTlsAuth::create_handler(
-                        auth_mode_downgraded,
-                        server_downgraded,
-                        listener,
-                        auth_mode_build.tls_read_signal_receiver,
-                    )
-                    .await;
-                });
+                server.task_runner.spawn(RequireTlsAuth::create_handler(
+                    auth_mode_downgraded,
+                    server_downgraded,
+                    listener,
+                    auth_mode_build.tls_read_signal_receiver,
+                ))
             }
-        }
-
-        Ok(())
+        })
     }
 }
 
