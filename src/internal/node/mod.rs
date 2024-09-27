@@ -369,6 +369,8 @@ pub struct PartnerMessaging {
 
 /// Properties of a partner that is connected to the node.
 pub struct Partner {
+    pub(crate) disposable_handlers_keeper: Mutex<Vec<ActiveDisposableHandler>>,
+
     /// Sender for receiving bytes.
     pub(crate) receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
     /// Sender for packets to be sent.
