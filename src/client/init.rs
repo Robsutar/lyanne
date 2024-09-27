@@ -22,6 +22,7 @@ pub mod server {
         receiving_bytes_receiver: async_channel::Receiver<Vec<u8>>,
     ) {
         'l1: while let Ok(bytes) = receiving_bytes_receiver.recv().await {
+            println!("Client receiving bytes: {:?} ", bytes);
             if let Some(node) = NodeInternal::try_upgrade(&node) {
                 if let Some(server) = server.upgrade() {
                     match NodeType::handle_received_bytes(&node, &server, bytes).await {
