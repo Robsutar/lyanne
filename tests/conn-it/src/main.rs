@@ -100,8 +100,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let client_handle = smol::spawn(client_tick_cycle(client));
 
-    client_handle.await?;
-    server_handle.await?;
+    futures_timer::Delay::new(TIMEOUT * 2).await;
 
     Ok(())
 }

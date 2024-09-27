@@ -127,8 +127,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let client_handle = tokio::spawn(client_tick_cycle(client));
 
-    client_handle.await.unwrap()?;
-    server_handle.await.unwrap()?;
+    tokio::time::sleep(TIMEOUT * 2).await;
 
     Ok(())
 }

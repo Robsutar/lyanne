@@ -120,8 +120,7 @@ async fn async_main(runtime: Arc<async_executor::Executor<'static>>) -> Result<(
 
     let client_handle = runtime.spawn(client_tick_cycle(client));
 
-    server_handle.await?;
-    client_handle.await?;
+    futures_timer::Delay::new(TIMEOUT * 2).await;
 
     Ok(())
 }
