@@ -1660,32 +1660,42 @@ impl Server {
                         break;
                     }
 
-                    println!("Server reading disconnection");
-                    let pre_read_next_bytes_result =
-                        ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time).await;
-                    println!("Received: {:?}", pre_read_next_bytes_result);
+                    if min_try_read_time == Duration::ZERO {
+                        println!("Zero duration timeout, bytes will not be read.");
+                    } else {
+                        println!("Server reading disconnection");
+                        let pre_read_next_bytes_result =
+                            ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time)
+                                .await;
+                        println!("Received: {:?}", pre_read_next_bytes_result);
 
-                    match pre_read_next_bytes_result {
-                        Ok((addr, result)) => {
-                            if &result == rejection_confirm_bytes {
-                                if let Some(_) = confirmations_pending.remove(&addr) {
-                                    confirmations
-                                        .insert(addr, ServerDisconnectClientState::Confirmed);
+                        match pre_read_next_bytes_result {
+                            Ok((addr, result)) => {
+                                if &result == rejection_confirm_bytes {
+                                    if let Some(_) = confirmations_pending.remove(&addr) {
+                                        confirmations
+                                            .insert(addr, ServerDisconnectClientState::Confirmed);
+                                    }
                                 }
                             }
-                        }
-                        Err(e) if e.kind() == io::ErrorKind::TimedOut => {}
-                        Err(e) => {
-                            for (addr, _) in confirmations_pending {
-                                confirmations.insert(
-                                    addr,
-                                    ServerDisconnectClientState::ReceiveIoError(io::Error::new(
-                                        io::ErrorKind::Other,
-                                        format!("Error trying read data from udp socket: {}", e),
-                                    )),
-                                );
+                            Err(e) if e.kind() == io::ErrorKind::TimedOut => {}
+                            Err(e) => {
+                                for (addr, _) in confirmations_pending {
+                                    confirmations.insert(
+                                        addr,
+                                        ServerDisconnectClientState::ReceiveIoError(
+                                            io::Error::new(
+                                                io::ErrorKind::Other,
+                                                format!(
+                                                    "Error trying read data from udp socket: {}",
+                                                    e
+                                                ),
+                                            ),
+                                        ),
+                                    );
+                                }
+                                break;
                             }
-                            break;
                         }
                     }
                 }
