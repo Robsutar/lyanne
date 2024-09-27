@@ -1556,6 +1556,25 @@ impl Server {
                 .take()
                 .unwrap();
 
+            {
+                let lock_instant = Instant::now();
+                println!("Locking(Internal) until arc be released");
+                while Arc::strong_count(&self.internal) != 1 {}
+                println!(
+                    "Lock released, time elapsed: {:?}",
+                    Instant::now() - lock_instant
+                );
+            }
+            {
+                let lock_instant = Instant::now();
+                println!("Locking(Socket) until arc be released");
+                while Arc::strong_count(&self.internal.socket) != 1 {}
+                println!(
+                    "Lock released, time elapsed: {:?}",
+                    Instant::now() - lock_instant
+                );
+            }
+
             if let Some(disconnection) = disconnection {
                 let mut confirmations = HashMap::<SocketAddr, ServerDisconnectClientState>::new();
                 let mut confirmations_pending =
