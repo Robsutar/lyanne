@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    future::Future,
     io,
     net::SocketAddr,
     sync::{Arc, RwLock, Weak},
@@ -454,28 +453,18 @@ impl<T: NodeType> NodeInternal<T> {
         }
     }
 
-    pub fn create_async_task<F>(self: &Arc<Self>, future: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        let _ = self
-            .tasks_keeper_sender
-            .try_send(self.task_runner.spawn(future));
-    }
-
     pub async fn set_state_inactive(node: &Arc<Self>) {
         {
             let mut state = node.state.write().await;
             *state = NodeState::Inactive;
         }
-        {
-            let mut read_handlers_keeper = node.read_handlers_keeper.write().await;
-            while !read_handlers_keeper.is_empty() {
-                let active = read_handlers_keeper.remove(0);
-                let _ = active.cancel_sender.send(()).await;
-                let _ = active.task.await;
-            }
-        }
+        ActiveCancelableHandler::cancel(&node.cancelable_handlers_keeper).await;
+        ActiveDisposableHandler::dispose(&node.task_runner, &node.disposable_handlers_keeper).await;
+    }
+
+    pub async fn on_partner_disposed(node: &Arc<Self>, partner: &Partner) {
+        ActiveDisposableHandler::dispose(&node.task_runner, &partner.disposable_handlers_keeper)
+            .await;
     }
 
     pub fn on_holder_drop(self: &Arc<Self>) {
