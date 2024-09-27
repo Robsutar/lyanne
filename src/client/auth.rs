@@ -464,6 +464,7 @@ pub(super) mod connecting {
             internal: Arc::new(NodeInternal {
                 disposable_handlers_keeper: Mutex::new(Vec::new()),
                 cancelable_handlers_keeper: Mutex::new(Vec::new()),
+                inactivation_task: RwLock::new(None),
 
                 socket: Arc::clone(&socket),
 

@@ -653,6 +653,7 @@ impl Server {
             let server = Arc::new(NodeInternal {
                 disposable_handlers_keeper: Mutex::new(Vec::new()),
                 cancelable_handlers_keeper: Mutex::new(Vec::new()),
+                inactivation_task: RwLock::new(None),
 
                 socket,
 

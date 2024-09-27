@@ -420,6 +420,8 @@ pub struct NodeInternal<T: NodeType> {
     pub disposable_handlers_keeper: Mutex<Vec<ActiveDisposableHandler>>,
     pub cancelable_handlers_keeper: Mutex<Vec<ActiveCancelableHandler>>,
 
+    pub inactivation_task: RwLock<Option<TaskHandle<()>>>,
+
     /// The UDP socket used for communication.
     pub socket: Arc<UdpSocket>,
 
@@ -470,9 +472,10 @@ impl<T: NodeType> NodeInternal<T> {
     pub fn on_holder_drop(self: &Arc<Self>) {
         if !NodeState::is_inactive(&self.state) {
             let internal = Arc::clone(&self);
-            let _ = self.create_async_task(async move {
+            let mut inactivation_task = self.inactivation_task.write().unwrap();
+            *inactivation_task = Some(self.task_runner.spawn(async move {
                 Self::set_state_inactive(&internal).await;
-            });
+            }));
         }
     }
 }
