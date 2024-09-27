@@ -416,12 +416,8 @@ impl Partner {
 
 /// Properties of the node.
 pub struct NodeInternal<T: NodeType> {
-    /// Sender for make the spawned tasks keep alive.
-    pub tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
-
-    /// Task handle of the receiver.
-    pub tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
-    pub read_handlers_keeper: AsyncRwLock<Vec<ActiveReadHandler>>,
+    pub disposable_handlers_keeper: Mutex<Vec<ActiveDisposableHandler>>,
+    pub cancelable_handlers_keeper: Mutex<Vec<ActiveCancelableHandler>>,
 
     /// The UDP socket used for communication.
     pub socket: Arc<UdpSocket>,
