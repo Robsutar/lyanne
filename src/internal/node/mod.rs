@@ -57,9 +57,32 @@ impl<T: std::fmt::Debug> StoreUnexpectedErrors<T> {
     }
 }
 
-pub struct ActiveReadHandler {
+pub struct ActiveDisposableHandler {
+    pub task: TaskHandle<()>,
+}
+impl ActiveDisposableHandler {
+    async fn dispose(task_runner: &TaskRunner, disposable_handlers_keeper: &Mutex<Vec<Self>>) {
+        let mut disposable_handlers_keeper = disposable_handlers_keeper.lock().await;
+        while !disposable_handlers_keeper.is_empty() {
+            let active = disposable_handlers_keeper.remove(0);
+            let _ = task_runner.cancel(active.task).await;
+        }
+    }
+}
+
+pub struct ActiveCancelableHandler {
     pub cancel_sender: async_channel::Sender<()>,
     pub task: TaskHandle<()>,
+}
+impl ActiveCancelableHandler {
+    async fn cancel(cancelable_handlers_keeper: &Mutex<Vec<Self>>) {
+        let mut cancelable_handlers_keeper = cancelable_handlers_keeper.lock().await;
+        while !cancelable_handlers_keeper.is_empty() {
+            let active = cancelable_handlers_keeper.remove(0);
+            let _ = active.cancel_sender.send(()).await;
+            let _ = active.task.await;
+        }
+    }
 }
 
 pub enum NodeState {
