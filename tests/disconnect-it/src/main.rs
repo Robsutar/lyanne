@@ -11,6 +11,7 @@ use std::{
 mod error;
 mod packets;
 
+use async_executor::Task;
 use auth_tcp::{AuthTcpClientProperties, AuthTcpServerProperties};
 use error::Errors;
 use lyanne::{client::*, packets::*, server::*, *};
@@ -36,12 +37,33 @@ fn main() -> Result<(), Box<dyn Error>> {
         futures::executor::block_on(runtime_clone.run(futures::future::pending::<()>()));
     });
 
-    let result = futures::executor::block_on(async_main(runtime));
+    let result = futures::executor::block_on(async {
+        let tasks = async_main(Arc::clone(&runtime)).await?;
+
+        let (sender, receiver) = async_channel::unbounded();
+
+        let count = tasks.len();
+        let mut created_tasks = Vec::new();
+        for task in tasks {
+            let sender = sender.clone();
+            created_tasks.push(runtime.spawn(async move {
+                sender.send(task.await).await.unwrap();
+            }));
+        }
+
+        for _ in 0..count {
+            receiver.recv().await??;
+        }
+
+        Ok(())
+    });
     println!("TEST ELAPSED TIME: {:?}", Instant::now() - start);
     result
 }
 
-async fn async_main(runtime: Arc<async_executor::Executor<'static>>) -> Result<(), Box<dyn Error>> {
+async fn async_main(
+    runtime: Arc<async_executor::Executor<'static>>,
+) -> Result<Vec<Task<Result<(), Errors>>>, Box<dyn Error>> {
     let packet_registry = Arc::new(new_packet_registry());
     let addr: SocketAddr = "127.0.0.1:8822".parse().unwrap();
     let tcp_addr: SocketAddr = "127.0.0.1:4443".parse().unwrap();
@@ -120,10 +142,7 @@ async fn async_main(runtime: Arc<async_executor::Executor<'static>>) -> Result<(
 
     let client_handle = runtime.spawn(client_tick_cycle(client));
 
-    server_handle.await?;
-    client_handle.await?;
-
-    Ok(())
+    Ok(vec![server_handle, client_handle])
 }
 
 async fn client_tick_cycle(client: Client) -> Result<(), Errors> {

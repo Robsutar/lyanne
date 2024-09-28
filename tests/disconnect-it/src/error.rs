@@ -1,8 +1,8 @@
 use std::{error::Error, fmt::Display};
 
 use lyanne::{
-    client::{ConnectError, ServerDisconnectReason},
-    server::{BindError, ClientDisconnectReason, ServerDisconnectClientState},
+    client::ConnectError,
+    server::{BindError, ClientDisconnectReason},
 };
 
 #[derive(Debug)]
@@ -16,7 +16,6 @@ pub enum Errors {
     UnexpectedServerDisconnectInfo,
     AdditionalAuthentication,
     ClientUnexpectedDisconnection,
-    ServerShouldBeDisconnected,
     UnexpectedBehavior(usize),
     DisconnectionConfirmFailedByClient(ClientDisconnectReason),
 }
