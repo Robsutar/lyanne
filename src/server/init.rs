@@ -30,11 +30,13 @@ pub mod client {
                 if let Some(client) = client.upgrade() {
                     match NodeType::handle_received_bytes(&node, &client, bytes).await {
                         ReceivedBytesProcessResult::InvalidProtocolCommunication => {
-                            let _ = node.node_type.clients_to_disconnect_sender.try_send((
-                                addr,
-                                (ClientDisconnectReason::InvalidProtocolCommunication, None),
-                            ));
-                            break 'l1;
+                            #[cfg(feature = "store_unexpected")]
+                            {
+                                let _ = node
+                                    .store_unexpected_errors
+                                    .error_sender
+                                    .try_send(UnexpectedError::InvalidProtocolCommunication(addr));
+                            }
                         }
                         ReceivedBytesProcessResult::AuthMessage(_bytes) => {
                             // Client probably multiple authentication packets before being authenticated
