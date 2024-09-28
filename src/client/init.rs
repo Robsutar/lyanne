@@ -158,6 +158,7 @@ pub mod server {
 }
 
 pub mod client {
+    #[cfg(feature = "store_unexpected")]
     use super::*;
 
     #[cfg(feature = "store_unexpected")]
