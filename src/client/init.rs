@@ -24,8 +24,16 @@ pub mod server {
             if let Some(node) = NodeInternal::try_upgrade(&node) {
                 if let Some(server) = server.upgrade() {
                     match NodeType::handle_received_bytes(&node, &server, bytes).await {
-                        ReceivedBytesProcessResult::InvalidProtocolCommunication
-                        | ReceivedBytesProcessResult::AuthMessage(_) => {
+                        ReceivedBytesProcessResult::InvalidProtocolCommunication => {
+                            #[cfg(feature = "store_unexpected")]
+                            {
+                                let _ = node
+                                    .store_unexpected_errors
+                                    .error_sender
+                                    .try_send(UnexpectedError::InvalidProtocolCommunication);
+                            }
+                        }
+                        ReceivedBytesProcessResult::AuthMessage(_) => {
                             let _ = node
                                 .node_type
                                 .reason_to_disconnect_sender

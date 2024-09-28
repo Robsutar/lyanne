@@ -225,8 +225,6 @@ pub enum ClientDisconnectReason {
     MessageReceiveTimeout,
     /// Client was disconnected due to a timeout while trying to acquire a write lock.
     WriteUnlockTimeout,
-    /// Client was disconnected due to invalid protocol communication.
-    InvalidProtocolCommunication,
     /// Client was disconnected because of an error while sending bytes.
     ByteSendError(io::Error),
     /// Client was manually disconnected.
@@ -368,6 +366,8 @@ pub enum UnexpectedError {
     /// Io error while trying to accept clients from the tcp based authenticators.
     #[cfg(any(feature = "auth_tcp", feature = "auth_tls"))]
     OfTcpBasedHandlerAcceptIoError(SocketAddr, io::Error),
+    /// Client what is/was connected sent bytes, that are not valid inside the protocol.
+    InvalidProtocolCommunication(SocketAddr),
 }
 
 /// The authentication entry of some not connected client.

@@ -193,6 +193,8 @@ pub enum UnexpectedError {
     ///
     /// See [`ReadServerBytesResult::is_unexpected`]
     OfReadServerBytes(ReadServerBytesResult),
+    /// Server sent bytes, that are not valid inside the protocol.
+    InvalidProtocolCommunication,
 }
 
 /// Message received from the server what represents a server tick.
