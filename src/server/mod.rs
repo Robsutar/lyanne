@@ -984,7 +984,15 @@ impl Server {
         }
 
         for (addr, (reason, context)) in addrs_to_disconnect {
-            node_type.connected_clients.remove(&addr).unwrap();
+            let connected_client = node_type.connected_clients.remove(&addr).unwrap().1;
+            let internal_clone = Arc::clone(&internal);
+            let _ = internal
+                .awaitable_tasks_sender
+                .try_send(ActiveAwaitableHandler {
+                    task: internal.task_runner.spawn(async move {
+                        NodeInternal::on_partner_disposed(&internal_clone, &connected_client).await
+                    }),
+                });
             if let Some(context) = context {
                 node_type
                     .pending_rejection_confirm
