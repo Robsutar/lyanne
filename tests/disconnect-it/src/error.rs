@@ -1,8 +1,8 @@
 use std::{error::Error, fmt::Display};
 
 use lyanne::{
-    client::{ConnectError, ServerDisconnectReason},
-    server::{BindError, ClientDisconnectReason, ServerDisconnectClientState},
+    client::ConnectError,
+    server::{BindError, ClientDisconnectReason},
 };
 
 #[derive(Debug)]

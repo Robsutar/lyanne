@@ -13,6 +13,7 @@ mod packets;
 
 use auth_tcp::{AuthTcpClientProperties, AuthTcpServerProperties};
 use error::Errors;
+use futures::join;
 use lyanne::{client::*, packets::*, server::*, *};
 use packets::*;
 
@@ -120,8 +121,9 @@ async fn async_main(runtime: Arc<async_executor::Executor<'static>>) -> Result<(
 
     let client_handle = runtime.spawn(client_tick_cycle(client));
 
-    server_handle.await?;
-    client_handle.await?;
+    let (server_result, client_result) = join!(server_handle, client_handle);
+    server_result?;
+    client_result?;
 
     Ok(())
 }
