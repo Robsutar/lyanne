@@ -592,8 +592,7 @@ pub(super) mod connecting {
                         let _ = internal
                             .store_unexpected_errors
                             .error_sender
-                            .send(UnexpectedError::OfReadServerBytes(_read_result))
-                            .await;
+                            .try_send(UnexpectedError::OfReadServerBytes(_read_result));
                     }
                 }
                 Err(_) => {}

@@ -298,23 +298,15 @@ where
                             match _result {
                                 Ok(result) => {
                                     if result.is_unexpected() {
-                                        let _ = node
-                                            .store_unexpected_errors
-                                            .error_sender
-                                            .send(UnexpectedError::OfTcpBasedHandlerAccept(
-                                                addr, result,
-                                            ))
-                                            .await;
+                                        let _ = node.store_unexpected_errors.error_sender.try_send(
+                                            UnexpectedError::OfTcpBasedHandlerAccept(addr, result),
+                                        );
                                     }
                                 }
                                 Err(e) => {
-                                    let _ = node
-                                        .store_unexpected_errors
-                                        .error_sender
-                                        .send(UnexpectedError::OfTcpBasedHandlerAcceptIoError(
-                                            addr, e,
-                                        ))
-                                        .await;
+                                    let _ = node.store_unexpected_errors.error_sender.try_send(
+                                        UnexpectedError::OfTcpBasedHandlerAcceptIoError(addr, e),
+                                    );
                                 }
                             }
                         }

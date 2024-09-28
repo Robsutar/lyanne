@@ -211,8 +211,7 @@ pub mod server {
                 let _ = node
                     .store_unexpected_errors
                     .error_list_sender
-                    .send(NodeType::store_unexpected_error_list_pick(&node).await)
-                    .await;
+                    .try_send(NodeType::store_unexpected_error_list_pick(&node).await);
             } else {
                 break 'l1;
             }

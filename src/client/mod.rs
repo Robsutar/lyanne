@@ -310,8 +310,7 @@ impl NodeType for ClientNode {
             let _ = node
                 .store_unexpected_errors
                 .error_sender
-                .send(UnexpectedError::OfReadServerBytes(_read_result))
-                .await;
+                .try_send(UnexpectedError::OfReadServerBytes(_read_result));
         }
     }
 
