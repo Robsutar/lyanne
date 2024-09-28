@@ -340,6 +340,8 @@ pub trait NodeType: Send + Sync + Sized + 'static {
 
         list
     }
+
+    fn on_inactivated(node: &Arc<NodeInternal<Self>>) -> TaskHandle<()>;
 }
 
 pub struct PartnerMessaging {
@@ -462,6 +464,8 @@ impl<T: NodeType> NodeInternal<T> {
         }
         ActiveCancelableHandler::cancel(&node.cancelable_handlers_keeper).await;
         ActiveDisposableHandler::dispose(&node.task_runner, &node.disposable_handlers_keeper).await;
+
+        let _ = NodeType::on_inactivated(node).await;
     }
 
     pub async fn on_partner_disposed(node: &Arc<Self>, partner: &Partner) {

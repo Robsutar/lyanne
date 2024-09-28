@@ -591,6 +591,15 @@ impl NodeType for ServerNode {
                 .await;
         }
     }
+
+    fn on_inactivated(node: &Arc<NodeInternal<Self>>) -> TaskHandle<()> {
+        let node_clone = Arc::clone(&node);
+        node.task_runner.spawn(async move {
+            for dash_entry in node_clone.node_type.connected_clients.iter() {
+                NodeInternal::on_partner_disposed(&node_clone, &dash_entry.value()).await;
+            }
+        })
+    }
 }
 
 /// Connected server.
@@ -1557,9 +1566,6 @@ impl Server {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
             NodeInternal::set_state_inactive(&self.internal).await;
-            for dash_entry in self.connected_clients_iter() {
-                NodeInternal::on_partner_disposed(&self.internal, &dash_entry.value()).await;
-            }
 
             if let Some(disconnection) = disconnection {
                 let mut confirmations = HashMap::<SocketAddr, ServerDisconnectClientState>::new();

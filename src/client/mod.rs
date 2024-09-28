@@ -314,6 +314,14 @@ impl NodeType for ClientNode {
                 .await;
         }
     }
+
+    fn on_inactivated(node: &Arc<NodeInternal<Self>>) -> TaskHandle<()> {
+        let node_clone = Arc::clone(&node);
+        node.task_runner.spawn(async move {
+            NodeInternal::on_partner_disposed(&node_clone, &node_clone.node_type.connected_server)
+                .await;
+        })
+    }
 }
 
 /// Connected client.
@@ -656,7 +664,6 @@ impl Client {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
             NodeInternal::set_state_inactive(&self.internal).await;
-            NodeInternal::on_partner_disposed(&self.internal, self.connected_server()).await;
 
             if self.is_disconnected() {
                 return ClientDisconnectState::AlreadyDisconnected(self.take_disconnect_reason());
