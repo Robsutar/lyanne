@@ -705,12 +705,19 @@ impl Server {
                 },
             });
 
-            if let Err(e) = authenticator_mode_build.apply(&server).await {
-                return Err(BindError::AuthenticatorConnectIoError(e));
-            }
-
             let mut disposable_handlers_keeper = server.disposable_handlers_keeper.lock().await;
             let mut cancelable_handlers_keeper = server.cancelable_handlers_keeper.lock().await;
+
+            let authenticator_handler_task = match authenticator_mode_build.apply(&server).await {
+                Ok(authenticator_task) => authenticator_task,
+                Err(e) => {
+                    return Err(BindError::AuthenticatorConnectIoError(e));
+                }
+            };
+
+            disposable_handlers_keeper.push(ActiveDisposableHandler {
+                task: authenticator_handler_task,
+            });
 
             let server_downgraded = Arc::downgrade(&server);
             disposable_handlers_keeper.push(ActiveDisposableHandler {
