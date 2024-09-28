@@ -119,7 +119,10 @@ use dashmap::{DashMap, DashSet};
 use crate::{
     internal::{
         messages::{DeserializedMessage, MessagePartMap, UDP_BUFFER_SIZE},
-        node::{ActiveReadHandler, NodeInternal, NodeState, NodeType, PartnerMessaging},
+        node::{
+            ActiveAwaitableHandler, ActiveCancelableHandler, ActiveDisposableHandler, NodeInternal,
+            NodeState, NodeType, PartnerMessaging,
+        },
         rt::{try_lock, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
         JustifiedRejectionContext, MessageChannel,
@@ -588,6 +591,15 @@ impl NodeType for ServerNode {
                 .await;
         }
     }
+
+    fn on_inactivated(node: &Arc<NodeInternal<Self>>) -> TaskHandle<()> {
+        let node_clone = Arc::clone(&node);
+        node.task_runner.spawn(async move {
+            for dash_entry in node_clone.node_type.connected_clients.iter() {
+                NodeInternal::on_partner_disposed(&node_clone, &dash_entry.value()).await;
+            }
+        })
+    }
 }
 
 /// Connected server.
@@ -630,8 +642,6 @@ impl Server {
                 Err(e) => return Err(BindError::SocketBindError(e)),
             };
 
-            let (tasks_keeper_sender, tasks_keeper_receiver) = async_channel::unbounded();
-
             let (clients_to_auth_sender, clients_to_auth_receiver) = async_channel::unbounded();
             let (clients_to_disconnect_sender, clients_to_disconnect_receiver) =
                 async_channel::unbounded();
@@ -643,10 +653,7 @@ impl Server {
             let (rejections_to_confirm_signal_sender, rejections_to_confirm_signal_receiver) =
                 async_channel::unbounded();
 
-            let tasks_keeper_handle = task_runner.spawn(init::server::create_async_tasks_keeper(
-                tasks_keeper_receiver,
-            ));
-            let tasks_keeper_handle = Mutex::new(Some(tasks_keeper_handle));
+            let (awaitable_tasks_sender, awaitable_tasks_receiver) = async_channel::unbounded();
 
             #[cfg(feature = "store_unexpected")]
             let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) =
@@ -655,9 +662,9 @@ impl Server {
             let mut authenticator_mode_build = authenticator_mode.build();
 
             let server = Arc::new(NodeInternal {
-                tasks_keeper_sender,
-                tasks_keeper_handle,
-                read_handlers_keeper: AsyncRwLock::new(Vec::new()),
+                disposable_handlers_keeper: Mutex::new(Vec::new()),
+                cancelable_handlers_keeper: Mutex::new(Vec::new()),
+                awaitable_tasks_sender,
 
                 socket,
 
@@ -698,58 +705,83 @@ impl Server {
                 },
             });
 
-            if let Err(e) = authenticator_mode_build.apply(&server).await {
-                return Err(BindError::AuthenticatorConnectIoError(e));
-            }
+            let mut disposable_handlers_keeper = server.disposable_handlers_keeper.lock().await;
+            let mut cancelable_handlers_keeper = server.cancelable_handlers_keeper.lock().await;
 
-            let server_downgraded = Arc::downgrade(&server);
-            server.create_async_task(async move {
-                init::server::create_pending_rejection_confirm_resend_handler(
-                    server_downgraded,
-                    pending_rejection_confirm_resend_receiver,
-                )
-                .await;
+            let authenticator_handler_task = match authenticator_mode_build.apply(&server).await {
+                Ok(authenticator_task) => authenticator_task,
+                Err(e) => {
+                    return Err(BindError::AuthenticatorConnectIoError(e));
+                }
+            };
+
+            disposable_handlers_keeper.push(ActiveDisposableHandler {
+                task: authenticator_handler_task,
             });
 
             let server_downgraded = Arc::downgrade(&server);
-            server.create_async_task(async move {
-                init::server::create_rejections_to_confirm_handler(
-                    server_downgraded,
-                    rejections_to_confirm_signal_receiver,
-                )
-                .await;
+            disposable_handlers_keeper.push(ActiveDisposableHandler {
+                task: server.task_runner.spawn(
+                    init::server::create_pending_rejection_confirm_resend_handler(
+                        server_downgraded,
+                        pending_rejection_confirm_resend_receiver,
+                    ),
+                ),
+            });
+
+            let server_downgraded = Arc::downgrade(&server);
+            disposable_handlers_keeper.push(ActiveDisposableHandler {
+                task: server
+                    .task_runner
+                    .spawn(init::server::create_rejections_to_confirm_handler(
+                        server_downgraded,
+                        rejections_to_confirm_signal_receiver,
+                    )),
             });
 
             #[cfg(feature = "store_unexpected")]
             {
                 let server_downgraded = Arc::downgrade(&server);
-                server.create_async_task(async move {
-                    init::server::create_store_unexpected_error_list_handler(
-                        server_downgraded,
-                        store_unexpected_errors_create_list_signal_receiver,
-                    )
-                    .await;
+                disposable_handlers_keeper.push(ActiveDisposableHandler {
+                    task: server.task_runner.spawn(
+                        init::server::create_store_unexpected_error_list_handler(
+                            server_downgraded,
+                            store_unexpected_errors_create_list_signal_receiver,
+                        ),
+                    ),
                 });
             }
 
             {
-                let mut read_handlers_keeper = server.read_handlers_keeper.write().await;
-
                 for _ in 0..server.read_handler_properties.target_tasks_size {
                     let (cancel_sender, cancel_receiver) = async_channel::bounded(1);
 
-                    let task = server.task_runner.spawn(NodeType::create_read_handler(
-                        Arc::downgrade(&server),
-                        Arc::clone(&server.socket),
-                        cancel_receiver,
-                    ));
-
-                    read_handlers_keeper.push(ActiveReadHandler {
+                    cancelable_handlers_keeper.push(ActiveCancelableHandler {
                         cancel_sender,
-                        task,
+                        task: server.task_runner.spawn(NodeType::create_read_handler(
+                            Arc::downgrade(&server),
+                            Arc::clone(&server.socket),
+                            cancel_receiver,
+                        )),
                     });
                 }
             }
+
+            {
+                let (cancel_sender, cancel_receiver) = async_channel::bounded(1);
+                cancelable_handlers_keeper.push(ActiveCancelableHandler {
+                    cancel_sender,
+                    task: server
+                        .task_runner
+                        .spawn(ActiveAwaitableHandler::create_holder(
+                            awaitable_tasks_receiver,
+                            cancel_receiver,
+                        )),
+                });
+            }
+
+            drop(disposable_handlers_keeper);
+            drop(cancelable_handlers_keeper);
 
             Ok(BindResult {
                 server: Server { internal: server },
@@ -959,7 +991,15 @@ impl Server {
         }
 
         for (addr, (reason, context)) in addrs_to_disconnect {
-            node_type.connected_clients.remove(&addr).unwrap();
+            let connected_client = node_type.connected_clients.remove(&addr).unwrap().1;
+            let internal_clone = Arc::clone(&internal);
+            let _ = internal
+                .awaitable_tasks_sender
+                .try_send(ActiveAwaitableHandler {
+                    task: internal.task_runner.spawn(async move {
+                        NodeInternal::on_partner_disposed(&internal_clone, &connected_client).await
+                    }),
+                });
             if let Some(context) = context {
                 node_type
                     .pending_rejection_confirm
@@ -1151,6 +1191,7 @@ impl Server {
             };
 
             let client = Arc::new(ConnectedClient {
+                disposable_handlers_keeper: Mutex::new(Vec::new()),
                 receiving_bytes_sender,
                 packets_to_send_sender,
                 message_part_confirmation_sender,
@@ -1172,49 +1213,58 @@ impl Server {
                 initial_message,
             );
 
-            let server_downgraded = Arc::downgrade(&internal);
-            let client_downgraded = Arc::downgrade(&client);
-            internal.create_async_task(async move {
-                init::client::create_receiving_bytes_handler(
-                    server_downgraded,
-                    addr,
-                    client_downgraded,
-                    receiving_bytes_receiver,
-                )
-                .await;
-            });
+            let mut disposable_handlers_keeper =
+                try_lock(&client.disposable_handlers_keeper).unwrap();
 
             let server_downgraded = Arc::downgrade(&internal);
             let client_downgraded = Arc::downgrade(&client);
-            internal.create_async_task(async move {
-                init::client::create_packets_to_send_handler(
-                    server_downgraded,
-                    client_downgraded,
-                    packets_to_send_receiver,
-                    initial_next_message_part_id,
-                )
-                .await;
+            disposable_handlers_keeper.push(ActiveDisposableHandler {
+                task: internal
+                    .task_runner
+                    .spawn(init::client::create_receiving_bytes_handler(
+                        server_downgraded,
+                        addr,
+                        client_downgraded,
+                        receiving_bytes_receiver,
+                    )),
             });
 
             let server_downgraded = Arc::downgrade(&internal);
-            internal.create_async_task(async move {
-                init::client::create_message_part_confirmation_handler(
-                    server_downgraded,
-                    addr,
-                    message_part_confirmation_receiver,
-                )
-                .await;
+            let client_downgraded = Arc::downgrade(&client);
+            disposable_handlers_keeper.push(ActiveDisposableHandler {
+                task: internal
+                    .task_runner
+                    .spawn(init::client::create_packets_to_send_handler(
+                        server_downgraded,
+                        client_downgraded,
+                        packets_to_send_receiver,
+                        initial_next_message_part_id,
+                    )),
             });
 
             let server_downgraded = Arc::downgrade(&internal);
-            internal.create_async_task(async move {
-                init::client::create_shared_socket_bytes_send_handler(
-                    server_downgraded,
-                    addr,
-                    shared_socket_bytes_send_receiver,
-                )
-                .await;
+            disposable_handlers_keeper.push(ActiveDisposableHandler {
+                task: internal.task_runner.spawn(
+                    init::client::create_message_part_confirmation_handler(
+                        server_downgraded,
+                        addr,
+                        message_part_confirmation_receiver,
+                    ),
+                ),
             });
+
+            let server_downgraded = Arc::downgrade(&internal);
+            disposable_handlers_keeper.push(ActiveDisposableHandler {
+                task: internal.task_runner.spawn(
+                    init::client::create_shared_socket_bytes_send_handler(
+                        server_downgraded,
+                        addr,
+                        shared_socket_bytes_send_receiver,
+                    ),
+                ),
+            });
+
+            drop(disposable_handlers_keeper);
 
             node_type.connected_clients.insert(addr, client);
 
@@ -1544,17 +1594,8 @@ impl Server {
         disconnection: Option<GracefullyDisconnection>,
     ) -> TaskHandle<ServerDisconnectState> {
         let tasks_keeper_exit = Arc::clone(&self.internal.task_runner);
-        let tasks_keeper = Arc::clone(&self.internal.task_runner);
         tasks_keeper_exit.spawn(async move {
             NodeInternal::set_state_inactive(&self.internal).await;
-
-            let tasks_keeper_handle = self
-                .internal
-                .tasks_keeper_handle
-                .lock()
-                .await
-                .take()
-                .unwrap();
 
             if let Some(disconnection) = disconnection {
                 let mut confirmations = HashMap::<SocketAddr, ServerDisconnectClientState>::new();
@@ -1667,15 +1708,8 @@ impl Server {
                         }
                     }
                 }
-
-                let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
-                drop(self);
-
                 ServerDisconnectState::Confirmations(confirmations)
             } else {
-                let _ = tasks_keeper.cancel(tasks_keeper_handle).await;
-                drop(self);
-
                 ServerDisconnectState::WithoutReason
             }
         })

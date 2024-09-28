@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    future::Future,
     io,
     net::SocketAddr,
     sync::{Arc, RwLock, Weak},
@@ -10,18 +9,16 @@ use std::{
 use crate::{
     internal::{
         auth::InnerAuth,
-        messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
-        rt::{select, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        messages::{
+            DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap,
+            MessagePartMapTryInsertResult, MessagePartMapTryReadResult,
+        },
+        rt::{select, try_read, AsyncRwLock, Mutex, SelectArm, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
+        MessageChannel,
     },
     packets::{PacketRegistry, SerializedPacket, SerializedPacketList},
     MessagingProperties, ReadHandlerProperties, SentMessagePart,
-};
-
-use super::{
-    messages::{MessagePart, MessagePartMapTryInsertResult, MessagePartMapTryReadResult},
-    rt::SelectArm,
-    MessageChannel,
 };
 
 #[cfg(feature = "store_unexpected")]
@@ -57,9 +54,60 @@ impl<T: std::fmt::Debug> StoreUnexpectedErrors<T> {
     }
 }
 
-pub struct ActiveReadHandler {
+pub struct ActiveDisposableHandler {
+    pub task: TaskHandle<()>,
+}
+impl ActiveDisposableHandler {
+    async fn dispose(task_runner: &TaskRunner, disposable_handlers_keeper: &Mutex<Vec<Self>>) {
+        let mut disposable_handlers_keeper = disposable_handlers_keeper.lock().await;
+        while !disposable_handlers_keeper.is_empty() {
+            let active = disposable_handlers_keeper.remove(0);
+            let _ = task_runner.cancel(active.task).await;
+        }
+    }
+}
+
+pub struct ActiveCancelableHandler {
     pub cancel_sender: async_channel::Sender<()>,
     pub task: TaskHandle<()>,
+}
+impl ActiveCancelableHandler {
+    async fn cancel(cancelable_handlers_keeper: &Mutex<Vec<Self>>) {
+        let mut cancelable_handlers_keeper = cancelable_handlers_keeper.lock().await;
+        while !cancelable_handlers_keeper.is_empty() {
+            let active = cancelable_handlers_keeper.remove(0);
+            let _ = active.cancel_sender.send(()).await;
+            let _ = active.task.await;
+        }
+    }
+}
+
+pub struct ActiveAwaitableHandler {
+    pub task: TaskHandle<()>,
+}
+impl ActiveAwaitableHandler {
+    pub async fn create_holder(
+        awaitable_tasks_receiver: async_channel::Receiver<Self>,
+        cancel_receiver: async_channel::Receiver<()>,
+    ) {
+        loop {
+            match select(awaitable_tasks_receiver.recv(), cancel_receiver.recv()).await {
+                SelectArm::Left(task) => {
+                    if let Ok(active) = task {
+                        let _ = active.task.await;
+                    } else {
+                        break;
+                    }
+                }
+                SelectArm::Right(_) => {
+                    while let Ok(active) = awaitable_tasks_receiver.try_recv() {
+                        let _ = active.task.await;
+                    }
+                    break;
+                }
+            };
+        }
+    }
 }
 
 pub enum NodeState {
@@ -318,6 +366,8 @@ pub trait NodeType: Send + Sync + Sized + 'static {
 
         list
     }
+
+    fn on_inactivated(node: &Arc<NodeInternal<Self>>) -> TaskHandle<()>;
 }
 
 pub struct PartnerMessaging {
@@ -346,6 +396,8 @@ pub struct PartnerMessaging {
 
 /// Properties of a partner that is connected to the node.
 pub struct Partner {
+    pub(crate) disposable_handlers_keeper: Mutex<Vec<ActiveDisposableHandler>>,
+
     /// Sender for receiving bytes.
     pub(crate) receiving_bytes_sender: async_channel::Sender<Vec<u8>>,
     /// Sender for packets to be sent.
@@ -393,12 +445,9 @@ impl Partner {
 
 /// Properties of the node.
 pub struct NodeInternal<T: NodeType> {
-    /// Sender for make the spawned tasks keep alive.
-    pub tasks_keeper_sender: async_channel::Sender<TaskHandle<()>>,
-
-    /// Task handle of the receiver.
-    pub tasks_keeper_handle: Mutex<Option<TaskHandle<()>>>,
-    pub read_handlers_keeper: AsyncRwLock<Vec<ActiveReadHandler>>,
+    pub disposable_handlers_keeper: Mutex<Vec<ActiveDisposableHandler>>,
+    pub cancelable_handlers_keeper: Mutex<Vec<ActiveCancelableHandler>>,
+    pub awaitable_tasks_sender: async_channel::Sender<ActiveAwaitableHandler>,
 
     /// The UDP socket used for communication.
     pub socket: Arc<UdpSocket>,
@@ -433,36 +482,32 @@ impl<T: NodeType> NodeInternal<T> {
         }
     }
 
-    pub fn create_async_task<F>(self: &Arc<Self>, future: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        let _ = self
-            .tasks_keeper_sender
-            .try_send(self.task_runner.spawn(future));
-    }
-
     pub async fn set_state_inactive(node: &Arc<Self>) {
         {
             let mut state = node.state.write().await;
             *state = NodeState::Inactive;
         }
-        {
-            let mut read_handlers_keeper = node.read_handlers_keeper.write().await;
-            while !read_handlers_keeper.is_empty() {
-                let active = read_handlers_keeper.remove(0);
-                let _ = active.cancel_sender.send(()).await;
-                let _ = active.task.await;
-            }
-        }
+        ActiveCancelableHandler::cancel(&node.cancelable_handlers_keeper).await;
+        ActiveDisposableHandler::dispose(&node.task_runner, &node.disposable_handlers_keeper).await;
+
+        let _ = NodeType::on_inactivated(node).await;
+    }
+
+    pub async fn on_partner_disposed(node: &Arc<Self>, partner: &Partner) {
+        ActiveDisposableHandler::dispose(&node.task_runner, &partner.disposable_handlers_keeper)
+            .await;
     }
 
     pub fn on_holder_drop(self: &Arc<Self>) {
         if !NodeState::is_inactive(&self.state) {
             let internal = Arc::clone(&self);
-            let _ = self.create_async_task(async move {
-                Self::set_state_inactive(&internal).await;
-            });
+            let _ = self
+                .awaitable_tasks_sender
+                .try_send(ActiveAwaitableHandler {
+                    task: self
+                        .task_runner
+                        .spawn(async move { Self::set_state_inactive(&internal).await }),
+                });
         }
     }
 }

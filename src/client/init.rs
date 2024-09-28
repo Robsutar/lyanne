@@ -1,7 +1,6 @@
 use std::sync::{Arc, Weak};
 
 use crate::{
-    internal::rt::TaskHandle,
     internal::{
         messages::{MessageId, MessagePartId},
         MessageChannel,
@@ -159,25 +158,8 @@ pub mod server {
 }
 
 pub mod client {
-
+    #[cfg(feature = "store_unexpected")]
     use super::*;
-
-    #[cfg(feature = "rt_tokio")]
-    pub async fn create_async_tasks_keeper(
-        tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
-    ) {
-        while let Ok(handle) = tasks_keeper_receiver.recv().await {
-            let _ = handle.await;
-        }
-    }
-    #[cfg(not(feature = "rt_tokio"))]
-    pub async fn create_async_tasks_keeper(
-        tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
-    ) {
-        while let Ok(handle) = tasks_keeper_receiver.recv().await {
-            handle.await;
-        }
-    }
 
     #[cfg(feature = "store_unexpected")]
     pub async fn create_store_unexpected_error_list_handler(

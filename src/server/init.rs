@@ -7,7 +7,6 @@ use std::{
 use crate::{
     internal::{
         messages::{MessageId, MessagePartId},
-        rt::TaskHandle,
         MessageChannel,
     },
     packets::{SerializedPacket, SerializedPacketList},
@@ -167,23 +166,6 @@ pub mod client {
 
 pub mod server {
     use super::*;
-
-    #[cfg(feature = "rt_tokio")]
-    pub async fn create_async_tasks_keeper(
-        tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
-    ) {
-        while let Ok(handle) = tasks_keeper_receiver.recv().await {
-            let _ = handle.await;
-        }
-    }
-    #[cfg(not(feature = "rt_tokio"))]
-    pub async fn create_async_tasks_keeper(
-        tasks_keeper_receiver: async_channel::Receiver<TaskHandle<()>>,
-    ) {
-        while let Ok(handle) = tasks_keeper_receiver.recv().await {
-            handle.await;
-        }
-    }
 
     pub async fn create_pending_rejection_confirm_resend_handler(
         node: Weak<NodeInternal<ServerNode>>,
