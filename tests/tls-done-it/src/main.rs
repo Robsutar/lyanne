@@ -12,7 +12,6 @@ use auth_tls::{AuthTlsClientProperties, AuthTlsServerProperties, RootCertStorePr
 use error::Errors;
 use lyanne::{client::*, packets::*, server::*, *};
 use packets::*;
-use tokio::join;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 const SERVER_TICK_DELAY: Duration = Duration::from_millis(50);
@@ -128,9 +127,8 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let client_handle = tokio::spawn(client_tick_cycle(client));
 
-    let (server_result, client_result) = join!(server_handle, client_handle);
-    server_result?.unwrap();
-    client_result?.unwrap();
+    server_handle.await.unwrap()?;
+    client_handle.await.unwrap()?;
 
     Ok(())
 }

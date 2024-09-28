@@ -9,7 +9,6 @@ mod error;
 mod packets;
 
 use error::Errors;
-use futures::join;
 use lyanne::{client::*, packets::*, server::*, *};
 use packets::*;
 
@@ -101,9 +100,8 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let client_handle = smol::spawn(client_tick_cycle(client));
 
-    let (server_result, client_result) = join!(server_handle, client_handle);
-    server_result?;
-    client_result?;
+    server_handle.await?;
+    client_handle.await?;
 
     Ok(())
 }
