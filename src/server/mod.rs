@@ -120,8 +120,8 @@ use crate::{
     internal::{
         messages::{DeserializedMessage, MessagePartMap, UDP_BUFFER_SIZE},
         node::{
-            ActiveCancelableHandler, ActiveDisposableHandler, NodeInternal, NodeState, NodeType,
-            PartnerMessaging,
+            ActiveAwaitableHandler, ActiveCancelableHandler, ActiveDisposableHandler, NodeInternal,
+            NodeState, NodeType, PartnerMessaging,
         },
         rt::{try_lock, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
@@ -653,6 +653,8 @@ impl Server {
             let (rejections_to_confirm_signal_sender, rejections_to_confirm_signal_receiver) =
                 async_channel::unbounded();
 
+            let (awaitable_tasks_sender, awaitable_tasks_receiver) = async_channel::unbounded();
+
             #[cfg(feature = "store_unexpected")]
             let (store_unexpected_errors, store_unexpected_errors_create_list_signal_receiver) =
                 StoreUnexpectedErrors::new();
@@ -662,7 +664,7 @@ impl Server {
             let server = Arc::new(NodeInternal {
                 disposable_handlers_keeper: Mutex::new(Vec::new()),
                 cancelable_handlers_keeper: Mutex::new(Vec::new()),
-                inactivation_task: RwLock::new(None),
+                awaitable_tasks_sender,
 
                 socket,
 
@@ -756,6 +758,19 @@ impl Server {
                         )),
                     });
                 }
+            }
+
+            {
+                let (cancel_sender, cancel_receiver) = async_channel::bounded(1);
+                cancelable_handlers_keeper.push(ActiveCancelableHandler {
+                    cancel_sender,
+                    task: server
+                        .task_runner
+                        .spawn(ActiveAwaitableHandler::create_holder(
+                            awaitable_tasks_receiver,
+                            cancel_receiver,
+                        )),
+                });
             }
 
             drop(disposable_handlers_keeper);

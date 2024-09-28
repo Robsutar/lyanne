@@ -170,7 +170,7 @@ pub struct DisconnectedConnectError {
 pub(super) mod connecting {
     use crate::internal::{
         messages::{PUBLIC_KEY_SIZE, UDP_BUFFER_SIZE},
-        node::{ActiveCancelableHandler, ActiveDisposableHandler},
+        node::{ActiveAwaitableHandler, ActiveCancelableHandler, ActiveDisposableHandler},
     };
 
     use super::*;
@@ -425,6 +425,8 @@ pub(super) mod connecting {
         let (shared_socket_bytes_send_sender, shared_socket_bytes_send_receiver) =
             async_channel::unbounded();
 
+        let (awaitable_tasks_sender, awaitable_tasks_receiver) = async_channel::unbounded();
+
         let messaging = Mutex::new(PartnerMessaging {
             pending_confirmation: BTreeMap::new(),
             incoming_messages: MessagePartMap::new(
@@ -464,7 +466,7 @@ pub(super) mod connecting {
             internal: Arc::new(NodeInternal {
                 disposable_handlers_keeper: Mutex::new(Vec::new()),
                 cancelable_handlers_keeper: Mutex::new(Vec::new()),
-                inactivation_task: RwLock::new(None),
+                awaitable_tasks_sender,
 
                 socket: Arc::clone(&socket),
 
@@ -617,6 +619,19 @@ pub(super) mod connecting {
                                 )),
                             });
                         }
+                    }
+
+                    {
+                        let (cancel_sender, cancel_receiver) = async_channel::bounded(1);
+                        cancelable_handlers_keeper.push(ActiveCancelableHandler {
+                            cancel_sender,
+                            task: internal.task_runner.spawn(
+                                ActiveAwaitableHandler::create_holder(
+                                    awaitable_tasks_receiver,
+                                    cancel_receiver,
+                                ),
+                            ),
+                        });
                     }
 
                     drop(cancelable_handlers_keeper);

@@ -9,18 +9,16 @@ use std::{
 use crate::{
     internal::{
         auth::InnerAuth,
-        messages::{DeserializedMessage, MessageId, MessagePartId, MessagePartMap},
-        rt::{select, try_read, AsyncRwLock, Mutex, TaskHandle, TaskRunner, UdpSocket},
+        messages::{
+            DeserializedMessage, MessageId, MessagePart, MessagePartId, MessagePartMap,
+            MessagePartMapTryInsertResult, MessagePartMapTryReadResult,
+        },
+        rt::{select, try_read, AsyncRwLock, Mutex, SelectArm, TaskHandle, TaskRunner, UdpSocket},
         utils::{DurationMonitor, RttCalculator},
+        MessageChannel,
     },
     packets::{PacketRegistry, SerializedPacket, SerializedPacketList},
     MessagingProperties, ReadHandlerProperties, SentMessagePart,
-};
-
-use super::{
-    messages::{MessagePart, MessagePartMapTryInsertResult, MessagePartMapTryReadResult},
-    rt::SelectArm,
-    MessageChannel,
 };
 
 #[cfg(feature = "store_unexpected")]
@@ -80,6 +78,34 @@ impl ActiveCancelableHandler {
             let active = cancelable_handlers_keeper.remove(0);
             let _ = active.cancel_sender.send(()).await;
             let _ = active.task.await;
+        }
+    }
+}
+
+pub struct ActiveAwaitableHandler {
+    pub task: TaskHandle<()>,
+}
+impl ActiveAwaitableHandler {
+    pub async fn create_holder(
+        awaitable_tasks_receiver: async_channel::Receiver<Self>,
+        cancel_receiver: async_channel::Receiver<()>,
+    ) {
+        loop {
+            match select(awaitable_tasks_receiver.recv(), cancel_receiver.recv()).await {
+                SelectArm::Left(task) => {
+                    if let Ok(active) = task {
+                        let _ = active.task.await;
+                    } else {
+                        break;
+                    }
+                }
+                SelectArm::Right(_) => {
+                    while let Ok(active) = awaitable_tasks_receiver.try_recv() {
+                        let _ = active.task.await;
+                    }
+                    break;
+                }
+            };
         }
     }
 }
@@ -421,8 +447,7 @@ impl Partner {
 pub struct NodeInternal<T: NodeType> {
     pub disposable_handlers_keeper: Mutex<Vec<ActiveDisposableHandler>>,
     pub cancelable_handlers_keeper: Mutex<Vec<ActiveCancelableHandler>>,
-
-    pub inactivation_task: RwLock<Option<TaskHandle<()>>>,
+    pub awaitable_tasks_sender: async_channel::Sender<ActiveAwaitableHandler>,
 
     /// The UDP socket used for communication.
     pub socket: Arc<UdpSocket>,
@@ -476,10 +501,13 @@ impl<T: NodeType> NodeInternal<T> {
     pub fn on_holder_drop(self: &Arc<Self>) {
         if !NodeState::is_inactive(&self.state) {
             let internal = Arc::clone(&self);
-            let mut inactivation_task = self.inactivation_task.write().unwrap();
-            *inactivation_task = Some(self.task_runner.spawn(async move {
-                Self::set_state_inactive(&internal).await;
-            }));
+            let _ = self
+                .awaitable_tasks_sender
+                .try_send(ActiveAwaitableHandler {
+                    task: self
+                        .task_runner
+                        .spawn(async move { Self::set_state_inactive(&internal).await }),
+                });
         }
     }
 }
