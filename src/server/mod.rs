@@ -811,6 +811,11 @@ impl Server {
         &self.internal.node_type.server_properties
     }
 
+    /// Local address of the UdpSocket.
+    pub fn local_addr(&self) -> SocketAddr {
+        self.internal.socket.local_addr().unwrap()
+    }
+
     /// Server periodic tick start.
     ///
     /// The server tick ratio is based on this function call.

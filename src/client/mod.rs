@@ -449,6 +449,11 @@ impl Client {
         &self.internal.node_type.authentication_mode
     }
 
+    /// Local address of the UdpSocket.
+    pub fn local_addr(&self) -> SocketAddr {
+        self.internal.socket.local_addr().unwrap()
+    }
+
     /// Client periodic tick start.
     ///
     /// This function call rate should be at least a little bit higher than server tick ratio.
