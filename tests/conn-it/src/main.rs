@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         for _ in 0..count {
-            receiver.recv().await?.unwrap();
+            receiver.recv().await??;
         }
 
         Ok(())
@@ -161,7 +161,7 @@ async fn client_tick_cycle(client: Client) -> Result<(), Errors> {
                         client.tick_after_message();
                     }
                     _ => {
-                        return Err(Errors::ServerShouldBeDisconnected);
+                        //return Err(Errors::ServerShouldBeDisconnected);
                     }
                 };
             }

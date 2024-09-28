@@ -16,7 +16,6 @@ pub enum Errors {
     UnexpectedServerDisconnectInfo,
     AdditionalAuthentication,
     ClientUnexpectedDisconnection,
-    ServerShouldBeDisconnected,
     UnexpectedBehavior(usize),
     DisconnectionConfirmFailedByClient(ClientDisconnectReason),
 }
