@@ -13,3 +13,4 @@ lyanne = { path = "../../", features = [
 ] }
 tokio = { version = "^1.0.0", features = ["full"] }
 serde = { version = "^1.0.0", features = ["derive"] }
+async-channel = "^2.0.0"

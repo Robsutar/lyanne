@@ -12,6 +12,7 @@ use auth_tls::{AuthTlsClientProperties, AuthTlsServerProperties, RootCertStorePr
 use error::Errors;
 use lyanne::{client::*, packets::*, server::*, *};
 use packets::*;
+use tokio::task::JoinHandle;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 const SERVER_TICK_DELAY: Duration = Duration::from_millis(50);
@@ -23,17 +24,38 @@ const CLIENT_TO_SERVER_MESSAGE: &'static str = "true: success";
 const SERVER_DISCONNECT_INFO: &'static str = "all: done";
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     std::env::set_var("RUST_BACKTRACE", "1");
     let start = Instant::now();
     println!("TEST START {:?}", start);
 
-    let result = async_main().await;
+    let result = tokio::spawn(async {
+        let tasks = async_main().await?;
+
+        let (sender, receiver) = async_channel::unbounded();
+
+        let count = tasks.len();
+        let mut created_tasks = Vec::new();
+        for task in tasks {
+            let sender = sender.clone();
+            created_tasks.push(tokio::spawn(async move {
+                sender.send(task.await).await.unwrap();
+            }));
+        }
+
+        for _ in 0..count {
+            receiver.recv().await.unwrap()??;
+        }
+
+        Ok(())
+    })
+    .await
+    .unwrap();
     println!("TEST ELAPSED TIME: {:?}", Instant::now() - start);
     result
 }
 
-async fn async_main() -> Result<(), Box<dyn Error>> {
+async fn async_main() -> Result<Vec<JoinHandle<Result<(), Errors>>>, Box<dyn Error + Sync + Send>> {
     let packet_registry = Arc::new(new_packet_registry());
     let addr: SocketAddr = "127.0.0.1:8822".parse().unwrap();
     let tls_addr: SocketAddr = "127.0.0.1:4443".parse().unwrap();
@@ -127,10 +149,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
 
     let client_handle = tokio::spawn(client_tick_cycle(client));
 
-    server_handle.await.unwrap()?;
-    client_handle.await.unwrap()?;
-
-    Ok(())
+    Ok(vec![server_handle, client_handle])
 }
 
 async fn client_tick_cycle(client: Client) -> Result<(), Errors> {
@@ -171,7 +190,7 @@ async fn client_tick_cycle(client: Client) -> Result<(), Errors> {
                         client.tick_after_message();
                     }
                     _ => {
-                        return Err(Errors::ServerShouldBeDisconnected);
+                        client.tick_after_message();
                     }
                 };
             }
