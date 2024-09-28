@@ -1681,30 +1681,38 @@ impl Server {
                         break;
                     }
 
-                    let pre_read_next_bytes_result =
-                        ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time).await;
+                    if min_try_read_time != Duration::ZERO {
+                        let pre_read_next_bytes_result =
+                            ServerNode::pre_read_next_bytes_timeout(&socket, min_try_read_time)
+                                .await;
 
-                    match pre_read_next_bytes_result {
-                        Ok((addr, result)) => {
-                            if &result == rejection_confirm_bytes {
-                                if let Some(_) = confirmations_pending.remove(&addr) {
-                                    confirmations
-                                        .insert(addr, ServerDisconnectClientState::Confirmed);
+                        match pre_read_next_bytes_result {
+                            Ok((addr, result)) => {
+                                if &result == rejection_confirm_bytes {
+                                    if let Some(_) = confirmations_pending.remove(&addr) {
+                                        confirmations
+                                            .insert(addr, ServerDisconnectClientState::Confirmed);
+                                    }
                                 }
                             }
-                        }
-                        Err(e) if e.kind() == io::ErrorKind::TimedOut => {}
-                        Err(e) => {
-                            for (addr, _) in confirmations_pending {
-                                confirmations.insert(
-                                    addr,
-                                    ServerDisconnectClientState::ReceiveIoError(io::Error::new(
-                                        io::ErrorKind::Other,
-                                        format!("Error trying read data from udp socket: {}", e),
-                                    )),
-                                );
+                            Err(e) if e.kind() == io::ErrorKind::TimedOut => {}
+                            Err(e) => {
+                                for (addr, _) in confirmations_pending {
+                                    confirmations.insert(
+                                        addr,
+                                        ServerDisconnectClientState::ReceiveIoError(
+                                            io::Error::new(
+                                                io::ErrorKind::Other,
+                                                format!(
+                                                    "Error trying read data from udp socket: {}",
+                                                    e
+                                                ),
+                                            ),
+                                        ),
+                                    );
+                                }
+                                break;
                             }
-                            break;
                         }
                     }
                 }
