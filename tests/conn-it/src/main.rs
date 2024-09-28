@@ -161,7 +161,7 @@ async fn client_tick_cycle(client: Client) -> Result<(), Errors> {
                         client.tick_after_message();
                     }
                     _ => {
-                        //return Err(Errors::ServerShouldBeDisconnected);
+                        client.tick_after_message();
                     }
                 };
             }
