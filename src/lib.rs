@@ -94,7 +94,7 @@ compile_error!("feature \"bevy_packet_schedules\" needs one serializer");
 use std::time::Duration;
 
 use internal::{
-    messages::{ENCRYPTION_SPACE, NONCE_SIZE, UDP_BUFFER_SIZE},
+    messages::{ENCRYPTION_SPACE, NONCE_SIZE, PUBLIC_KEY_SIZE, UDP_BUFFER_SIZE},
     SentMessagePart, MESSAGE_CHANNEL_SIZE,
 };
 
@@ -178,7 +178,15 @@ impl LimitedMessage {
     /// # Errors
     /// If the list reached the max allowed size.
     pub fn try_new(list: SerializedPacketList) -> Result<Self, ()> {
-        if list.bytes.len() > UDP_BUFFER_SIZE - MESSAGE_CHANNEL_SIZE - NONCE_SIZE - ENCRYPTION_SPACE
+        if list.bytes.len()
+            > UDP_BUFFER_SIZE 
+            - MESSAGE_CHANNEL_SIZE 
+            - ENCRYPTION_SPACE 
+            // The limited size can have an nonce (for JustifiedRejectionContext) or
+            // it can have a public key (for Authentication).
+            // How the `PUBLIC_KEY_SIZE` is greater than `NONCE_SIZE`, we only use it.
+            // See the test in the final of this file.
+            /*- NONCE_SIZE */ - PUBLIC_KEY_SIZE
         {
             Err(())
         } else {

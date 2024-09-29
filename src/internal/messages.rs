@@ -29,7 +29,6 @@ pub const MINIMAL_PART_BYTES_SIZE: usize = 2 + 1 + MINIMAL_SERIALIZED_PACKET_SIZ
 pub const NONCE_SIZE: usize = 12;
 pub const ENCRYPTION_SPACE: usize = 16;
 
-// TODO: use this size to check the maximum authentication message sent by the client
 pub const PUBLIC_KEY_SIZE: usize = 32;
 
 pub const UDP_BUFFER_SIZE: usize = 1024;
