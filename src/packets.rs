@@ -23,7 +23,7 @@ pub use lyanne_derive::Packet;
 pub type PacketId = u16;
 pub type PacketToDowncast = dyn Any + Send + Sync;
 
-/// Adds essential packages
+/// Adds essential packets.
 ///
 /// Does not necessarily need to be used with [`PacketRegistry`], it just needs
 /// to be something that has a function with similar annotation of [`PacketRegistry::add`].
@@ -61,7 +61,7 @@ macro_rules! add_essential_packets {
 /// Set of data used for exchanging information.
 pub trait Packet: Sized + Debug + 'static + Any + Send + Sync {
     /// If no serializer (such as the `sd_bincode` feature) is being used,
-    /// it is still possible to create packages by serializing them manually.
+    /// it is still possible to create packets by serializing them manually.
     ///
     /// # Examples
     /// ```rust,no_run
@@ -87,7 +87,7 @@ pub trait Packet: Sized + Debug + 'static + Any + Send + Sync {
     fn serialize_packet(&self) -> io::Result<Vec<u8>>;
 
     /// If no serializer (such as the `sd_bincode` feature) is being used,
-    /// it is still possible to create packages by deserializing them manually.
+    /// it is still possible to create packets by deserializing them manually.
     ///
     /// # Examples
     /// ```rust,no_run
@@ -157,7 +157,7 @@ pub struct ServerPacketResource<P: Packet> {
 ///     message: String,
 /// }
 ///
-/// // Essential packages are required for communication.
+/// // Essential packets are required for communication.
 /// let mut packet_registry = PacketRegistry::with_essential();
 ///
 /// // Adding custom packets to the registry.
@@ -182,7 +182,7 @@ impl PacketRegistry {
     /// Constructs a empty registry.
     ///
     /// # Warning
-    /// A registry needs essential packages, which can be easily added with the `add_essential_packets!` macro.
+    /// A registry needs essential packets, which can be easily added with the `add_essential_packets!` macro.
     ///
     /// # Examples
     /// ```rust,no_run

@@ -1079,7 +1079,7 @@ impl Server {
     /// Server periodic tick end.
     ///
     /// It handles:
-    /// - Unification of packages to be sent to clients.
+    /// - Unification of packets to be sent to clients.
     ///
     /// # Errors
     /// If is not called after [`Server::try_tick_start`]
@@ -1113,7 +1113,7 @@ impl Server {
     /// Server periodic tick end.
     ///
     /// It handles:
-    /// - Unification of packages to be sent to clients.
+    /// - Unification of packets to be sent to clients.
     ///
     /// # Panics
     /// If is not called after [`Server::tick_start`]

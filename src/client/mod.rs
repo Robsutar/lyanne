@@ -589,7 +589,7 @@ impl Client {
     /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::try_tick_start`]
     ///
     /// It handles:
-    /// - Unification of packages to be sent to server.
+    /// - Unification of packets to be sent to server.
     ///
     /// # Errors
     /// If is not called after [`Client::try_tick_start`]
@@ -625,7 +625,7 @@ impl Client {
     /// Client tick after [`ClientTickResult::ReceivedMessage`] is returned form [`Client::tick_start`]
     ///
     /// It handles:
-    /// - Unification of packages to be sent to server.
+    /// - Unification of packets to be sent to server.
     ///
     /// # Panics
     /// If is not called after [`Client::tick_start`]

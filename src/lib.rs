@@ -11,7 +11,7 @@
 //!
 //! Being highly customizable, Lyanne supports:
 //! - Multiple runtimes.
-//! - Different ways of serializing/deserializing packages.
+//! - Different ways of serializing/deserializing packets.
 //! - Different authenticators, including the required/optional use of tls with rustls.
 //!
 //! All within features, keeping compilation time fast.
