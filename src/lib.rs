@@ -78,7 +78,7 @@
 //! |rt_smol|Uses smol as runtime|
 //! |rt_tokio|Uses tokio as runtime|
 //! |sd_bincode|Uses serde + bincode as packet serializer/deserializer|
-//! |auth_tcp|Uses Tcp socket to exchange keys to encrypt the udp communication. **Warning**: this feature alone is not responsible to encrypt the entire connection, some additional cryptography in that Tcp port is needed,such as a reverse proxy, like nginx.|
+//! |auth_tcp|Uses Tcp socket to exchange keys to encrypt the udp communication. **Warning**: this feature alone is not responsible to encrypt the entire connection, some additional cryptography in that Tcp port is needed, such as a reverse proxy, like nginx.|
 //! |auth_tls|Uses Tcp socket with tls (using rustls) to exchange keys to encrypt the udp communication. **Warning**: The encryption of the crate with rustls has not yet been subjected to a series of tests.|
 //! |bevy_packet_schedules|Creates Scheduled Labels for structs that derive from Packet.|
 //! |deserialized_message_map|Received packets will be read in maps (with the keys being the packet IDs), instead of being stored in a list. This does not affect communication, only the way the data is stored for reading.|
