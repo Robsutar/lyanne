@@ -216,3 +216,16 @@ impl LimitedMessage {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn assert_nonce_and_public_key_size() {
+        if NONCE_SIZE > PUBLIC_KEY_SIZE {
+            panic!("NONCE_SIZE can not be grater than PUBLIC_KEY_SIZE due LimitedMessage::try_new")
+        }
+    }
+}
